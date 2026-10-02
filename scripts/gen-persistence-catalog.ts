@@ -54,6 +54,7 @@ const LINK_MAP: Record<string, string> = {
   TeamMessageId: 'subsystems/agent-team.md',
   TeamMessageSnapshot: 'subsystems/agent-team.md',
   TeamTaskSnapshot: 'subsystems/agent-team.md',
+  ThreadId: 'subsystems/threads.md',
 }
 
 /** Render the cross-link "Types:" line for a payload, or '' if none apply. */

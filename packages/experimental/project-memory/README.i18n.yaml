@@ -1,0 +1,91 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/project-memory/README.md
+/:
+  en: c1c6e385b75d8b40
+  zh: 9c3fe3fba508aa9c
+/deepseek-ai-dsh-experimental-project-memory:
+  en: e076d4fd2d5d58c9
+  zh: af85547cafd98e28
+/deepseek-ai-dsh-experimental-project-memory/summary:
+  en: ce0034a0440fdefc
+  zh: f7acbce8c6d31bc3
+/deepseek-ai-dsh-experimental-project-memory/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-experimental-project-memory/use-this-package:
+  en: 53d099851065fddb
+  zh: 23d28384abe0ce4d
+/deepseek-ai-dsh-experimental-project-memory/use-this-package/when-to-choose-it:
+  en: 9e5b202bc7aea3fd
+  zh: 872c69e72e63964e
+/deepseek-ai-dsh-experimental-project-memory/use-this-package/project-resolution:
+  en: feba3b2b72a28dba
+  zh: ecf13b971b82245f
+/deepseek-ai-dsh-experimental-project-memory/use-this-package/entries:
+  en: 6935b59269dd8250
+  zh: ca37386d318a63f4
+/deepseek-ai-dsh-experimental-project-memory/use-this-package/remote-methods:
+  en: bca8dac5acd381a0
+  zh: ac2104e084993012
+/deepseek-ai-dsh-experimental-project-memory/use-this-package/what-success-and-failure-look-like:
+  en: b013e5deafd4d980
+  zh: 3540d4412976cb91
+/deepseek-ai-dsh-experimental-project-memory/understand-the-implementation:
+  en: 42b15ac6321706aa
+  zh: 6eb78656420aa552
+/deepseek-ai-dsh-experimental-project-memory/understand-the-implementation/design-philosophy:
+  en: c425ec8b65bc307b
+  zh: 261607c080d58ade
+/deepseek-ai-dsh-experimental-project-memory/understand-the-implementation/source-map:
+  en: 8b1bab4831f6c71a
+  zh: d027a4c7d30ed777
+/deepseek-ai-dsh-experimental-project-memory/further-exploration:
+  en: f0a3cbd2cd4b2b5b
+  zh: ba0bed0af948ca7b
+/deepseek-ai-dsh-experimental-project-memory/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-project-memory/model-experience/tool-schemas:
+  en: 3039bc5e7a796b21
+  zh: 6b7a9eaf69c9ea53
+/deepseek-ai-dsh-experimental-project-memory/model-experience/tool-schemas/what-the-model-sees:
+  en: 902b0f53c7af1abd
+  zh: e545ce4516d350d7
+/deepseek-ai-dsh-experimental-project-memory/model-experience/tool-schemas/token-effect:
+  en: 47f764c962e9dc3b
+  zh: 895d2aee627a8175
+/deepseek-ai-dsh-experimental-project-memory/model-experience/tool-schemas/kv-cache-effect:
+  en: 768b567694a7861d
+  zh: 858213268fffffaf
+/deepseek-ai-dsh-experimental-project-memory/model-experience/read-result:
+  en: ebd38733c0490428
+  zh: b45101c325efe784
+/deepseek-ai-dsh-experimental-project-memory/model-experience/read-result/what-the-model-sees:
+  en: 5776d039cc6558cd
+  zh: e80e10f8ffd98de8
+/deepseek-ai-dsh-experimental-project-memory/model-experience/read-result/token-effect:
+  en: d2ec7dba73c3a3f4
+  zh: 0e3602a923b483af
+/deepseek-ai-dsh-experimental-project-memory/model-experience/read-result/kv-cache-effect:
+  en: a71a56b59776d07b
+  zh: 0336039df8dafc8e
+/deepseek-ai-dsh-experimental-project-memory/model-experience/write-result:
+  en: e6518e0b0ea3d066
+  zh: 9927d9b964513f3b
+/deepseek-ai-dsh-experimental-project-memory/model-experience/write-result/what-the-model-sees:
+  en: ec4bdb708675e60d
+  zh: 66a37deb2c5470a0
+/deepseek-ai-dsh-experimental-project-memory/model-experience/write-result/token-effect:
+  en: 6ae6e853cddf2a36
+  zh: f1f6f7f3bf87068f
+/deepseek-ai-dsh-experimental-project-memory/model-experience/write-result/kv-cache-effect:
+  en: 45c20995b8ace59a
+  zh: 8852b839ad96fce2
+/deepseek-ai-dsh-experimental-project-memory/known-limitations-and-deferred-work:
+  en: 355643db86bd1ec5
+  zh: 231a97b778eb544e
+/deepseek-ai-dsh-experimental-project-memory/known-limitations-and-deferred-work/dev-note:
+  en: daa373c280681be8
+  zh: d7ba63b6d56133b1

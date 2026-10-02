@@ -2366,6 +2366,51 @@
       "doc": "docs/subsystems/product-telemetry.md",
       "symbol": "ProductTelemetryRecord",
       "source": "packages/host/product-telemetry-otel/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "WorktreeRecord",
+      "source": "packages/subagent/worktree-manager/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "WorktreeStatus",
+      "source": "packages/subagent/worktree-manager/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "WorktreeChanges",
+      "source": "packages/subagent/worktree-manager/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "ThreadStatusRow",
+      "source": "packages/experimental/threads/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "MemoryEntry",
+      "source": "packages/experimental/project-memory/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "WorktreeMergeCheckOptions",
+      "source": "packages/subagent/worktree-manager/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "WorktreeMergeCheck",
+      "source": "packages/subagent/worktree-manager/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "ThreadsLibraryRequest",
+      "source": "packages/experimental/threads/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/threads.md",
+      "symbol": "ThreadsLibrary",
+      "source": "packages/experimental/threads/src/types.ts"
     }
   ]
 }

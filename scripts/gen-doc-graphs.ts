@@ -850,6 +850,29 @@ const SERVICE_ROLES: ServiceRole[] = [
     consumers: ['tool-cordis'],
     note: 'Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport.',
   },
+  {
+    key: 'worktrees',
+    pkg: 'worktree-manager',
+    title: 'Git worktree lifecycle and intent registry',
+    mode: 'service',
+    consumers: ['subagent-thread-worktree', 'experimental-threads', 'experimental-tool-threads'],
+    note: 'Owns worktree creation, the append-only JSONL intent registry, the state machine, and orphan reconcile. The thread provider is its only writer; the Thread domain and the diff tool read records, commits and changes. It confines a child Session by giving it a working directory, not by mediating files, so a consumer must place a Session cwd and pass the record onward.',
+  },
+  {
+    key: 'threads',
+    pkg: 'experimental-threads',
+    title: 'Project Thread status and archival',
+    mode: 'service',
+    consumers: ['experimental-tool-threads'],
+    note: 'Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it.',
+  },
+  {
+    key: 'projectMemory',
+    pkg: 'experimental-project-memory',
+    title: 'Project-shared durable memory',
+    mode: 'service',
+    note: 'Stores a bounded entry set per Project Session on a storage domain and resolves a Thread to its Project through Session lineage. It has no in-process consumer outside its own package: agents reach it through the memory_read and memory_write tools and the browser through its Remote namespace.',
+  },
 ]
 
 function generatedHeader(title: string): string[] {

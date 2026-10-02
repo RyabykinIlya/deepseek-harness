@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for threads.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/threads.md
+/threads-and-projects:
+  en: 104a4ad03de0a3f9
+  zh: 097c0a5ee89b8815
+/threads-and-projects/worktrees:
+  en: e9fb75a88e590df5
+  zh: 71b9064ad1b63998
+/threads-and-projects/threads-projection:
+  en: 65b72a62a31245c3
+  zh: b74314e730e48baa
+/threads-and-projects/project-memory:
+  en: a13cfc0fcc1d465a
+  zh: 991299dc67ee27af
+/threads-and-projects/library:
+  en: fb44cfac45aad776
+  zh: 4658e6d29b899556
+/threads-and-projects/write-only-isolation:
+  en: ae3ee9e0c8aec62b
+  zh: 6c346a748fd34a03

@@ -43,6 +43,12 @@ kind: "package-group"
 | [`browser-use-runtime`](browser-use-runtime/README.zh.md) | 实验性提供方共享的 Session 浏览器资源 | — |
 | [`inspector`](inspector/README.zh.md) | 用于 Host 调试、Client Runtime 检查、网络采集与 Cordis 树的跨 realm CDP hub | `ctx.inspector` |
 | [`tool-agent-team`](tool-agent-team/README.zh.md) | 让模型创建、发消息与协调 teammate 的九个工具 | 按作用域注册工具到 `ctx.tools` |
+| [`threads`](threads/README.zh.md) | 仅写日志的 Thread 事件与按会话的 Thread 状态投影 | `ctx.threads` |
+| [`tool-threads`](tool-threads/README.zh.md) | 对会话 threads 投影的有界 `thread_status` 与 `thread_diff` 工具 | 在 `ctx.tools` 上注册全局工具 |
+| [`threads-preset`](threads-preset/README.zh.md) | Project 协调者与 Thread 执行者的 agent preset | — |
+| [`client-ui-threads`](client-ui-threads/README.zh.md) | Project 会话头部的 Thread 名单，以及可寻址的 Thread 聊天资源 | — |
+| [`project-memory`](project-memory/README.zh.md) | Project 的 Host 端共享记忆，以及 `memory_read` / `memory_write` 工具 | `ctx.projectMemory` |
+| [`threads-profile`](threads-profile/README.zh.md) | 基于 worktree 隔离的后台 Thread、状态工具与 Web 名单组合包 | — |
 | [`webworker-packer`](webworker-packer/README.zh.md) | 构建浏览器 worker 预览所消费的 gzip 压缩虚拟文件系统（VFS）镜像 | 库与 CLI（命令行界面），不使用 ctx key |
 | [`webworker-runtime`](webworker-runtime/README.zh.md) | 在专用浏览器 worker 中运行 harness 插件树 | 库与 worker 入口，不使用 ctx key |
 

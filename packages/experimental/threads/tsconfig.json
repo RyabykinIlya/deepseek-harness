@@ -1,0 +1,54 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../subagent/worktree-manager"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../deliverables/workspace-changes"
+    },
+    {
+      "path": "../../deliverables/tool-present"
+    }
+  ]
+}

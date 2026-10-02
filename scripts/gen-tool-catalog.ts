@@ -63,6 +63,8 @@ import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import * as ToolThreads from '@deepseek-ai/dsh-experimental-threads-tool'
+import * as ProjectMemoryTools from '@deepseek-ai/dsh-experimental-project-memory/tools'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
 import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
@@ -617,6 +619,35 @@ const TOOL_PACKAGES: ToolPackage[] = [
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
       'All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-experimental-threads-tool',
+    dir: 'tool-threads',
+    source: 'packages/experimental/tool-threads/src/index.ts',
+    requires: ['ctx.tools', 'a calling Agent owning the Project session', 'ctx.threads with the threads projection loaded'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // The tool registers from the tool registry alone, so the catalog can
+      // harvest its schema without the Threads domain; an unavailable
+      // projection is a runtime error, never a missing schema.
+      await ctx.plugin(ToolThreads)
+    },
+    note:
+      'Both tools read only Threads in the calling Project Session\'s own `threads` projection, and every result is bounded in bytes with an explicit omission line. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-experimental-project-memory',
+    dir: 'project-memory',
+    source: 'packages/experimental/project-memory/src/tools.ts',
+    requires: ['ctx.tools', 'ctx.projectMemory (execution time)', 'a calling Agent inside a Project'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // The tools resolve `projectMemory` at execution, so schema harvest
+      // needs only the tool registry.
+      await ctx.plugin(ProjectMemoryTools)
+    },
+    note:
+      'Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-todo',

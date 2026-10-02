@@ -16724,6 +16724,286 @@
       }
     },
     {
+      "key": "event:thread/created",
+      "kind": "event",
+      "event": "thread/created",
+      "surface": false,
+      "digest": "d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "baseSha",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "branch",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "label",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "threadId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "worktree",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "thread/created"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:thread/removed",
+      "kind": "event",
+      "event": "thread/removed",
+      "surface": false,
+      "digest": "5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "threadId",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "thread/removed"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:thread/status",
+      "kind": "event",
+      "event": "thread/status",
+      "surface": false,
+      "digest": "a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 11,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "commitsAhead",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "note",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "stopReason",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "threadId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "uncommitted",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "aborted"
+          },
+          {
+            "kind": "literal",
+            "value": "completed"
+          },
+          {
+            "kind": "literal",
+            "value": "error"
+          },
+          {
+            "kind": "literal",
+            "value": "max-tokens"
+          },
+          {
+            "kind": "literal",
+            "value": "refusal"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "thread/status"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:todo/write",
       "kind": "event",
       "event": "todo/write",
@@ -22398,6 +22678,13 @@
       "sources": []
     },
     {
+      "digest": "2696d79a14c6a0b4a405c5ce3ad1d412a3db64a318abb05cf420058109f5247a",
+      "names": [],
+      "sources": [
+        "packages/experimental/threads/src/types.ts:188"
+      ]
+    },
+    {
       "digest": "26c879bdd130e8b8683a6ce588414fad2244783d6573ca399fa0de184a2b0bb1",
       "names": [],
       "sources": []
@@ -22861,6 +23148,11 @@
       "sources": []
     },
     {
+      "digest": "4a561c111a78d4520e850c93795369ea169ff86abd082aee86c8fd38121a65aa",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "4a9bef9f27a942520cc2279ca7dd3082556e4bff543f66b5c0333e1bbed1cd86",
       "names": [
         "packages/subagent/subagent/src/continuation-messages.ts#AgentMessageSource"
@@ -22919,6 +23211,7 @@
         "packages/experimental/agent-team/src/types.ts#TeamId",
         "packages/experimental/agent-team/src/types.ts#TeamMessageId",
         "packages/experimental/agent-team/src/types.ts#TeamTaskId",
+        "packages/experimental/threads/src/types.ts#ThreadId",
         "packages/feedback/message-feedback/src/types.ts#MessageFeedbackVersion",
         "packages/goal/goal/src/types.ts#GoalId",
         "packages/interaction/commands/src/brand.ts#CommandId",
@@ -22944,6 +23237,7 @@
         "packages/experimental/agent-team/src/types.ts:20",
         "packages/experimental/agent-team/src/types.ts:32",
         "packages/experimental/agent-team/src/types.ts:8",
+        "packages/experimental/threads/src/types.ts:7",
         "packages/feedback/message-feedback/src/types.ts:14",
         "packages/goal/goal/src/types.ts:17",
         "packages/interaction/commands/src/brand.ts:31",
@@ -23228,6 +23522,11 @@
       "sources": []
     },
     {
+      "digest": "5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "5ebce1317eacd2c148456627a09668e927ee15c204f0643f5ea76b46b54a2647",
       "names": [],
       "sources": []
@@ -23489,6 +23788,11 @@
       ]
     },
     {
+      "digest": "6f8d7f09c727c525b16308df98f9a7690671b0170c4ef5874d2f8931b3d2d8c5",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "6f9e00383836275e46c0a9915767f9bb561be5fc30aae490174908a93e99a912",
       "names": [],
       "sources": []
@@ -23696,6 +24000,11 @@
       ]
     },
     {
+      "digest": "81894926d44288879ea47cc37db4e4161fcdffe3a426fd8e7ddc4711beb5d23d",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "82470020b5bfcb1a843e2aa05602af7d37df99e82d01f015c7c589ba054fd89d",
       "names": [],
       "sources": []
@@ -23781,6 +24090,11 @@
     },
     {
       "digest": "8620189c8e33582708ece48fd2d20dc4d57912486a17bdbb9aea4c44f7018062",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "866f7b2dbdc5b421eab3e629312d1c839b75c259633b4b43b50d23bac44d92a0",
       "names": [],
       "sources": []
     },
@@ -24007,6 +24321,13 @@
       ]
     },
     {
+      "digest": "98877ffa4b1729e89013ecc5ad53d0a930b6c645588c9c483d70b4ed7b7737b4",
+      "names": [],
+      "sources": [
+        "packages/experimental/threads/src/types.ts:195"
+      ]
+    },
+    {
       "digest": "9890113e97dd3541787bfe6704f2b223d3a890b5325ca0acae2b0398909b413e",
       "names": [],
       "sources": [
@@ -24150,6 +24471,11 @@
     },
     {
       "digest": "a16e567c8cd2c55cf1e911aed3c200c4e1f6febb1459ff2a9e7adf159afb68cb",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580",
       "names": [],
       "sources": []
     },
@@ -24864,6 +25190,11 @@
       "sources": []
     },
     {
+      "digest": "d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "d63b8b8ffad9c02fd80c43a17df4f240c1fe8118ecca9de34f9d5871838ab5b9",
       "names": [],
       "sources": []
@@ -25007,6 +25338,13 @@
       "digest": "e31572180d6b28b73f073ad30ae19d5d82982d3daf984723984e23da1e7c459a",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1",
+      "names": [],
+      "sources": [
+        "packages/experimental/threads/src/types.ts:203"
+      ]
     },
     {
       "digest": "e3e77b26f0148755a505f5b8ea843a3be117827d4703bb5754d9dc8ddbef521f",
@@ -25340,6 +25678,11 @@
     },
     {
       "digest": "fab35c4520883c0d69e42d079c9f543fc5ac7a2d15b537b5572fcd99059c7018",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "fb4c77fdfcb192a9b3d72af564e5901b3b5a146f9f65f5b63bb840148ab699e5",
       "names": [],
       "sources": []
     },

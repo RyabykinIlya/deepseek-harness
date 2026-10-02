@@ -229,6 +229,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // through a hashed chunk. The committed bin.js is the link target pnpm can
   // resolve at install time, before the build produces lib/bin.js.
   '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
+  // The memory tool plugin is a Loader row of its own beside the service root.
+  '@deepseek-ai/dsh-experimental-project-memory': ['lib/tools.js'],
   // The headless entry and its startup row share the JSON projection code
   // through a hashed tsdown chunk; both import it by relative path.
   '@deepseek-ai/dsh-headless': ['lib/json-stream-*.js'],

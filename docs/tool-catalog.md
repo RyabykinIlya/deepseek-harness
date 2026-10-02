@@ -41,6 +41,8 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
+| `@deepseek-ai/dsh-experimental-threads-tool` | `thread_diff`, `thread_status` | `ctx.tools`, `a calling Agent owning the Project session`, `ctx.threads with the threads projection loaded` | `tool/call`, `tool/result` | - | Both tools read only Threads in the calling Project Session's own `threads` projection, and every result is bounded in bytes with an explicit omission line. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only. |
+| `@deepseek-ai/dsh-experimental-project-memory` | `memory_read`, `memory_write` | `ctx.tools`, `ctx.projectMemory (execution time)`, `a calling Agent inside a Project` | `tool/call`, `tool/result` | - | Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
@@ -2504,6 +2506,127 @@ Wait for the next teammate status, mailbox, or shared-task change after this cal
 Source: [`packages/experimental/tool-agent-team/src/index.ts`](../packages/experimental/tool-agent-team/src/index.ts)
 
 All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.
+
+<a id="deepseek-aidsh-experimental-threads-tool"></a>
+
+## `@deepseek-ai/dsh-experimental-threads-tool`
+
+### `thread_diff`
+
+Inspect what Threads committed on their own branches. With thread_id and without path: base and head commits, commit subjects (newest first), committed files with +/- line counts, the uncommitted count, and how to merge the branch. With thread_id and path: the committed patch of that one file. Without thread_id: an overview of every Thread of this Project that has a live worktree, to use before merging several Threads: per Thread commits, files and uncommitted counts; committed paths touched by two or more Threads; whether each Thread merges cleanly into the Project checkout's HEAD and whether overlapping Threads conflict with each other (needs git 2.38+; otherwise only overlaps are shown); and a suggested merge order. The overview reads committed work only and skips Threads whose worktree is missing or archived, naming the reason. Only Threads from thread_status are accepted. Output is bounded and says what was omitted. Read-only: merging stays your decision, and the work is not in the Project checkout until you merge the branch.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "thread_id": {
+      "type": "string",
+      "description": "Thread id as listed by thread_status. Omit to get the overview across all Threads (call it before merging several Threads)."
+    },
+    "path": {
+      "type": "string",
+      "description": "Repo-relative file to show the committed patch for. Requires thread_id. Omit for the summary."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+### `thread_status`
+
+List the background Threads this Project started, one line per Thread in creation order: id, state, label, branch, commits ahead and uncommitted counts, and the start of the closing message. State is running, idle (not running, no outcome yet), or the last outcome: completed, aborted, error, max-tokens, refusal. Threads report back on their own when they finish, so poll only to survey outstanding work. Output is bounded and says how many Threads were omitted; filter by status to narrow it. A Thread's work lives on its branch until you merge it; use thread_diff to inspect it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Optional exact state filter. Omit for every state.",
+      "enum": [
+        "running",
+        "idle",
+        "completed",
+        "aborted",
+        "error",
+        "max-tokens",
+        "refusal"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Rows to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+Both tools read only Threads in the calling Project Session's own `threads` projection, and every result is bounded in bytes with an explicit omission line. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.
+
+<a id="deepseek-aidsh-experimental-project-memory"></a>
+
+## `@deepseek-ai/dsh-experimental-project-memory`
+
+### `memory_read`
+
+Read the Project memory: short facts that every Thread of this Project shares, newest first. Read it when you start a task, before you decide something another Thread may already have settled. Optional query keeps entries containing that text, ignoring case.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Keep only entries containing this text, ignoring case."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Entries to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+### `memory_write`
+
+Add, update, or remove one entry of the Project memory, which every Thread of this Project reads. Write a decision other Threads will need: an agreed constraint, a date, who to ask, a convention you discovered. Do not store file contents, logs, or transient progress. Keep each entry to one short, self-contained fact. Returns the entry id; use it to update or remove the entry later.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "add needs text; update needs id and text; remove needs id.",
+      "enum": [
+        "add",
+        "update",
+        "remove"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "description": "Entry id from memory_read or a previous memory_write."
+    },
+    "text": {
+      "type": "string",
+      "description": "Entry text for add or update."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line.
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

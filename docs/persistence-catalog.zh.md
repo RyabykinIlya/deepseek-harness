@@ -67,6 +67,9 @@
 | `event:team/message/delivered` | event | `48f9c19417a1abbedfa59f4667bba36b93ac2db407adf5e84cb3ba0de30942cb` | [`{ type: "team/message/delivered" }`](#persistence-type-sha256-48f9c19417a1abbedfa59f4667bba36b93ac2db407adf5e84cb3ba0de30942cb) |
 | `event:team/message/queued` | event | `21fb6a90d5068f6a0003b7ab316ed2f56342477146a65c00db0f13c4d8df667d` | [`{ type: "team/message/queued" }`](#persistence-type-sha256-21fb6a90d5068f6a0003b7ab316ed2f56342477146a65c00db0f13c4d8df667d) |
 | `event:team/task` | event | `d595ec73b32b016a6055333c67a5d646032b22e672da1d4a09c5b1ae398a093a` | [`{ type: "team/task" }`](#persistence-type-sha256-d595ec73b32b016a6055333c67a5d646032b22e672da1d4a09c5b1ae398a093a) |
+| `event:thread/created` | event | `d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2` | [`{ type: "thread/created" }`](#persistence-type-sha256-d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2) |
+| `event:thread/removed` | event | `5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83` | [`{ type: "thread/removed" }`](#persistence-type-sha256-5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83) |
+| `event:thread/status` | event | `a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580` | [`{ type: "thread/status" }`](#persistence-type-sha256-a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580) |
 | `event:todo/write` | event | `b978cff734e62143eb56c9125423ec275405eda969802d42aaf73ecb987d3b26` | [`{ type: "todo/write" }`](#persistence-type-sha256-b978cff734e62143eb56c9125423ec275405eda969802d42aaf73ecb987d3b26) |
 | `event:tool-workflow/agent-end` | event | `babf9ee4d1af62bf6c3a8103737f7a5e4e78ce179be835ce05a38803e15884b7` | [`{ type: "tool-workflow/agent-end" }`](#persistence-type-sha256-babf9ee4d1af62bf6c3a8103737f7a5e4e78ce179be835ce05a38803e15884b7) |
 | `event:tool-workflow/agent-start` | event | `5f26a6c20b37632f8f57729d171c671def4683d994ac6257a8dffcd855101627` | [`{ type: "tool-workflow/agent-start" }`](#persistence-type-sha256-5f26a6c20b37632f8f57729d171c671def4683d994ac6257a8dffcd855101627) |
@@ -157,7 +160,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:431`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:439`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:462`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:493`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:431`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:439`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:462`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:506`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -1022,6 +1025,62 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 类型：[TeamId](subsystems/agent-team.zh.md) · [TeamTaskSnapshot](subsystems/agent-team.zh.md)
 
 来源：[`packages/experimental/agent-team/src/types.ts:234`](../packages/experimental/agent-team/src/types.ts)
+
+### `thread/*`
+
+<a id="threadcreated--log-only"></a>
+
+#### `thread/created` — log-only
+
+```ts persistence-catalog
+/**
+ * A Thread came into existence. Carries the whole post-create row, so the
+ * fold is trivially cheap and every served value self-describing. Appended
+ * with `ignorable: true`: a build that does not know the type skips it.
+ */
+'thread/created': { threadId: ThreadId; label: string; worktree?: string; branch?: string; baseSha?: string }
+```
+
+类型：[ThreadId](subsystems/threads.zh.md)
+
+来源：[`packages/experimental/threads/src/types.ts:188`](../packages/experimental/threads/src/types.ts)
+
+<a id="threadremoved--log-only"></a>
+
+#### `thread/removed` — log-only
+
+```ts persistence-catalog
+/** A Thread was archived. The fold drops the row; branch and session are kept. */
+'thread/removed': { threadId: ThreadId }
+```
+
+类型：[ThreadId](subsystems/threads.zh.md)
+
+来源：[`packages/experimental/threads/src/types.ts:203`](../packages/experimental/threads/src/types.ts)
+
+<a id="threadstatus--log-only"></a>
+
+#### `thread/status` — log-only
+
+```ts persistence-catalog
+/**
+ * A durable status report for one Thread. Field-wise partial update: a
+ * field absent from the event is left untouched, so a worktree-facts report
+ * never erases a recorded outcome. Log-only and `ignorable: true`; it is
+ * never joined into the model-visible surface.
+ */
+'thread/status': {
+  threadId: ThreadId
+  stopReason?: ThreadStopReason
+  note?: string
+  commitsAhead?: number
+  uncommitted?: number
+}
+```
+
+类型：[ThreadId](subsystems/threads.zh.md)
+
+来源：[`packages/experimental/threads/src/types.ts:195`](../packages/experimental/threads/src/types.ts)
 
 ### `todo/*`
 
@@ -2229,6 +2288,14 @@ SHA-256: `383cf73ae4748e5beb281ae74857ba1ffb92ae01075b9fbf51af78b666007a8f`
 
 `"recall"`
 
+<a id="persistence-type-sha256-4a561c111a78d4520e850c93795369ea169ff86abd082aee86c8fd38121a65aa"></a>
+
+### `"refusal"`
+
+SHA-256: `4a561c111a78d4520e850c93795369ea169ff86abd082aee86c8fd38121a65aa`
+
+`"refusal"`
+
 <a id="persistence-type-sha256-fab35c4520883c0d69e42d079c9f543fc5ac7a2d15b537b5572fcd99059c7018"></a>
 
 ### `"rejected"`
@@ -2604,6 +2671,30 @@ SHA-256: `f9cfc89e8fe085b4fcc9cd32b74b6f103608c54d7d8cd97b47c01de34f252ba3`
 SHA-256: `5abab3a27fd2736660ecddd94b28d6bbf114986dd894880153bd1be3ccacb563`
 
 `"text-delta"`
+
+<a id="persistence-type-sha256-fb4c77fdfcb192a9b3d72af564e5901b3b5a146f9f65f5b63bb840148ab699e5"></a>
+
+### `"thread/created"`
+
+SHA-256: `fb4c77fdfcb192a9b3d72af564e5901b3b5a146f9f65f5b63bb840148ab699e5`
+
+`"thread/created"`
+
+<a id="persistence-type-sha256-81894926d44288879ea47cc37db4e4161fcdffe3a426fd8e7ddc4711beb5d23d"></a>
+
+### `"thread/removed"`
+
+SHA-256: `81894926d44288879ea47cc37db4e4161fcdffe3a426fd8e7ddc4711beb5d23d`
+
+`"thread/removed"`
+
+<a id="persistence-type-sha256-6f8d7f09c727c525b16308df98f9a7690671b0170c4ef5874d2f8931b3d2d8c5"></a>
+
+### `"thread/status"`
+
+SHA-256: `6f8d7f09c727c525b16308df98f9a7690671b0170c4ef5874d2f8931b3d2d8c5`
+
+`"thread/status"`
 
 <a id="persistence-type-sha256-8067b0d232c350f189738e60ee3c9939d46ca3b32b45db5525237b077893f649"></a>
 
@@ -5271,6 +5362,8 @@ SHA-256: `5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78`
 
 <a id="persistence-type-packagesexperimentalagent-teamsrctypeststeamtaskid"></a>
 
+<a id="persistence-type-packagesexperimentalthreadssrctypeststhreadid"></a>
+
 <a id="persistence-type-packagesfeedbackmessage-feedbacksrctypestsmessagefeedbackversion"></a>
 
 <a id="persistence-type-packagesgoalgoalsrctypestsgoalid"></a>
@@ -5323,6 +5416,8 @@ SHA-256: `5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78`
 
 <a id="persistence-type-teamtaskid"></a>
 
+<a id="persistence-type-threadid"></a>
+
 <a id="persistence-type-toolcallid"></a>
 
 <a id="persistence-type-webhookdeliveryid"></a>
@@ -5337,7 +5432,7 @@ SHA-256: `5d03ba38734809bcbd2a55221bd938b3b3fc34b49bb686c6113e9e4931e3aa78`
 
 SHA-256: `4cd48f3e5108bd6ebedf7301c3638839b8b2b9db8dbd493974177fbdeb91a01b`
 
-来源：[`packages/api/session-controller/src/types.ts:398`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:20`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:14`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:398`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:20`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/threads/src/types.ts:7`](../packages/experimental/threads/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:14`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
 
 `string`
 
@@ -5458,6 +5553,20 @@ SHA-256: `fd0d91a1f9dd2efb8959bdf5e07f8f0a98b1cdfa38ce8d4732ebde0b44c3abd4`
 - `"in_progress"`
 - `"pending"`
 
+<a id="persistence-type-sha256-866f7b2dbdc5b421eab3e629312d1c839b75c259633b4b43b50d23bac44d92a0"></a>
+
+### `union (5 variants)`
+
+SHA-256: `866f7b2dbdc5b421eab3e629312d1c839b75c259633b4b43b50d23bac44d92a0`
+
+以下类型之一：
+
+- `"aborted"`
+- `"completed"`
+- `"error"`
+- `"max-tokens"`
+- `"refusal"`
+
 <a id="persistence-type-sha256-62e6a429ff3f390a46ac39fb468692032f42936ca0db19b53454184189401379"></a>
 
 ### `union (6 variants)`
@@ -5571,6 +5680,22 @@ SHA-256: `e4c18e294232c3ba6c9f1999f168263cc55956147cfe4121720899be8e52edd1`
 | `name` | 必需 | `string` |
 | `step` | 必需 | `number` |
 | `turn` | 必需 | `number` |
+
+<a id="persistence-type-sha256-2696d79a14c6a0b4a405c5ce3ad1d412a3db64a318abb05cf420058109f5247a"></a>
+
+### `{ baseSha?, branch?, label, threadId, … }`
+
+SHA-256: `2696d79a14c6a0b4a405c5ce3ad1d412a3db64a318abb05cf420058109f5247a`
+
+来源：[`packages/experimental/threads/src/types.ts:188`](../packages/experimental/threads/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `baseSha` | 可选 | `string` |
+| `branch` | 可选 | `string` |
+| `label` | 必需 | `string` |
+| `threadId` | 必需 | `string` |
+| `worktree` | 可选 | `string` |
 
 <a id="persistence-type-sha256-1528539c63db8b23506f0209a99ce77d8ad138adfbfcee3d4769b7382d93756c"></a>
 
@@ -5729,6 +5854,22 @@ SHA-256: `5b6fb1f226ff56402db08a6aae82af76100b14056271875f69ec526a1ae05d51`
 | `kind` | 必需 | [`union (2 variants)`](#persistence-type-sha256-1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92) |
 | `sourceEventSeq` | 可选 | `number` |
 | `text` | 可选 | `string` |
+
+<a id="persistence-type-sha256-98877ffa4b1729e89013ecc5ad53d0a930b6c645588c9c483d70b4ed7b7737b4"></a>
+
+### `{ commitsAhead?, note?, stopReason?, threadId, … }`
+
+SHA-256: `98877ffa4b1729e89013ecc5ad53d0a930b6c645588c9c483d70b4ed7b7737b4`
+
+来源：[`packages/experimental/threads/src/types.ts:195`](../packages/experimental/threads/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `commitsAhead` | 可选 | `number` |
+| `note` | 可选 | `string` |
+| `stopReason` | 可选 | [`union (5 variants)`](#persistence-type-sha256-866f7b2dbdc5b421eab3e629312d1c839b75c259633b4b43b50d23bac44d92a0) |
+| `threadId` | 必需 | `string` |
+| `uncommitted` | 可选 | `number` |
 
 <a id="persistence-type-sha256-ca59530d1a4f3e191b4032bc4a20eded0d827db8b5a7efb27b3af9e9b456c6f2"></a>
 
@@ -7605,6 +7746,18 @@ SHA-256: `a40d12070f6f4a124f32fb3cc86e7857554702e32f0eda3080a25c4b9ac9b18c`
 | `teamId` | 必需 | `string` |
 | `version` | 必需 | `2` |
 
+<a id="persistence-type-sha256-e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1"></a>
+
+### `{ threadId }`
+
+SHA-256: `e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1`
+
+来源：[`packages/experimental/threads/src/types.ts:203`](../packages/experimental/threads/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `threadId` | 必需 | `string` |
+
 <a id="persistence-type-sha256-79ddc907312f97cf9553d4841e8b3fc937097bd8d97900a790efad3c05255e99"></a>
 
 ### `{ todos }`
@@ -8469,6 +8622,54 @@ SHA-256: `95080295115fbd83544520ba247b68a03790131f6a2eac323d388758cb542f65`
 | `index` | 必需 | `number` |
 | `text` | 必需 | `string` |
 | `type` | 必需 | `"text-delta"` |
+
+<a id="persistence-type-sha256-d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2"></a>
+
+<a id="persistence-type-eventthreadcreated"></a>
+
+### `{ type: "thread/created" }`
+
+SHA-256: `d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2`
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `data` | 必需 | [`{ baseSha?, branch?, label, threadId, … }`](#persistence-type-sha256-2696d79a14c6a0b4a405c5ce3ad1d412a3db64a318abb05cf420058109f5247a) |
+| `ignorable` | 可选 | `true` |
+| `seq` | 必需 | `number` |
+| `time` | 必需 | `number` |
+| `type` | 必需 | `"thread/created"` |
+
+<a id="persistence-type-sha256-5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83"></a>
+
+<a id="persistence-type-eventthreadremoved"></a>
+
+### `{ type: "thread/removed" }`
+
+SHA-256: `5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83`
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `data` | 必需 | [`{ threadId }`](#persistence-type-sha256-e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1) |
+| `ignorable` | 可选 | `true` |
+| `seq` | 必需 | `number` |
+| `time` | 必需 | `number` |
+| `type` | 必需 | `"thread/removed"` |
+
+<a id="persistence-type-sha256-a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580"></a>
+
+<a id="persistence-type-eventthreadstatus"></a>
+
+### `{ type: "thread/status" }`
+
+SHA-256: `a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580`
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `data` | 必需 | [`{ commitsAhead?, note?, stopReason?, threadId, … }`](#persistence-type-sha256-98877ffa4b1729e89013ecc5ad53d0a930b6c645588c9c483d70b4ed7b7737b4) |
+| `ignorable` | 可选 | `true` |
+| `seq` | 必需 | `number` |
+| `time` | 必需 | `number` |
+| `type` | 必需 | `"thread/status"` |
 
 <a id="persistence-type-sha256-b978cff734e62143eb56c9125423ec275405eda969802d42aaf73ecb987d3b26"></a>
 

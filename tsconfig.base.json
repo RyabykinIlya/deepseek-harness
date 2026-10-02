@@ -316,10 +316,19 @@
       "@deepseek-ai/dsh-sdk-client": ["./packages/sdk/client/src"],
       "@deepseek-ai/dsh-sdk-protocol": ["./packages/sdk/protocol/src"],
       "@deepseek-ai/dsh-sdk-jsonrpc-server": ["./packages/sdk/server/src"],
+      // The Threads packages carry names the generated aliases below cannot
+      // derive from their directories, so they stay hand-written.
+      "@deepseek-ai/dsh-experimental-threads": ["./packages/experimental/threads/src"],
+      "@deepseek-ai/dsh-experimental-threads-profile": ["./packages/experimental/threads-profile/src"],
+      "@deepseek-ai/dsh-experimental-threads-preset": ["./packages/experimental/threads-preset/src"],
+      "@deepseek-ai/dsh-experimental-client-ui-threads": ["./packages/experimental/client-ui-threads/src"],
       "@deepseek-ai/dsh-experimental-agent-team": ["./packages/experimental/agent-team/src"],
       "@deepseek-ai/dsh-experimental-auto-review": ["./packages/experimental/auto-review/src"],
       "@deepseek-ai/dsh-experimental-agent-team-profile": ["./packages/experimental/agent-team-profile/src"],
       "@deepseek-ai/dsh-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
+      "@deepseek-ai/dsh-experimental-threads-tool": ["./packages/experimental/tool-threads/src"],
+      "@deepseek-ai/dsh-experimental-project-memory": ["./packages/experimental/project-memory/src"],
+      "@deepseek-ai/dsh-experimental-project-memory/tools": ["./packages/experimental/project-memory/src/tools.ts"],
       "@deepseek-ai/dsh-experimental-webworker-runtime": ["./packages/experimental/webworker-runtime/src"],
       "@deepseek-ai/dsh-experimental-webworker-packer": ["./packages/experimental/webworker-packer/src"],
       "@deepseek-ai/dsh-experimental-inspector": ["./packages/experimental/inspector/src"],
@@ -497,6 +506,7 @@
       "@deepseek-ai/dsh-subagent-fork-in-process": ["./packages/subagent/subagent-fork-in-process/src"],
       "@deepseek-ai/dsh-subagent-in-process-driver": ["./packages/subagent/subagent-in-process-driver/src"],
       "@deepseek-ai/dsh-subagent-spawn-in-process": ["./packages/subagent/subagent-spawn-in-process/src"],
+      "@deepseek-ai/dsh-subagent-thread-worktree": ["./packages/subagent/subagent-thread-worktree/src"],
       "@deepseek-ai/dsh-subprocess": ["./packages/subprocess/subprocess/src"],
       "@deepseek-ai/dsh-subprocess-local": ["./packages/subprocess/subprocess-local/src"],
       "@deepseek-ai/dsh-subprocess-ssh": ["./packages/ssh/subprocess-ssh/src"],
@@ -554,7 +564,8 @@
       "@deepseek-ai/dsh-workflow-ptc": ["./packages/workflow/workflow-ptc/src"],
       "@deepseek-ai/dsh-workspace": ["./packages/workspace/workspace/src"],
       "@deepseek-ai/dsh-workspace/invariant": ["./packages/workspace/workspace/src/invariant.ts"],
-      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"]
+      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"],
+      "@deepseek-ai/dsh-worktree-manager": ["./packages/subagent/worktree-manager/src"]
       // END generated package aliases
     }
   }

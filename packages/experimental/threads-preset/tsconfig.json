@@ -1,0 +1,39 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../core/system-prompt"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../tool-threads"
+    },
+    {
+      "path": "../project-memory"
+    },
+    {
+      "path": "../../subagent/tool-subagent"
+    },
+    {
+      "path": "../../subagent/tool-subagent-control"
+    },
+    {
+      "path": "../../../vendor/include"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    }
+  ]
+}

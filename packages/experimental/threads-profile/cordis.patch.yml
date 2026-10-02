@@ -1,0 +1,68 @@
+# Experimental Threads profile layer. Apply after dsh-web-app, whose agent-preset
+# registry and `standard` preset the Threads presets extend.
+#
+# This layer only INSERTS rows. It repoints and disables nothing the base layers
+# ship, so a session on any ordinary preset gets exactly the tools and the
+# `subagent` provider it gets without this bundle. Project behaviour lives in two
+# agent presets (`project`, the coordinator, and `project-thread`, the worker), and
+# only a session composed from one of them sees a Thread tool or the `thread`
+# provider.
+- insert:
+    # One worktree per Thread plus the intent sidecar that makes them recoverable after
+    # a crash. The root must stay outside any registered checkout; this states the same
+    # `~/.dsh/worktrees` the plugin defaults to, so a relocated harness home keeps its
+    # worktrees instead of scattering them under the real home directory.
+    - id: worktree-manager
+      name: '@deepseek-ai/dsh-worktree-manager'
+      config:
+        worktreeRoot: !!js dshHomePath('worktrees')
+        pruneOnStart: true
+
+    # The `threads` Session projection: the log-only Thread events plus the durable
+    # status read model the other rows in this layer report into.
+    - id: threads
+      name: '@deepseek-ai/dsh-experimental-threads'
+
+    # The worktree-isolated continuable backend. `providerName` is the name the
+    # `project` preset's `subagent` row delegates to; `childAgentPreset` is the preset
+    # id every Thread child is composed from, so a Thread gets the worker contract and
+    # none of the coordinator tools.
+    - id: subagent-thread-worktree
+      name: '@deepseek-ai/dsh-subagent-thread-worktree'
+      config:
+        providerName: thread
+        branchPerThread: true
+        branchTemplate: dsh/thread-{{id}}
+        childAgentPreset: project-thread
+
+    # The browser half of the same rows. Its Host entry is inert, so a headless profile
+    # mounts this row without needing a Web server. The Project preset id is the
+    # client's own default; a client row's config never reaches the browser.
+    - id: ui-threads
+      name: '@deepseek-ai/dsh-experimental-client-ui-threads'
+
+    # The Project memory service, plus the tools rows the presets mount from it. It
+    # takes `storageDomain` and `sessions` from the base layers and adds no tool of its
+    # own; `memory_read` and `memory_write` exist only in the two Threads presets.
+    - id: project-memory
+      name: '@deepseek-ai/dsh-experimental-project-memory'
+
+    # The two agent presets. `basePreset` names the preset both extend, so a Project and
+    # its Threads keep the ordinary tools (shell, files, skills) the Web agent plane only
+    # provides through presets; leave it out when those tools are global rows instead.
+    # `workerMaxDepth: 2` lets a Thread start its own helpers: a Thread is one level below
+    # its Project, and the Host default cap of 1 would reject them.
+    - id: threads-preset
+      name: '@deepseek-ai/dsh-experimental-threads-preset'
+      config:
+        id: project
+        workerId: project-thread
+        provider: thread
+        basePreset: standard
+        workerMaxDepth: 2
+        checkIn: milestones
+        spawn: ask
+        mergePolicy: ask
+        tools:
+          defaultLimit: 20
+          maxLimit: 100

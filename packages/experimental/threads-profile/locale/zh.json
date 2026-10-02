@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "线程",
+    "description": "让每个后台线程运行在各自的 git worktree 中，并在一处读取其状态。"
+  }
+}

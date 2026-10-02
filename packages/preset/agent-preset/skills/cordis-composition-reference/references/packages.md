@@ -185,13 +185,18 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp` | yes | Experimental per-Session Chromium browser tools through @playwright/mcp |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | yes | Experimental Stagehand browser tools with separately configured native models |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | no | Web Agent Teams roster, task board, and teammate navigation |
+| `@deepseek-ai/dsh-experimental-client-ui-threads` | no | Session-header Thread roster for a Project Session, and the addressed Thread chat resource |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | no | Record speech and insert editable text into the conversation draft |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp` | yes | Experimental computer use through an installed Cua Driver MCP executable |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | no | Experimental computer-use provider embedding the Cua Driver native npm SDK |
 | `@deepseek-ai/dsh-experimental-inspector` | yes | Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection |
+| `@deepseek-ai/dsh-experimental-project-memory` | yes | Host-side shared memory for a Project and the memory_read / memory_write tools |
 | `@deepseek-ai/dsh-experimental-ptc-runtime-python` | yes | CPython subprocess implementation of the DeepSeek Harness PTC execution seam |
 | `@deepseek-ai/dsh-experimental-speech-to-text` | yes | Experimental speech recognition with independently selectable providers |
 | `@deepseek-ai/dsh-experimental-speech-to-text-sensevoice` | yes | Local SenseVoice ONNX transcription with a managed sherpa-onnx process |
+| `@deepseek-ai/dsh-experimental-threads` | yes | Log-only Thread events and the per-session threads projection for a Project Session |
+| `@deepseek-ai/dsh-experimental-threads-preset` | yes | The Project and Thread agent presets: a coordinator that starts worktree-isolated Threads and a worker contract for the Threads themselves |
+| `@deepseek-ai/dsh-experimental-threads-tool` | yes | Bounded thread_status and thread_diff tools over the per-session threads projection |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | yes | Scoped model-facing Agent Teams tools over ctx.agentTeams |
 
 ## extensions
@@ -438,8 +443,10 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-subagent-dsh-sdk` | yes | Out-of-process SDK subagent backend: drives a child DeepSeek Harness runtime subprocess over stdio JSON-RPC through the TypeScript SDK client |
 | `@deepseek-ai/dsh-subagent-fork-in-process` | yes | In-process fork subagent backend: runs a child agent seeded with a prefix of the parent's log |
 | `@deepseek-ai/dsh-subagent-spawn-in-process` | yes | In-process spawn subagent backend: runs a fresh child agent on ctx.agents |
+| `@deepseek-ai/dsh-subagent-thread-worktree` | yes | Worktree-isolated continuable subagent backend: every child runs in its own git worktree |
 | `@deepseek-ai/dsh-tool-subagent` | yes | Model-facing subagent delegation tool over the ctx.subagents seam |
 | `@deepseek-ai/dsh-tool-subagent-control` | no | Globally named send_message, interrupt_agent, and list_agents tools over ctx.subagents continuations |
+| `@deepseek-ai/dsh-worktree-manager` | yes | Host service that manages git worktrees for background Threads (ctx.worktrees) |
 
 ## subprocess
 

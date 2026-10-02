@@ -1,0 +1,85 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/threads/README.md
+/:
+  en: 3bbcea422ed647b1
+  zh: 061a0d037c061906
+/deepseek-ai-dsh-experimental-threads:
+  en: 216f8fb47bef8c38
+  zh: 6f228c10e8f386b4
+/deepseek-ai-dsh-experimental-threads/summary:
+  en: 8d88141bcc71ae1f
+  zh: d50727781f6ab4f2
+/deepseek-ai-dsh-experimental-threads/table-of-contents:
+  en: 76368b6b1da79c80
+  zh: 52384aee991ac542
+/deepseek-ai-dsh-experimental-threads/use-this-package:
+  en: e7179d8c0a067598
+  zh: ca0198ba501f5048
+/deepseek-ai-dsh-experimental-threads/use-this-package/when-to-choose-it:
+  en: 8b784611254e1923
+  zh: 11e758582a5ddabd
+/deepseek-ai-dsh-experimental-threads/use-this-package/status-rows:
+  en: 96300a053db848b8
+  zh: 2327160ea844e761
+/deepseek-ai-dsh-experimental-threads/use-this-package/liveness:
+  en: 478db702c6541c38
+  zh: a4f6ade0c03dd4f1
+/deepseek-ai-dsh-experimental-threads/use-this-package/reading-thread-status:
+  en: 843f6e09616b932c
+  zh: 958efb3aed422b00
+/deepseek-ai-dsh-experimental-threads/use-this-package/thread-events:
+  en: 3a285b7cc21db708
+  zh: 6dd8f8ed26937cfe
+/deepseek-ai-dsh-experimental-threads/use-this-package/archive-a-thread:
+  en: 32b96ab49a2f0d36
+  zh: 5763016a637d7819
+/deepseek-ai-dsh-experimental-threads/use-this-package/configuration:
+  en: 93c610efa91c76b7
+  zh: 58ff49b9fa622d00
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation:
+  en: ee4615a04fa6503d
+  zh: ee2c5fb2204a43cf
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/design-philosophy:
+  en: 46db76de71c36b56
+  zh: 062163b7d11804ea
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/source-map:
+  en: ca0ce1f73a18207c
+  zh: 3ffebb944b3cf1f0
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/merge-extension-not-modification:
+  en: f404a4aadccab436
+  zh: 346c6b0b220f52f3
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/merging-status-reports:
+  en: 24ec080306ffb496
+  zh: 4eceece8ea324bbf
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/fold-totality:
+  en: 4d9f1021b6c359d9
+  zh: ffaff66fd637f335
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/registration-and-capability-absence:
+  en: 56754216e5144244
+  zh: 3532e54693c3044e
+/deepseek-ai-dsh-experimental-threads/understand-the-implementation/durability:
+  en: bd46b45624fed6c5
+  zh: 32c723a5bfc9395b
+/deepseek-ai-dsh-experimental-threads/model-experience:
+  en: 215e7ba838619b7b
+  zh: 215e7ba838619b7b
+/deepseek-ai-dsh-experimental-threads/model-experience/thread-lifecycle-events:
+  en: 69938ce243c39ac4
+  zh: 69938ce243c39ac4
+/deepseek-ai-dsh-experimental-threads/model-experience/thread-lifecycle-events/what-the-model-sees:
+  en: c28f8636e6cb40eb
+  zh: 108c637ceca725c1
+/deepseek-ai-dsh-experimental-threads/model-experience/thread-lifecycle-events/token-effect:
+  en: 44c86ad595f73969
+  zh: 5234599b440cea52
+/deepseek-ai-dsh-experimental-threads/model-experience/thread-lifecycle-events/kv-cache-effect:
+  en: e7ba08477bf22c4e
+  zh: f9dcb2f77856fd34
+/deepseek-ai-dsh-experimental-threads/known-limitations-and-deferred-work:
+  en: 86cdb99c561c1501
+  zh: 38b74eb53ff190a3
+/deepseek-ai-dsh-experimental-threads/known-limitations-and-deferred-work/dev-note:
+  en: 2aef3c73598a5d46
+  zh: 467f5057c3a060bb

@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/threads-profile/README.md
+/:
+  en: 3e9174c75476bd0d
+  zh: fdce01bd40c03f8c
+/deepseek-ai-dsh-experimental-threads-profile:
+  en: a8b66b7a521aefbc
+  zh: 6f27fb75c22e9b25
+/deepseek-ai-dsh-experimental-threads-profile/summary:
+  en: 2a4d41f5af57e4e0
+  zh: ccf63cec860ecdd7
+/deepseek-ai-dsh-experimental-threads-profile/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-experimental-threads-profile/use-this-package:
+  en: bbff250eba0f1b89
+  zh: 0a618f05cc88ee2b
+/deepseek-ai-dsh-experimental-threads-profile/use-this-package/install-into-a-profile:
+  en: 3079a47206b11cf0
+  zh: 2af2c2cdc3fd5280
+/deepseek-ai-dsh-experimental-threads-profile/use-this-package/what-you-get:
+  en: d6d591b48ef02b62
+  zh: 584fde79cd3086c1
+/deepseek-ai-dsh-experimental-threads-profile/understand-the-implementation:
+  en: 304101ba522ebc03
+  zh: bed3bae3fd7cbf73
+/deepseek-ai-dsh-experimental-threads-profile/further-exploration:
+  en: 2407b4cdeb57998c
+  zh: 5d7a49daed82cc79
+/deepseek-ai-dsh-experimental-threads-profile/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-threads-profile/model-experience/composition-not-new-tools:
+  en: 60669fe36565f2dd
+  zh: 57d5e54b0d15cb75
+/deepseek-ai-dsh-experimental-threads-profile/model-experience/composition-not-new-tools/what-the-model-sees:
+  en: ef74d03fef64994c
+  zh: a0dfa4dfbb6094a3
+/deepseek-ai-dsh-experimental-threads-profile/model-experience/composition-not-new-tools/token-effect:
+  en: 63f2e8e200350372
+  zh: fe31b676211c7b29
+/deepseek-ai-dsh-experimental-threads-profile/model-experience/composition-not-new-tools/kv-cache-effect:
+  en: fad48c09d8b484ea
+  zh: c32a682fd86684f0
+/deepseek-ai-dsh-experimental-threads-profile/known-limitations-and-deferred-work:
+  en: e39c0cfab02ce51f
+  zh: bcaeb4db878c8fe4
+/deepseek-ai-dsh-experimental-threads-profile/known-limitations-and-deferred-work/dev-note:
+  en: 1ff82c27f0535320
+  zh: 196382504bb6135c

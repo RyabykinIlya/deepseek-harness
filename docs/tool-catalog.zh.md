@@ -45,6 +45,8 @@
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`、`list_agents`、`send_message` | `ctx.tools`、`ctx.subagents`、`ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`、`tool/result`、`child session events through ctx.subagents` | - | 这些是控制可继续后台 subagent 的全局命名工具：绑定提供方的 `tool-subagent` 实例注册不同的委派工具；本包注册一次 `send_message` 和 `interrupt_agent`，另由 `list_agents` 通过单独加载的 `/list-agents` 插件提供，其目录行使用 sessionProjections 和实时 Agent 注册表。 |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 9 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
+| `@deepseek-ai/dsh-experimental-threads-tool` | `thread_diff`、`thread_status` | `ctx.tools`、`a calling Agent owning the Project session`、`ctx.threads with the threads projection loaded` | `tool/call`、`tool/result` | - | 两个工具都只读取调用方 Project Session 自身 `threads` 投影中的 Thread，每个结果都按字节设限，并带明确的省略行。没有出厂 bundle 挂载该包；@deepseek-ai/dsh-experimental-threads-preset 的 `project` agent preset 只为 Project 协调者挂载它。 |
+| `@deepseek-ai/dsh-experimental-project-memory` | `memory_read`、`memory_write` | `ctx.tools`、`ctx.projectMemory (execution time)`、`a calling Agent inside a Project` | `tool/call`、`tool/result` | - | 以 `./tools` 子路径随 `ctx.projectMemory` 服务根一起发布。没有出厂 bundle 挂载它；@deepseek-ai/dsh-experimental-threads-preset 的两个 agent preset 都会挂载它，因此只有 Project 协调者及其 Thread 能看到这些工具。`memory_read` 结果按字节设限，并带明确的截断行。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
@@ -2515,6 +2517,127 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。
 
+
+<a id="deepseek-aidsh-experimental-threads-tool"></a>
+
+## `@deepseek-ai/dsh-experimental-threads-tool`
+
+### `thread_diff`
+
+查看某个 Thread 在自己分支上提交的内容。不带 path 时：基准与头部提交、提交标题（最新在前）、带 +/- 行数的已提交文件、未提交数量，以及如何合并该分支。带 path 时：该文件的已提交 patch。只接受 thread_status 列出的 Thread。输出有界，并说明省略了什么。只读：是否合并由你决定，在你合并该分支之前，这些工作不在 Project checkout 中。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "thread_id": {
+      "type": "string",
+      "description": "Thread id as listed by thread_status. Omit to get the overview across all Threads (call it before merging several Threads)."
+    },
+    "path": {
+      "type": "string",
+      "description": "Repo-relative file to show the committed patch for. Requires thread_id. Omit for the summary."
+    }
+  }
+}
+```
+
+来源：[`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+### `thread_status`
+
+按创建顺序逐行列出本 Project 启动的后台 Thread：id、状态、标签、分支、领先提交数与未提交数，以及收尾消息的开头。状态是 running、idle（未运行，尚无结果），或上一个结果：completed、aborted、error、max-tokens、refusal。Thread 完成后会自行回报，因此只在需要盘点未完成工作时轮询。输出有界，并说明省略了多少 Thread；可按状态过滤以缩小范围。Thread 的工作在合并之前留在它的分支上；用 thread_diff 查看。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Optional exact state filter. Omit for every state.",
+      "enum": [
+        "running",
+        "idle",
+        "completed",
+        "aborted",
+        "error",
+        "max-tokens",
+        "refusal"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Rows to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+来源：[`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+两个工具都只读取调用方 Project Session 自身 `threads` 投影中的 Thread，每个结果都按字节设限，并带明确的省略行。没有出厂 bundle 挂载该包；@deepseek-ai/dsh-experimental-threads-preset 的 `project` agent preset 只为 Project 协调者挂载它。
+
+<a id="deepseek-aidsh-experimental-project-memory"></a>
+
+## `@deepseek-ai/dsh-experimental-project-memory`
+
+### `memory_read`
+
+读取 Project 记忆：本 Project 所有 Thread 共享的简短事实，最新在前。开始任务时、在决定某件其他 Thread 可能已经定下的事情之前读取。可选的 query 只保留包含该文本的条目，忽略大小写。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Keep only entries containing this text, ignoring case."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Entries to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+来源：[`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+### `memory_write`
+
+在本 Project 所有 Thread 都会读取的 Project 记忆中添加、更新或删除一条条目。写下其他 Thread 需要的决定：约定的约束、日期、该问谁、你发现的惯例。不要存放文件内容、日志或临时进度。每条条目保持为一个简短、自包含的事实。返回条目 id；之后用它更新或删除该条目。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "add needs text; update needs id and text; remove needs id.",
+      "enum": [
+        "add",
+        "update",
+        "remove"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "description": "Entry id from memory_read or a previous memory_write."
+    },
+    "text": {
+      "type": "string",
+      "description": "Entry text for add or update."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+来源：[`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+以 `./tools` 子路径随 `ctx.projectMemory` 服务根一起发布。没有出厂 bundle 挂载它；@deepseek-ai/dsh-experimental-threads-preset 的两个 agent preset 都会挂载它，因此只有 Project 协调者及其 Thread 能看到这些工具。`memory_read` 结果按字节设限，并带明确的截断行。
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

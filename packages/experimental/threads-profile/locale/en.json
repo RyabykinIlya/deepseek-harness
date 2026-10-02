@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Threads",
+    "description": "Run background work in one git worktree per Thread and read its status from one place."
+  }
+}

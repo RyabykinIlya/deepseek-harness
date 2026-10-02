@@ -1,0 +1,26 @@
+/*
+ * Outcome-axis chrome only. The liveness marker is the shared `StateDot`, and
+ * the row layout lives in ThreadsHeaderAction.module.css; these rules exist so
+ * the four terminal outcomes stay visually distinct from each other and from a
+ * Thread that is merely idle.
+ */
+
+.glyph {
+  flex: none;
+}
+
+.glyph[data-stop-reason='completed'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.glyph[data-stop-reason='aborted'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.glyph[data-stop-reason='error'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.glyph[data-stop-reason='max-tokens'] {
+  color: var(--dsw-alias-state-warn-secondary);
+}

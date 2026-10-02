@@ -1,0 +1,70 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/subagent/worktree-manager/README.md
+/:
+  en: 6c2f724f927af613
+  zh: eee05c2bf4ea1664
+/deepseek-ai-dsh-worktree-manager:
+  en: 9672f18bd147196e
+  zh: 30d58326702b44fb
+/deepseek-ai-dsh-worktree-manager/summary:
+  en: e9e645e0d9303983
+  zh: 4acb5e9652e76c08
+/deepseek-ai-dsh-worktree-manager/table-of-contents:
+  en: 1bcd197f64c9fb56
+  zh: ebc90fe5692157d0
+/deepseek-ai-dsh-worktree-manager/use-this-package:
+  en: 1ce96aaf5987f342
+  zh: beb0841f4331c57d
+/deepseek-ai-dsh-worktree-manager/use-this-package/tell-the-service-which-threads-still-have-a-session:
+  en: 1a5c96a34cac5848
+  zh: 6065eb25535c655f
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation:
+  en: ee4615a04fa6503d
+  zh: eb2b30c2db047b10
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/durable-intent-comes-before-the-side-effect:
+  en: 2e5c9011d93ea78c
+  zh: ff87dd2b6139e777
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/the-state-machine:
+  en: b94e262a41adeb8c
+  zh: 6baedde4c122421a
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/what-the-branch-is-and-what-removal-deletes:
+  en: dfd6236ec47bcb96
+  zh: c95deaa525364975
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/reconciliation:
+  en: cc94c9d912611fb6
+  zh: f6e616330eb69c52
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/recorded-base-and-changes:
+  en: ed41962d93ed636b
+  zh: 221e5c26a3d87886
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/several-processes-on-one-root:
+  en: eeda8957fbfddacf
+  zh: 0590fed901f15c7d
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/git-invocation:
+  en: 0a991b2733dbeac2
+  zh: 90dccae820af0124
+/deepseek-ai-dsh-worktree-manager/errors:
+  en: 2327e0476ab76b80
+  zh: 7e3f22e3ade9cf0f
+/deepseek-ai-dsh-worktree-manager/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-worktree-manager/model-experience/thread-worktree-facts:
+  en: 74251c1abab29fcf
+  zh: e66bbc8acad4930a
+/deepseek-ai-dsh-worktree-manager/model-experience/thread-worktree-facts/what-the-model-sees:
+  en: 6e6bfe2080476159
+  zh: 3c3139abce183891
+/deepseek-ai-dsh-worktree-manager/model-experience/thread-worktree-facts/token-effect:
+  en: 9bfd36bfac94a92b
+  zh: 57a263a3e662ded6
+/deepseek-ai-dsh-worktree-manager/model-experience/thread-worktree-facts/kv-cache-effect:
+  en: e7ba08477bf22c4e
+  zh: 62caf67747c125dc
+/deepseek-ai-dsh-worktree-manager/known-limitations-and-deferred-work:
+  en: 292a8072a5982388
+  zh: 465dacd18000ec2e
+/deepseek-ai-dsh-worktree-manager/known-limitations-and-deferred-work/dev-note:
+  en: 739726ecd7187290
+  zh: c71d5be3a9d9ef63

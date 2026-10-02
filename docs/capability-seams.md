@@ -276,6 +276,14 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_worktree_manager["worktree-manager"]
+  svc_worktrees["ctx.worktrees<br/>Git worktree lifecycle and intent registry"]
+  pkg_subagent_thread_worktree["subagent-thread-worktree"]
+  pkg_experimental_threads["experimental-threads"]
+  pkg_experimental_tool_threads["experimental-tool-threads"]
+  svc_threads["ctx.threads<br/>Project Thread status and archival"]
+  pkg_experimental_project_memory["experimental-project-memory"]
+  svc_projectMemory["ctx.projectMemory<br/>Project-shared durable memory"]
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
@@ -324,9 +332,11 @@ flowchart LR
   pkg_experimental_browser_use_stagehand_native --> svc_browserUse
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
+  pkg_experimental_project_memory --> svc_projectMemory
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
+  pkg_experimental_threads --> svc_threads
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
@@ -425,6 +435,7 @@ flowchart LR
   pkg_workflow_ptc --> svc_workflowEngine
   pkg_workspace --> svc_workspaceRegistry
   pkg_workspace_changes --> svc_workspaceChanges
+  pkg_worktree_manager --> svc_worktrees
   svc_agentDefaultModel --> pkg_api_session_controller
   svc_agentDefaultModel --> pkg_headless
   svc_agentLoop --> pkg_base
@@ -548,6 +559,7 @@ flowchart LR
   svc_systemPrompt --> pkg_tool_web
   svc_systemPrompt --> pkg_tools
   svc_terminals --> pkg_tool_terminal
+  svc_threads --> pkg_experimental_tool_threads
   svc_tokenMeter --> pkg_compaction_basic
   svc_toolResultPruner --> pkg_compaction_basic
   svc_tools --> pkg_agent_loop
@@ -572,6 +584,9 @@ flowchart LR
   svc_workflowEngine --> pkg_tool_workflow
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
+  svc_worktrees --> pkg_experimental_threads
+  svc_worktrees --> pkg_experimental_tool_threads
+  svc_worktrees --> pkg_subagent_thread_worktree
   svc_fs -. event gate .-> pkg_fs_observation_policy
 ```
 
@@ -669,5 +684,8 @@ flowchart LR
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | [`lsp-stdio`](../packages/lsp/lsp-stdio) | [`tool-lsp`](../packages/lsp/tool-lsp) | - | Provider registration and selection plus normalized query execution over exactly four operations; the seam offers no protocol escape hatch, so a backend translates into the normalized request and result. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
+| `ctx.worktrees` | `service` | [`worktree-manager`](../packages/subagent/worktree-manager) | - | [`subagent-thread-worktree`](../packages/subagent/subagent-thread-worktree), [`experimental-threads`](../packages/experimental/threads), `experimental-tool-threads` | - | Owns worktree creation, the append-only JSONL intent registry, the state machine, and orphan reconcile. The thread provider is its only writer; the Thread domain and the diff tool read records, commits and changes. It confines a child Session by giving it a working directory, not by mediating files, so a consumer must place a Session cwd and pass the record onward. |
+| `ctx.threads` | `service` | [`experimental-threads`](../packages/experimental/threads) | - | `experimental-tool-threads` | - | Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it. |
+| `ctx.projectMemory` | `service` | [`experimental-project-memory`](../packages/experimental/project-memory) | - | - | - | Stores a bounded entry set per Project Session on a storage domain and resolves a Thread to its Project through Session lineage. It has no in-process consumer outside its own package: agents reach it through the memory_read and memory_write tools and the browser through its Remote namespace. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

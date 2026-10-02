@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/threads-preset/README.md
+/:
+  en: 1b257251dc97954e
+  zh: c1a80159a98e1277
+/deepseek-ai-dsh-experimental-threads-preset:
+  en: e489052e66091201
+  zh: a8f3882167feee9a
+/deepseek-ai-dsh-experimental-threads-preset/summary:
+  en: 6d8d241fffd62afd
+  zh: a6a50c7099589a8d
+/deepseek-ai-dsh-experimental-threads-preset/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-experimental-threads-preset/use-this-package:
+  en: b1126b3d54d79ab0
+  zh: f989430d6b7bc66b
+/deepseek-ai-dsh-experimental-threads-preset/use-this-package/what-the-presets-mount:
+  en: d69e52c319befd81
+  zh: 9afe7a8d35d1c9da
+/deepseek-ai-dsh-experimental-threads-preset/understand-the-implementation:
+  en: edeb0763fd5d50ca
+  zh: 321b2a890507732e
+/deepseek-ai-dsh-experimental-threads-preset/further-exploration:
+  en: 3b2800c739a47bda
+  zh: f548a2cdc2d13dcb
+/deepseek-ai-dsh-experimental-threads-preset/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-threads-preset/model-experience/the-two-contracts:
+  en: bb7f5b423b448d90
+  zh: 195ed3229a0b7e05
+/deepseek-ai-dsh-experimental-threads-preset/model-experience/the-two-contracts/what-the-model-sees:
+  en: 90286ed852284fc1
+  zh: ca86efb5326911d9
+/deepseek-ai-dsh-experimental-threads-preset/model-experience/the-two-contracts/token-effect:
+  en: 5313a4696dbf53f1
+  zh: 168e2d7a9d068b11
+/deepseek-ai-dsh-experimental-threads-preset/model-experience/the-two-contracts/kv-cache-effect:
+  en: 572b750e95f28204
+  zh: fa80611db4938a07
+/deepseek-ai-dsh-experimental-threads-preset/known-limitations-and-deferred-work:
+  en: 75d89ab10ef54163
+  zh: 170d767f953c58e3
+/deepseek-ai-dsh-experimental-threads-preset/known-limitations-and-deferred-work/dev-note:
+  en: b82b99dcf8a2cca0
+  zh: f778dcba2f854f52

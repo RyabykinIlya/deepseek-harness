@@ -67,10 +67,10 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `session/flush` | `parallel` | [`packages/core/session/src/index.ts:86`](../packages/core/session/src/index.ts) | [`session`](../packages/core/session) (`events.dispatch`) | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl), [`session-telemetry`](../packages/session/session-telemetry) |
 | `settings/document-updated` | `emit` | [`packages/settings/settings/src/types.ts:75`](../packages/settings/settings/src/types.ts) | [`settings`](../packages/settings/settings) (`emit`) | `remotes` |
 | `skills/change` | `emit` | [`packages/skill/skill/src/index.ts:296`](../packages/skill/skill/src/index.ts) | [`skill`](../packages/skill/skill) (`events.dispatch`) | - |
-| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:174`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent) |
-| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:148`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
-| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:154`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
-| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:165`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent) |
+| `subagent/end` | `emit` | [`packages/subagent/subagent/src/index.ts:176`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), `server`, [`subagent`](../packages/subagent/subagent), `threads` |
+| `subagent/provider-added` | `emit` | [`packages/subagent/subagent/src/index.ts:150`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`emit`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+| `subagent/provider-removed` | `emit` | [`packages/subagent/subagent/src/index.ts:156`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`subagent`](../packages/subagent/subagent), [`tool-subagent`](../packages/subagent/tool-subagent) |
+| `subagent/start` | `emit` | [`packages/subagent/subagent/src/index.ts:167`](../packages/subagent/subagent/src/index.ts) | [`subagent`](../packages/subagent/subagent) (`events.dispatch`) | [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`subagent`](../packages/subagent/subagent), `threads` |
 | `system-prompt/assemble` | `waterfall` | [`packages/core/system-prompt/src/index.ts:31`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`waterfall`) | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), `browser-use-runtime`, [`session-reference`](../packages/context/session-reference), [`system-prompt`](../packages/core/system-prompt) |
 | `system-prompt/change` | `emit` | [`packages/core/system-prompt/src/index.ts:37`](../packages/core/system-prompt/src/index.ts) | [`system-prompt`](../packages/core/system-prompt) (`emit`) | - |
 | `tools/change` | `emit` | [`packages/core/tools/src/index.ts:208`](../packages/core/tools/src/index.ts) | [`agent-preset-registry`](../packages/preset/agent-preset-registry) (`emit`), [`tools`](../packages/core/tools) (`emit`) | `browser-use-runtime`, [`tool-subagent`](../packages/subagent/tool-subagent) |
@@ -96,6 +96,7 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 <!-- BEGIN GENERATED event-producer-consumer:undeclared -->
 | Event string | Dispatchers | Listeners |
 | --- | --- | --- |
+| `connection/reset` | `gateway` (`emit`) | `ui-settings`, `ui-workspace` |
 | `internal/config` | [`config-editor`](../packages/boot/config-editor) (`waterfall`) | [`llm-pi-ai`](../packages/llm/llm-pi-ai) |
 | `internal/dispatch` | - | `agent-team`, [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction), [`fs`](../packages/fs/fs), [`goal`](../packages/goal/goal), [`goal-round-driver`](../packages/goal/goal-round-driver), [`hook-protocol`](../packages/hooks/hook-protocol), [`llm-retry`](../packages/llm/llm-retry), [`permission-presets`](../packages/interaction/permission-presets), [`plan-mode`](../packages/plan/plan-mode), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`schedule`](../packages/schedule/schedule), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-log-deepseek`](../packages/session/session-log-deepseek), [`session-title`](../packages/session/session-title), [`subagent`](../packages/subagent/subagent), [`terminal-bash`](../packages/terminal/terminal-bash), [`time-context`](../packages/context/time-context), [`tool-todo`](../packages/todo/tool-todo), [`tool-workflow`](../packages/workflow/tool-workflow), [`tools`](../packages/core/tools), `ui-renderer`, [`user-approval`](../packages/interaction/user-approval), [`webhook`](../packages/webhook/webhook), [`workflow`](../packages/workflow/workflow) |
 | `internal/plugin` | - | `computer-use-cua-driver-native`, `inspector`, `loader`, [`lsp-stdio`](../packages/lsp/lsp-stdio), [`mcp-client`](../packages/mcp/mcp-client), `modules` |
@@ -103,7 +104,13 @@ This matrix shows which packages dispatch each harness-owned event and which pac
 | `internal/status` | - | [`agent`](../packages/core/agent), `inspector`, [`web`](../packages/web/web) |
 | `internal/update` | - | [`app-boot`](../packages/boot/app-boot) |
 | `loader/volatile-update` | - | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), `product-analytics`, `speech-to-text` |
+| `locale/change` | `locale` (`emit`) | `locale` |
+| `slash/input-begin-command` | - | `ui-conversation` |
+| `slash/input-consume-token` | - | `ui-conversation` |
+| `slash/input-insert-reference` | - | `ui-conversation` |
+| `slash/input-insert-text` | - | `ui-conversation` |
 | `slots/changed` | `ui-renderer` (`emit`) | - |
+| `theme/change` | `ui-theme` (`emit`) | `ui-layout`, `ui-theme` |
 <!-- END GENERATED event-producer-consumer:undeclared -->
 
 Maintenance mode: generated: Cordis event declarations and producer/listener edges are resolved from the repository TypeScript Program.

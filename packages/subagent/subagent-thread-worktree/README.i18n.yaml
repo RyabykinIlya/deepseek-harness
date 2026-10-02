@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/subagent/subagent-thread-worktree/README.md
+/:
+  en: 2e3bb8af831ae2c5
+  zh: 2e3bb8af831ae2c5
+/deepseek-ai-dsh-subagent-thread-worktree:
+  en: 89535b382fa5285a
+  zh: 4ac31a311ceb4c1c
+/deepseek-ai-dsh-subagent-thread-worktree/summary:
+  en: ee3cd071d8510d69
+  zh: 7f9984136c0f2340
+/deepseek-ai-dsh-subagent-thread-worktree/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-subagent-thread-worktree/use-this-package:
+  en: 4828442d1338b0f3
+  zh: d978b719605dc955
+/deepseek-ai-dsh-subagent-thread-worktree/use-this-package/what-a-thread-gets:
+  en: 0859c6f26fd44ffa
+  zh: fcf461855d41503f
+/deepseek-ai-dsh-subagent-thread-worktree/use-this-package/when-creation-fails:
+  en: b46673a959f9ded0
+  zh: c3f5cff725f5a12f
+/deepseek-ai-dsh-subagent-thread-worktree/understand-the-implementation:
+  en: f43963cc21b4f423
+  zh: a051ecfeb18d7e03
+/deepseek-ai-dsh-subagent-thread-worktree/further-exploration:
+  en: ccb7884ff6bdd4a2
+  zh: 386afa53ccecc409
+/deepseek-ai-dsh-subagent-thread-worktree/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread:
+  en: 1a64d3a5d7e6ff6d
+  zh: 5b49351042f43dbf
+/deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/what-the-model-sees:
+  en: 17cc163c722da2cb
+  zh: f67c6488b51c014a
+/deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/token-effect:
+  en: 90234a2cbf1a5492
+  zh: fd31881750c56f8a
+/deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/kv-cache-effect:
+  en: ec9b8ef9b1768b67
+  zh: 23bfabe59adb7cbe
+/deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work:
+  en: 0c528dd22e9de66e
+  zh: da68f93923d1e828
+/deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work/dev-note:
+  en: a493241f982ab547
+  zh: 22cf96e18235c6ae

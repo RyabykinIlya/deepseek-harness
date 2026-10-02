@@ -1787,6 +1787,72 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'projectMemory',
+    summary: 'Shared per-Project memory over the `project_memory` storage domain.',
+    description: 'Shared per-Project memory over the `project_memory` storage domain.\n\nEvery mutation is serialized, so the per-Project entry cap holds under concurrent writers. Reads return the in-memory view of durable state.',
+    methods: [
+      {
+        signature: 'async list(projectId: ProjectId): Promise<MemoryEntry[]>',
+        description: 'Read a Project\'s entries.',
+        parameters: [{ name: 'projectId', description: 'Project whose memory is read.' }],
+        returns: 'Entries newest first by last write; equal times keep later insertions first.',
+      },
+      {
+        signature: 'add(projectId: ProjectId, text: string, author: MemoryAuthor, authorSessionId?: SessionId): Promise<MemoryEntry>',
+        description: 'Add an entry.',
+        parameters: [{ name: 'projectId', description: 'Project receiving the entry.' }, { name: 'text', description: 'Entry text; trimmed and bounded by `maxEntryChars`.' }, { name: 'author', description: 'Role of the writer.' }, { name: 'authorSessionId', description: 'Writing Session, when a Session wrote it.' }],
+        returns: 'The stored entry.',
+        throws: ['ProjectMemoryError for empty or oversized text, or when the Project holds `maxEntries`.'],
+      },
+      {
+        signature: 'update( projectId: ProjectId, id: MemoryEntryId, text: string, author: MemoryAuthor, authorSessionId?: SessionId, ): Promise<MemoryEntry>',
+        description: 'Rewrite an entry; the writer becomes the entry\'s author.',
+        parameters: [{ name: 'projectId', description: 'Project that must own the entry.' }, { name: 'id', description: 'Entry to rewrite.' }, { name: 'text', description: 'Replacement text.' }, { name: 'author', description: 'Role of the writer.' }, { name: 'authorSessionId', description: 'Writing Session, when a Session wrote it.' }],
+        returns: 'The stored entry.',
+        throws: ['ProjectMemoryError when the entry is absent from the Project or the text is invalid.'],
+      },
+      {
+        signature: 'remove(projectId: ProjectId, id: MemoryEntryId): Promise<void>',
+        description: 'Delete an entry.',
+        parameters: [{ name: 'projectId', description: 'Project that must own the entry.' }, { name: 'id', description: 'Entry to delete.' }],
+        throws: ['ProjectMemoryError when the entry is absent from the Project.'],
+      },
+      {
+        signature: 'async resolveProject(session: Session): Promise<ProjectId>',
+        description: 'Find the Project a calling Session belongs to.\n\nThe Session itself is the Project when its preset is configured in `projectPresets`; otherwise its `parentSession` chain is followed for at most `maxLineageDepth` hops. Each ancestor is read from its live Session when loaded, otherwise from its persisted header; without a `sessionPersistence` service only live Sessions are consulted.',
+        parameters: [{ name: 'session', description: 'Calling Session.' }],
+        returns: 'The Project id.',
+        throws: ['ProjectMemoryError when no Project is found within the bound or an ancestor is neither live nor persisted.'],
+      },
+      {
+        signature: '@Remote(\'list\') async remoteList(request: ProjectMemoryListRequest): Promise<MemoryEntry[]>',
+        description: 'Remote read for a client panel.',
+        parameters: [{ name: 'request', description: 'Project to read.' }],
+        returns: 'Entries newest first.',
+      },
+      {
+        signature: '@Remote(\'add\') async remoteAdd(request: ProjectMemoryAddRequest): Promise<MemoryEntry>',
+        description: 'Remote add by a person.',
+        parameters: [{ name: 'request', description: 'Project and text.' }],
+        returns: 'The stored entry.',
+        throws: ['RemoteError `project-memory/refused` when the text or the entry cap is refused.'],
+      },
+      {
+        signature: '@Remote(\'update\') async remoteUpdate(request: ProjectMemoryUpdateRequest): Promise<MemoryEntry>',
+        description: 'Remote rewrite by a person.',
+        parameters: [{ name: 'request', description: 'Project, entry id, and replacement text.' }],
+        returns: 'The stored entry.',
+        throws: ['RemoteError `project-memory/refused` when the entry is absent or the text is refused.'],
+      },
+      {
+        signature: '@Remote(\'delete\') async remoteDelete(request: ProjectMemoryRemoveRequest): Promise<void>',
+        description: 'Remote deletion by a person.\n\nNamed `delete` on the wire, not `remove`: the client\'s Remote namespace proxy reserves `remove` for its own descriptor-unmount method (`RemoteNamespaceService.prototype.remove`), so a namespace method of that name fails to mount with "conflicts with its namespace service".',
+        parameters: [{ name: 'request', description: 'Project and entry id.' }],
+        throws: ['RemoteError `project-memory/refused` when the entry is absent.'],
+      },
+    ],
+  },
+  {
     key: 'ptcRuntime',
     summary: 'Registers one `ctx.ptcRuntime` implementation.',
     description: 'Registers one `ctx.ptcRuntime` implementation. Program, budget, abort, and substrate failures resolve in PtcRunResult; only Service Definition contract misuse rejects. Implementations bridge structured-cloneable bindings, materialize each declared namespace rejection class, treat programs as hostile peers, isolate runs from one another, and terminate and await in-flight runs during disposal.',
@@ -3175,6 +3241,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'threads',
+    summary: '`ctx.threads`: owner of the `threads` projection key, the Thread event writer, and Thread archival.',
+    description: '`ctx.threads`: owner of the `threads` projection key, the Thread event writer, and Thread archival.',
+    methods: [
+      {
+        signature: 'stateOf(session: Session): ThreadsProjectionState | undefined',
+        description: 'Read one Session\'s durable Thread state after materializing the unit at the Session cursor. The returned value is live; callers must not mutate it.',
+        parameters: [{ name: 'session', description: 'the Project Session whose Threads state is read.' }],
+        returns: 'the folded state, or `undefined` when the registry is absent.',
+      },
+      {
+        signature: 'viewOf(session: Session): ThreadStatusRow[]',
+        description: 'Read one Session\'s client-visible Thread rows at a single consistent cut.',
+        parameters: [{ name: 'session', description: 'the Project Session whose Thread rows are read.' }],
+        returns: 'the status rows in durable creation order; empty when unavailable.',
+      },
+      {
+        signature: 'isRunning(threadId: ThreadId): boolean',
+        description: 'Live runtime liveness of one Thread: its Agent is registered and a driver is active (a turn, or pre-step/close processing). Never persisted — the log records outcomes, not liveness, so a Thread that died with its process reads as not running after restart.',
+        parameters: [{ name: 'threadId', description: 'the Thread (its child Session id).' }],
+        returns: 'whether the Thread\'s Agent is currently executing.',
+      },
+      {
+        signature: '@Remote(\'archive\') async archive(agent: Agent, threadId: ThreadId, options?: ThreadArchiveOptions): Promise<void>',
+        description: 'Archive a Thread: stop it if it runs, remove its worktree, and record `thread/removed`. The branch and the Thread\'s session are kept.\n\nA dirty worktree without `force` is refused before anything is stopped or recorded. A worktree removal that fails after the Thread was interrupted leaves the row in place so the call can be repeated.',
+        parameters: [{ name: 'agent', description: 'the Project agent whose projection owns the Thread.' }, { name: 'threadId', description: 'the Thread to archive.' }, { name: 'options', description: '`force` discards uncommitted work.' }],
+        throws: ['{RemoteError} `threads/not-found`, `threads/worktree-dirty`, or `threads/stop-timeout`.', '{Error} when the worktree service is not loaded.'],
+      },
+      {
+        signature: '@Remote(\'library\') async library(request: ThreadsLibraryRequest): Promise<ThreadsLibrary>',
+        description: 'Read a Project\'s Library: the attachments sent in its chat, the files it and its Threads presented, and the files each Thread changed. Nothing is stored; every call derives the result from the Session logs and live worktrees. Thread sessions are read from the live store first and persistence second; a Thread whose session is in neither contributes no presented files.',
+        parameters: [{ name: 'request', description: 'the Project Session to read.' }],
+        returns: 'the three bounded sections, see {@link ThreadsLibrary}.',
+        throws: ['{RemoteError} `threads/project-not-found` when the id is unknown or its preset is not a Project preset.'],
+      },
+    ],
+  },
+  {
     key: 'timer',
     summary: 'Disposable timer helpers mixed into Cordis contexts.',
     description: 'Disposable timer helpers mixed into Cordis contexts.',
@@ -3750,6 +3854,106 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
         parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
+      },
+    ],
+  },
+  {
+    key: 'worktrees',
+    summary: 'The worktree service (`ctx.worktrees`).',
+    description: 'The worktree service (`ctx.worktrees`).\n\nOne worktree per Thread, placed under a configured root that survives restarts. The service owns creation, the durable intent log, explicit removal, status, and the startup reconciliation sweep; it owns nothing about sessions, which the continuation manager keeps.',
+    methods: [
+      {
+        signature: 'readonly worktreeRoot: string',
+        description: 'Absolute, checkout-guarded root holding the sidecar and every managed worktree.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly repoRootResolution: RepoRootResolution',
+        description: 'How an empty `spec.repoRoot` is resolved.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly pruneOnStart: boolean',
+        description: 'Whether the startup sweep runs on load.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly maxWorktreesPerRepo: number',
+        description: 'Maximum active worktrees per repository.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly adoptionGraceMs: number',
+        description: 'Orphan grace period in milliseconds.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly registryLocking: WorktreeRegistryLocking',
+        description: 'Registry lock settings shared by every process on this root.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly parentCwd: string',
+        description: 'The launch checkout, captured at load. `repoRootResolution: \'parent-cwd\'` resolves empty specs here, and the `worktreeRoot` guard measures containment against it.',
+        parameters: [],
+      },
+      {
+        signature: 'sessionExists: SessionExistsProbe | undefined',
+        description: '"Does a persisted session still exist for this Thread?".\n\nSession persistence belongs to the continuation manager, so this service never guesses: install the predicate (for example against `ctx.sessionPersistence`) and WorktreeService.reconcile will sweep Threads whose session is gone and whose record is older than `adoptionGraceMs`. Left unset, a record is NEVER called an orphan on session grounds — the sweep then only repairs records whose worktree is missing from disk, which needs no knowledge of sessions at all.\n\nIt is a mutable property rather than a config field because a function cannot arrive through YAML; assign it right after mounting the service.',
+        parameters: [],
+      },
+      {
+        signature: 'create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>',
+        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second `git worktree add`. An abort is honored at every boundary — before any git process is spawned, and again after the add resolves — and either way the reserved intent is rolled back with `git worktree remove --force`. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots.',
+        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref, and optional branch.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
+        returns: 'the `ready` record whose `path` may be used as a session cwd.',
+      },
+      {
+        signature: 'async remove(record: WorktreeRecord, opts: WorktreeRemoveOptions = {}): Promise<void>',
+        description: 'Remove a Thread\'s worktree.\n\nRemoval is explicit and never automatic: a settled Thread\'s worktree holds its result, and deleting a turn\'s output silently is not acceptable. The order is NOT the mirror of creation — the durable record goes to `removing` first, then git, then `removed` — so a failed git removal leaves a `removing` tombstone a later prune can finish, instead of claiming a deletion that never happened.',
+        parameters: [{ name: 'record', description: 'the record to remove (may come from an earlier session).' }, { name: 'opts', description: '`force` discards local modifications; without it a dirty worktree is refused.' }],
+      },
+      {
+        signature: 'async list(repoRoot: string): Promise<WorktreeRecord[]>',
+        description: 'List the active worktrees of one repository.',
+        parameters: [{ name: 'repoRoot', description: 'any path inside the repository.' }],
+        returns: 'records in a live state, ordered by `threadId`; terminal records are history, not worktrees.',
+      },
+      {
+        signature: 'async get(threadId: string): Promise<WorktreeRecord | undefined>',
+        description: 'Latest record of a Thread in any state.',
+        parameters: [{ name: 'threadId', description: 'the Thread key.' }],
+        returns: 'the folded record (terminal states included), or `undefined` when the Thread never had one.',
+      },
+      {
+        signature: 'async status(record: WorktreeRecord): Promise<WorktreeStatus>',
+        description: 'Report whether a worktree is clean and how far it is ahead of its base.\n\nA record whose path is gone throws `WORKTREE_NOT_FOUND`. It NEVER reports `clean: true` for a missing directory: "nothing to report" and "nothing wrong" are different facts, and conflating them would let a crashed Thread look finished.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }],
+        returns: '`{ clean, changed, commitsAhead }` from `git status --porcelain` and `git rev-list --count`.',
+      },
+      {
+        signature: 'async changes(record: WorktreeRecord, opts: WorktreeChangesOptions): Promise<WorktreeChanges>',
+        description: 'Summarize the work a Thread did: commits and files since its base plus the uncommitted count.\n\nEvery list is bounded by the caller\'s limits; totals count what was not listed. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }, { name: 'opts', description: 'non-negative integer `maxCommits` and `maxFiles`.' }],
+        returns: 'the {@link WorktreeChanges} of `baseSha..HEAD`.',
+      },
+      {
+        signature: 'async mergeCheck(record: WorktreeRecord, options: WorktreeMergeCheckOptions, maxConflicts: number): Promise<WorktreeMergeCheck>',
+        description: 'Predict whether merging the worktree\'s HEAD into `target` would conflict.\n\n`target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the main checkout\'s current commit and a branch name may be another Thread\'s branch. Uncommitted edits in either checkout are not part of the prediction. No ref, index, or working tree changes. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
+        parameters: [{ name: 'record', description: 'the worktree whose HEAD would be merged.' }, { name: 'options', description: 'the target ref.' }, { name: 'maxConflicts', description: 'non-negative bound on the listed conflicting paths.' }],
+        returns: 'the predicted result, or `{ supported: false }` when git lacks `merge-tree --write-tree`.',
+      },
+      {
+        signature: 'async filePatch(record: WorktreeRecord, path: string, maxBytes: number): Promise<{ patch: string; truncated: boolean }>',
+        description: 'Committed diff `baseSha..HEAD` of one file, cut at a byte bound.\n\nUncommitted edits are not included. The cut never splits a multibyte character, so the returned patch may be shorter than `maxBytes`; git is stopped as soon as the bound is exceeded.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }, { name: 'path', description: 'repository-relative path; absolute paths and `..` segments are rejected.' }, { name: 'maxBytes', description: 'non-negative byte bound of the returned patch.' }],
+        returns: 'the patch text and whether it was truncated.',
+      },
+      {
+        signature: 'async reconcile(): Promise<WorktreeRecord[]>',
+        description: 'Sweep records that no longer describe a live Thread.\n\nTwo independent rules, both of which only ever REMOVE worktrees that git already owns: 1. a `reserved`/`ready` record whose path is missing from disk — a crash between the intent write and the add; 2. a `reserved`/`ready` record whose Thread has no persisted session, judged by WorktreeService.sessionExists (skipped when no probe is installed, because session existence is not this service\'s knowledge) and whose record is older than `adoptionGraceMs`.\n\nIn-flight creations of this process are never swept. Each orphan is marked `orphaned`, removed with `git worktree remove --force`, and settled to `removed` (or `rolled-back` when nothing was ever on disk).',
+        parameters: [],
+        returns: 'the records classified as orphans, in their `orphaned` state.',
       },
     ],
   },
@@ -4530,6 +4734,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ApiSessionAgentResult = {\n    readonly agent: Agent;\n} | {\n    readonly error: ApiSessionAgentError;\n};',
   },
   {
+    name: 'AppendOptions',
+    declaration: 'export interface AppendOptions {\n    readonly ignorable?: true;\n}',
+  },
+  {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
   },
@@ -4867,7 +5075,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableCreateSpec',
-    declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n}',
+    declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n    readonly cwd?: string;\n    readonly agentPreset?: string;\n}',
   },
   {
     name: 'ContinuableStart',
@@ -5574,6 +5782,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
   },
   {
+    name: 'LibraryAttachment',
+    declaration: 'export interface LibraryAttachment {\n    readonly kind: \'image\' | \'file\';\n    readonly attachmentId: string;\n    readonly name?: string;\n    readonly mediaType?: string;\n    readonly bytes: number;\n    readonly seq: number;\n    readonly time: number;\n}',
+  },
+  {
+    name: 'LibraryChangedFile',
+    declaration: 'export interface LibraryChangedFile {\n    readonly path: string;\n    readonly added?: number;\n    readonly removed?: number;\n    readonly binary?: true;\n}',
+  },
+  {
+    name: 'LibraryList',
+    declaration: 'export interface LibraryList<T> {\n    readonly items: readonly T[];\n    readonly total: number;\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'LibraryPresentedFile',
+    declaration: 'export interface LibraryPresentedFile {\n    readonly path: string;\n    readonly description?: string;\n    readonly sessionId: SessionId;\n    readonly threadId?: ThreadId;\n    readonly seq: number;\n    readonly index: number;\n    readonly time: number;\n}',
+  },
+  {
+    name: 'LibraryThreadChanges',
+    declaration: 'export interface LibraryThreadChanges {\n    readonly threadId: ThreadId;\n    readonly label: string;\n    readonly source: \'live\' | \'archived\';\n    readonly branch?: string;\n    readonly worktree?: string;\n    readonly files: readonly LibraryChangedFile[];\n    readonly filesTotal: number;\n    readonly commitsTotal?: number;\n    readonly uncommitted?: number;\n}',
+  },
+  {
     name: 'LlmAdapter',
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
@@ -6062,6 +6290,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ProjectionSnapshot {\n    asOfSeq: SessionSeqCursor;\n    values: Partial<SessionProjectionMap>;\n}',
   },
   {
+    name: 'ProjectMemoryAddRequest',
+    declaration: 'export interface ProjectMemoryAddRequest {\n    readonly projectId: ProjectId;\n    readonly text: string;\n}',
+  },
+  {
+    name: 'ProjectMemoryListRequest',
+    declaration: 'export interface ProjectMemoryListRequest {\n    readonly projectId: ProjectId;\n}',
+  },
+  {
+    name: 'ProjectMemoryRemoveRequest',
+    declaration: 'export interface ProjectMemoryRemoveRequest {\n    readonly projectId: ProjectId;\n    readonly id: MemoryEntryId;\n}',
+  },
+  {
+    name: 'ProjectMemoryUpdateRequest',
+    declaration: 'export interface ProjectMemoryUpdateRequest {\n    readonly projectId: ProjectId;\n    readonly id: MemoryEntryId;\n    readonly text: string;\n}',
+  },
+  {
     name: 'PromptAssembly',
     declaration: 'export interface PromptAssembly {\n    sections: AssembledSection[];\n    contexts: AssembledContext[];\n    tools: ToolSchema[];\n    variables: Record<string, string | undefined>;\n}',
   },
@@ -6200,6 +6444,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ReplayEnvelope',
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
+  },
+  {
+    name: 'RepoRootResolution',
+    declaration: 'export type RepoRootResolution = \'explicit\' | \'parent-cwd\';',
   },
   {
     name: 'RequestContext',
@@ -6423,7 +6671,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Session',
-    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    readonly firstLifecycleSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset, projections?: readonly SessionMessageProjection[]): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset, eventState: SessionSeedEventState, projections?: readonly SessionMessageProjection[]): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent<T>\n    ] : [\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    toolHistory(): ToolHistory;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
+    declaration: 'export class Session {\n    get surface(): SessionSurface;\n    readonly header: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    get id(): SessionId;\n    readonly firstLiveSeq: SessionLogOffset;\n    readonly firstLifecycleSeq: SessionLogOffset;\n    static create(id: SessionId, seed?: readonly SessionEvent[], header?: SessionHeader, inheritedEventCount?: SessionLogOffset, projections?: readonly SessionMessageProjection[]): Session;\n    static fromRestore(id: SessionId, seed: readonly SessionEvent[], header: SessionHeader, inheritedEventCount: SessionLogOffset, eventState: SessionSeedEventState, projections?: readonly SessionMessageProjection[]): Session;\n    eventAt(seq: SessionSeq): SessionEvent | undefined;\n    snapshotEvents(fromSeq: SessionLogOffset = SessionLogOffset(0), toSeqExclusive: SessionLogOffset = this.seq): readonly SessionEvent[];\n    ownEvents(): readonly SessionEvent[];\n    isOwnSeq(seq: SessionSeq): boolean;\n    get seq(): SessionLogOffset;\n    append<T extends SessionEventType>(type: T, data: SessionEventMap[T], ...opts: T extends SurfaceEventType ? [\n        opts: SurfaceIntent<T>\n    ] : [\n        opts?: AppendOptions\n    ]): SessionEvent<T>;\n    requestHeader(): EpochHeader | undefined;\n    requestContext(): RequestContext | undefined;\n    toolHistory(): ToolHistory;\n    deriveMessages(): Message[];\n    deriveEventMessage(event: SessionEvent): Message | null;\n}',
   },
   {
     name: 'SessionAccess',
@@ -6568,6 +6816,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionEventWindow',
     declaration: 'export interface SessionEventWindow {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    target: SessionEvent;\n    events: SessionEvent[];\n    startSeq: SessionSeq;\n    endSeq: SessionSeq;\n}',
+  },
+  {
+    name: 'SessionExistsProbe',
+    declaration: 'export type SessionExistsProbe = (threadId: string) => boolean | Promise<boolean>;',
   },
   {
     name: 'SessionFeedbackRecordRequest',
@@ -7554,6 +7806,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
   },
   {
+    name: 'ThreadArchiveOptions',
+    declaration: 'export interface ThreadArchiveOptions {\n    readonly force?: boolean;\n}',
+  },
+  {
+    name: 'ThreadId',
+    declaration: 'export type ThreadId = Branded<\'ThreadId\'>;',
+  },
+  {
+    name: 'ThreadsLibrary',
+    declaration: 'export interface ThreadsLibrary {\n    readonly attachments: LibraryList<LibraryAttachment>;\n    readonly presented: LibraryList<LibraryPresentedFile>;\n    readonly changes: LibraryList<LibraryThreadChanges>;\n}',
+  },
+  {
+    name: 'ThreadsLibraryRequest',
+    declaration: 'export interface ThreadsLibraryRequest {\n    readonly projectId: SessionId;\n}',
+  },
+  {
+    name: 'ThreadsProjectionState',
+    declaration: 'export interface ThreadsProjectionState {\n    readonly threads: readonly ThreadState[];\n}',
+  },
+  {
+    name: 'ThreadStatusRow',
+    declaration: 'export interface ThreadStatusRow {\n    readonly threadId: ThreadId;\n    readonly label: string;\n    readonly stopReason?: ThreadStopReason;\n    readonly branch?: string;\n    readonly worktree?: string;\n    readonly baseSha?: string;\n    readonly commitsAhead?: number;\n    readonly uncommitted?: number;\n    readonly note?: string;\n}',
+  },
+  {
+    name: 'ThreadStopReason',
+    declaration: 'export type ThreadStopReason = \'completed\' | \'aborted\' | \'error\' | \'max-tokens\' | \'refusal\';',
+  },
+  {
     name: 'TimedUserQuestionResult',
     declaration: 'export type TimedUserQuestionResult = AskUserQuestionAnswer | {\n    pending: true;\n    callId: ToolCallId;\n};',
   },
@@ -8152,6 +8432,50 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorktreeChanges',
+    declaration: 'export interface WorktreeChanges {\n    readonly baseSha: string;\n    readonly headSha: string;\n    readonly commits: readonly {\n        readonly sha: string;\n        readonly subject: string;\n    }[];\n    readonly commitsTotal: number;\n    readonly files: readonly WorktreeFileChange[];\n    readonly filesTotal: number;\n    readonly uncommitted: number;\n}',
+  },
+  {
+    name: 'WorktreeChangesOptions',
+    declaration: 'export interface WorktreeChangesOptions {\n    readonly maxCommits: number;\n    readonly maxFiles: number;\n}',
+  },
+  {
+    name: 'WorktreeFileChange',
+    declaration: 'export interface WorktreeFileChange {\n    readonly path: string;\n    readonly added?: number;\n    readonly removed?: number;\n    readonly binary?: boolean;\n}',
+  },
+  {
+    name: 'WorktreeMergeCheck',
+    declaration: 'export type WorktreeMergeCheck = {\n    readonly supported: false;\n} | {\n    readonly supported: true;\n    readonly targetSha: string;\n    readonly headSha: string;\n    readonly clean: boolean;\n    readonly conflicts: readonly string[];\n    readonly conflictsTotal: number;\n};',
+  },
+  {
+    name: 'WorktreeMergeCheckOptions',
+    declaration: 'export interface WorktreeMergeCheckOptions {\n    readonly target: string;\n}',
+  },
+  {
+    name: 'WorktreeRecord',
+    declaration: 'export interface WorktreeRecord {\n    readonly threadId: string;\n    readonly path: string;\n    readonly branch?: string;\n    readonly baseRef: string;\n    readonly baseSha?: string;\n    readonly createdAt?: number;\n    readonly state: WorktreeState;\n    readonly repoRoot: string;\n}',
+  },
+  {
+    name: 'WorktreeRegistryLocking',
+    declaration: 'export interface WorktreeRegistryLocking {\n    readonly timeoutMs: number;\n    readonly retryIntervalMs: number;\n    readonly staleMs: number;\n}',
+  },
+  {
+    name: 'WorktreeRemoveOptions',
+    declaration: 'export interface WorktreeRemoveOptions {\n    readonly force?: boolean;\n}',
+  },
+  {
+    name: 'WorktreeSpec',
+    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly branch?: string;\n}',
+  },
+  {
+    name: 'WorktreeState',
+    declaration: 'export type WorktreeState = \'reserved\' | \'ready\' | \'rolled-back\' | \'removing\' | \'removed\' | \'orphaned\';',
+  },
+  {
+    name: 'WorktreeStatus',
+    declaration: 'export interface WorktreeStatus {\n    readonly clean: boolean;\n    readonly changed: number;\n    readonly commitsAhead: number;\n}',
   },
 ]
 

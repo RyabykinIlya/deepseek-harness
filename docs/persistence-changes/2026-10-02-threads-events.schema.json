@@ -1,0 +1,286 @@
+{
+  "formatVersion": 2,
+  "roots": [
+    {
+      "key": "event:thread/created",
+      "kind": "event",
+      "event": "thread/created",
+      "surface": false,
+      "digest": "d5fe3d4064bc38f5494a185a9989874d2554a87f80f160c81b1511806dd8b0a2",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "baseSha",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "branch",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "label",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "threadId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "worktree",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "thread/created"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:thread/removed",
+      "kind": "event",
+      "event": "thread/removed",
+      "surface": false,
+      "digest": "5e7e26c486fa1d27d7e44d7dd526033e857f74536d331c8e252f7196e1f7de83",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "threadId",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "thread/removed"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:thread/status",
+      "kind": "event",
+      "event": "thread/status",
+      "surface": false,
+      "digest": "a1e5859ef5ae9c15b177997a3451fc5330ee51585ff22c6a73cd77ce44e96580",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 11,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "commitsAhead",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "note",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "stopReason",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "threadId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "uncommitted",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "aborted"
+          },
+          {
+            "kind": "literal",
+            "value": "completed"
+          },
+          {
+            "kind": "literal",
+            "value": "error"
+          },
+          {
+            "kind": "literal",
+            "value": "max-tokens"
+          },
+          {
+            "kind": "literal",
+            "value": "refusal"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "thread/status"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

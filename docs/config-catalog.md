@@ -1032,6 +1032,29 @@ export interface InspectorOptions {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-inspector -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-project-memory -->
+<a id="deepseek-aidsh-experimental-project-memory"></a>
+
+## `@deepseek-ai/dsh-experimental-project-memory`
+
+- `inject`: `storageDomain` · `sessions`
+- `source`: [`packages/experimental/project-memory/src/index.ts:46`](../packages/experimental/project-memory/src/index.ts)
+
+```ts config-catalog
+/** Configuration of the Project memory service. */
+export interface Config {
+  /** Entries kept per Project; adding beyond it fails until one is removed. */
+  maxEntries?: number
+  /** Longest entry text in Unicode code points. */
+  maxEntryChars?: number
+  /** Agent preset ids whose Sessions are Project coordinators. */
+  projectPresets?: string[]
+  /** Parent hops followed from a calling Session while looking for its Project. */
+  maxLineageDepth?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-project-memory -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-ptc-runtime-python -->
 <a id="deepseek-aidsh-experimental-ptc-runtime-python"></a>
 
@@ -1177,6 +1200,143 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-speech-to-text-sensevoice -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads -->
+<a id="deepseek-aidsh-experimental-threads"></a>
+
+## `@deepseek-ai/dsh-experimental-threads`
+
+- `source`: [`packages/experimental/threads/src/index.ts:54`](../packages/experimental/threads/src/index.ts)
+
+```ts config-catalog
+/** Plugin configuration. */
+export interface Config {
+  /** Subagent provider name whose children are Threads (default `thread`). */
+  providerName: string
+  /** Maximum UTF-8 size of the note recorded from a Thread's closing message (default 600). */
+  noteMaxBytes: number
+  /** How long `archive` waits for a running Thread to stop after interrupting it (default 30000). */
+  archiveStopTimeoutMs: number
+  /** Agent preset ids whose Sessions are Projects and may be read by `library` (default `['project']`). */
+  projectPresets: string[]
+  /** Maximum attachments listed by `library` (default 200). */
+  libraryMaxAttachments: number
+  /** Maximum presented files listed by `library` (default 200). */
+  libraryMaxPresented: number
+  /** Maximum newest Threads whose logs and worktrees `library` reads (default 50). */
+  libraryMaxThreads: number
+  /** Maximum changed files listed per Thread by `library` (default 100). */
+  libraryMaxFiles: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-preset -->
+<a id="deepseek-aidsh-experimental-threads-preset"></a>
+
+## `@deepseek-ai/dsh-experimental-threads-preset`
+
+- `inject`: `agentPresets`
+- `source`: [`packages/experimental/threads-preset/src/index.ts:67`](../packages/experimental/threads-preset/src/index.ts)
+
+```ts config-catalog
+/**
+ * Config: identities, display fields, and behaviour of both presets.
+ *
+ * Every field but `basePreset`, `workerMaxDepth`, and the four thread model
+ * options has a schema default, so the class reads them as resolved values
+ * rather than defaulting again at use.
+ */
+export interface Config {
+  /** Coordinator preset id recorded in `SessionHeader.agentPreset` (default `project`). */
+  readonly id: string
+  /** Coordinator roster display name (default `Project`). */
+  readonly name: string
+  /** Coordinator roster display description. */
+  readonly description: string
+  /** Coordinator roster sort position (default `20`). */
+  readonly order: number
+  /** Worker preset id; the `thread` provider's `childAgentPreset` must name it (default `project-thread`). */
+  readonly workerId: string
+  /** Worker roster display name (default `Project Thread (internal)`). */
+  readonly workerName: string
+  /** Worker roster display description. */
+  readonly workerDescription: string
+  /** Worker roster sort position (default `1000`, after every preset meant for a person). */
+  readonly workerOrder: number
+  /** Subagent provider the coordinator delegates to (default `thread`). */
+  readonly provider: string
+  /**
+   * Id of an already registered preset whose rows both presets extend (for
+   * example `standard` in the Web profile). Unset when the deployment's tools
+   * are global rather than preset rows. An unknown id fails the load.
+   */
+  readonly basePreset?: string
+  /**
+   * Delegation depth cap for the `subagent` row a Thread inherits from the base
+   * preset. A Thread sits one level below its Project, so helpers a Thread starts
+   * need a cap of at least 2. Unset keeps the base row's cap (the Host default).
+   */
+  readonly workerMaxDepth?: number
+  /** Coordinator contract: progress reporting cadence (default `milestones`). */
+  readonly checkIn: CheckInPolicy
+  /** Coordinator contract: approval before starting Threads (default `ask`). */
+  readonly spawn: SpawnPolicy
+  /** Coordinator contract: approval before merging a Thread (default `ask`). */
+  readonly mergePolicy: MergePolicy
+  /** Config of the `thread_status` / `thread_diff` row; the tool plugin validates every key. */
+  readonly tools: Record<string, number>
+  /** LLM provider for every Thread; set together with the three fields below or not at all. */
+  readonly threadProvider?: string
+  /** Model for every Thread. */
+  readonly threadModel?: string
+  /** Reasoning effort for every Thread. */
+  readonly threadReasoningEffort?: string
+  /** Output token ceiling for every Thread. */
+  readonly threadMaxTokens?: number
+}
+
+/** How often the coordinator tells the user about Thread progress. */
+export type CheckInPolicy = 'milestones' | 'each-thread' | 'quiet'
+
+/** Whether the coordinator needs user approval before starting Threads. */
+export type SpawnPolicy = 'ask' | 'auto'
+
+/** Whether the coordinator needs user approval before merging a Thread. */
+export type MergePolicy = 'ask' | 'auto'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-preset -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-tool -->
+<a id="deepseek-aidsh-experimental-threads-tool"></a>
+
+## `@deepseek-ai/dsh-experimental-threads-tool`
+
+- `inject`: `tools`
+- `source`: [`packages/experimental/tool-threads/src/index.ts:50`](../packages/experimental/tool-threads/src/index.ts)
+
+```ts config-catalog
+/** Configuration: what one call may spend. */
+export interface Config {
+  /** `thread_status` rows when the model omits `limit` (default 20). */
+  readonly defaultLimit?: number
+  /** Largest `limit` the model may request (default 100, ceiling 100). */
+  readonly maxLimit?: number
+  /** Byte bound over the complete rendered result of either tool (default 8192, 1024 through 32768). */
+  readonly maxResultBytes?: number
+  /** Commits `thread_diff` lists (default 30, ceiling 100). */
+  readonly maxCommits?: number
+  /** Changed files `thread_diff` lists (default 100, ceiling 500). */
+  readonly maxFiles?: number
+  /** Bytes of one file patch `thread_diff` returns (default 16384, 256 through 65536). */
+  readonly maxPatchBytes?: number
+  /** Threads the `thread_diff` overview reads (default 20, ceiling 100); each costs git calls. */
+  readonly maxOverviewThreads?: number
+  /** Overlapping Thread pairs the overview runs a merge check on (default 50, ceiling 200). */
+  readonly maxPairChecks?: number
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-tool -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
@@ -3085,7 +3245,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 ## `@deepseek-ai/dsh-subagent`
 
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:192`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:194`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -3312,6 +3472,44 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-subagent-spawn-in-process -->
+
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-subagent-thread-worktree -->
+<a id="deepseek-aidsh-subagent-thread-worktree"></a>
+
+## `@deepseek-ai/dsh-subagent-thread-worktree`
+
+- `inject`: `subagents` · `worktrees`
+- `source`: [`packages/subagent/subagent-thread-worktree/src/index.ts:60`](../packages/subagent/subagent-thread-worktree/src/index.ts)
+
+```ts config-catalog
+/** Config: the registry name plus the worktree layout policy. */
+export interface Config {
+  /** Provider name on `ctx.subagents` (default `thread`). */
+  providerName: string
+  /**
+   * Whether each Thread gets its own branch. When false, the worktree is detached
+   * at the current base ref and `WorktreeRecord.branch` stays empty.
+   */
+  branchPerThread: boolean
+  /** Branch name template; `{{id}}` is replaced by the Thread's slug (see `threadSlug`). */
+  branchTemplate: string
+  /** Agent preset id the Thread is composed from; absent means the child inherits the parent's preset. */
+  childAgentPreset?: string
+  /** What the worktree starts from (default `head`). */
+  baseRef: ThreadBase
+}
+
+/** What a new Thread's worktree is created from. */
+export type ThreadBase =
+  /** The parent checkout's committed `HEAD`. */
+  | 'head'
+  /**
+   * `HEAD` plus the parent's tracked uncommitted changes, captured with `git stash create`
+   * (falls back to `HEAD` when nothing tracked is modified). Untracked files are NOT included.
+   */
+  | 'head-with-uncommitted'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-subagent-thread-worktree -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-system-prompt -->
 <a id="deepseek-aidsh-system-prompt"></a>
@@ -4322,6 +4520,67 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-worktree-manager -->
+<a id="deepseek-aidsh-worktree-manager"></a>
+
+## `@deepseek-ai/dsh-worktree-manager`
+
+- `source`: [`packages/subagent/worktree-manager/src/index.ts:84`](../packages/subagent/worktree-manager/src/index.ts)
+
+```ts config-catalog
+/**
+ * Host configuration for the worktree service. Every field is validated ONCE,
+ * at plugin load — never per Thread — following the `validateConfiguredCwd`
+ * pattern: a deployment that misconfigures the root fails to mount instead of
+ * scattering worktrees and discovering it later.
+ */
+export interface Config {
+  /**
+   * Absolute directory holding the intent sidecar and every managed worktree
+   * (default `~/.dsh/worktrees`). It must NOT sit inside a registered checkout:
+   * a worktree inside the repository pollutes the user's `git status` and
+   * recurses on clone.
+   */
+  worktreeRoot?: string
+  /** Where `repoRoot` comes from when a {@link WorktreeSpec} leaves it empty (default `explicit`). */
+  repoRootResolution?: RepoRootResolution
+  /** Run {@link WorktreeService.reconcile} when the service loads (default `true`). */
+  pruneOnStart?: boolean
+  /**
+   * Maximum active (non-terminal) worktrees per repository (default `32`). Creation beyond it fails with
+   * `WORKTREE_LIMIT_REACHED`; archive a Thread (remove its worktree) to free a slot. Running-Thread
+   * concurrency is limited separately by `dsh-subagent`'s `maxActiveSubagents`.
+   */
+  maxWorktreesPerRepo?: number
+  /**
+   * Minimum age in milliseconds before {@link WorktreeService.reconcile} treats a worktree without a
+   * persisted session as an orphan (default `600000`). It covers the window between worktree creation and
+   * session publication. Records without a `createdAt` stamp count as older than any grace period.
+   */
+  adoptionGraceMs?: number
+  /**
+   * Longest wait in milliseconds for the registry lock shared by processes using one `worktreeRoot`
+   * (default `10000`). Past it the operation fails with `WORKTREE_REGISTRY_LOCKED`.
+   */
+  lockTimeoutMs?: number
+  /** Pause in milliseconds between registry lock attempts (default `50`). */
+  lockRetryIntervalMs?: number
+  /**
+   * Age in milliseconds after which a registry lock whose holder stopped refreshing it (a crashed
+   * process) may be taken over (default `30000`, minimum `5000`).
+   */
+  lockStaleMs?: number
+}
+
+/** Where `repoRoot` comes from when a spec does not carry one. */
+export type RepoRootResolution =
+  /** Every {@link WorktreeService.create} call must name its own repository (default). */
+  | 'explicit'
+  /** An empty `repoRoot` resolves to the checkout the harness process was launched in. */
+  | 'parent-cwd'
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-worktree-manager -->
+
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
@@ -4396,6 +4655,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-deepseek-llm-api-extensions` | — | [`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-auto-review` | `approval` · `llm` · `permissionPresets` · `sessions` · `tools` | [`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-client-ui-threads` | — | [`packages/experimental/client-ui-threads/src/index.ts`](../packages/experimental/client-ui-threads/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |
 | `@deepseek-ai/dsh-fs-observation-policy` | — | [`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts) |
@@ -4478,6 +4738,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-experimental-agent-team-profile` | — | [`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-browser-use-runtime` | — | [`packages/experimental/browser-use-runtime/src/index.ts`](../packages/experimental/browser-use-runtime/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-schedule-bundle` | — | [`packages/experimental/schedule-bundle/src/index.ts`](../packages/experimental/schedule-bundle/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-threads-profile` | — | [`packages/experimental/threads-profile/src/index.ts`](../packages/experimental/threads-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-voice-input-bundle` | — | [`packages/experimental/voice-input-bundle/src/index.ts`](../packages/experimental/voice-input-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-packer` | — | [`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-runtime` | — | [`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts) |

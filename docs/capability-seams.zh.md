@@ -278,6 +278,14 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_worktree_manager["worktree-manager"]
+  svc_worktrees["ctx.worktrees<br/>Git worktree lifecycle and intent registry"]
+  pkg_subagent_thread_worktree["subagent-thread-worktree"]
+  pkg_experimental_threads["experimental-threads"]
+  pkg_experimental_tool_threads["experimental-tool-threads"]
+  svc_threads["ctx.threads<br/>Project Thread status and archival"]
+  pkg_experimental_project_memory["experimental-project-memory"]
+  svc_projectMemory["ctx.projectMemory<br/>Project-shared durable memory"]
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
@@ -326,9 +334,11 @@ flowchart LR
   pkg_experimental_browser_use_stagehand_native --> svc_browserUse
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
+  pkg_experimental_project_memory --> svc_projectMemory
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
+  pkg_experimental_threads --> svc_threads
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
   pkg_fs --> svc_fs
@@ -427,6 +437,7 @@ flowchart LR
   pkg_workflow_ptc --> svc_workflowEngine
   pkg_workspace --> svc_workspaceRegistry
   pkg_workspace_changes --> svc_workspaceChanges
+  pkg_worktree_manager --> svc_worktrees
   svc_agentDefaultModel --> pkg_api_session_controller
   svc_agentDefaultModel --> pkg_headless
   svc_agentLoop --> pkg_base
@@ -550,6 +561,7 @@ flowchart LR
   svc_systemPrompt --> pkg_tool_web
   svc_systemPrompt --> pkg_tools
   svc_terminals --> pkg_tool_terminal
+  svc_threads --> pkg_experimental_tool_threads
   svc_tokenMeter --> pkg_compaction_basic
   svc_toolResultPruner --> pkg_compaction_basic
   svc_tools --> pkg_agent_loop
@@ -574,6 +586,9 @@ flowchart LR
   svc_workflowEngine --> pkg_tool_workflow
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
+  svc_worktrees --> pkg_experimental_threads
+  svc_worktrees --> pkg_experimental_tool_threads
+  svc_worktrees --> pkg_subagent_thread_worktree
   svc_fs -. event gate .-> pkg_fs_observation_policy
 ```
 
@@ -671,5 +686,8 @@ flowchart LR
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | [`lsp-stdio`](../packages/lsp/lsp-stdio) | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方注册与选择，加上恰好四种操作的标准化查询执行；该 seam 不提供协议逃生口，后端必须转换为标准化请求和结果。 |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 拥有内存定义注册表、Host 半的 vm 沙箱和 request-run 往返流程；浏览器页面通过其 Remote 命名空间在线访问同一服务。 |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
+| `ctx.worktrees` | `service` | [`worktree-manager`](../packages/subagent/worktree-manager) | - | [`subagent-thread-worktree`](../packages/subagent/subagent-thread-worktree), [`experimental-threads`](../packages/experimental/threads), `experimental-tool-threads` | - | 负责 worktree 的创建、仅追加的 JSONL 意图注册表、状态机以及孤儿记录的对账。thread 提供方是唯一的写入方；Thread 领域包与 diff 工具只读取记录、提交与变更。它靠给 child Session 一个工作目录来限定范围，而不是代管文件，因此使用方必须自行设置 Session 的 cwd，并把记录继续传递下去。 |
+| `ctx.threads` | `service` | [`experimental-threads`](../packages/experimental/threads) | - | `experimental-tool-threads` | - | 把仅写日志的 thread/* 事件折叠成 threads 投影；存活状态按运行时实时计算，而不是取自日志；同时负责归档 Thread。写入方是 subagent/start 与 subagent/end 监听器；status 与 diff 工具是直接使用方，而 Project profile 扩展包只挂载该服务，并不调用它。 |
+| `ctx.projectMemory` | `service` | [`experimental-project-memory`](../packages/experimental/project-memory) | - | - | - | 在 storage domain 上按 Project Session 存放有上限的条目集合，并通过 Session 血缘把 Thread 解析回它的 Project。除自身包之外没有进程内使用方：agent 经由 memory_read 与 memory_write 工具访问，浏览器经由它的 Remote 命名空间访问。 |
 
 维护模式：混合模式。服务从 Cordis 声明中发现；接口、实现和消费方角色在 `scripts/gen-doc-graphs.ts` 中分类，并设有完整性守卫。

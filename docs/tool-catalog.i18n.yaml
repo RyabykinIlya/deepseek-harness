@@ -9,8 +9,8 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 167287d095eee2f5
-  zh: 18720d5e81379d2f
+  en: 4e445577ca9a241d
+  zh: c85011a273fb1453
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -282,8 +282,26 @@
   en: 2eac7360ba68b1bd
   zh: b5d676bf288c245e
 /tool-schema-catalog/deepseek-ai-dsh-experimental-tool-agent-team/wait-agent:
-  en: fbc4d75a9bcf6816
-  zh: 672131ac2705f411
+  en: 201a6cedc0270019
+  zh: 053a56677bf87e48
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool:
+  en: dd110d77ecff6739
+  zh: dd110d77ecff6739
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-diff:
+  en: 98fdd00cab6261e3
+  zh: ef7fdd5bdeebff12
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-status:
+  en: 6a2c9bf223795a6f
+  zh: 40d1874b04f520f6
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory:
+  en: 1077659a1f7e02d7
+  zh: 1077659a1f7e02d7
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory/memory-read:
+  en: 60e11eb24680294c
+  zh: e73a57a5297a1815
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory/memory-write:
+  en: dd12b5f081023a15
+  zh: dde4cd9b11b0ac4c
 /tool-schema-catalog/deepseek-ai-dsh-tool-todo:
   en: dea62d26fb18ff68
   zh: dea62d26fb18ff68

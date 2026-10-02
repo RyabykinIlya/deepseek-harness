@@ -1,0 +1,88 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/client-ui-threads/README.md
+/:
+  en: e2656f1606d691e4
+  zh: 5bb05c567fda9e95
+/deepseek-ai-dsh-experimental-client-ui-threads:
+  en: b4d102515276953f
+  zh: 00b8a42330b8c728
+/deepseek-ai-dsh-experimental-client-ui-threads/summary:
+  en: 270c125c168e8c66
+  zh: 81e904958360d63e
+/deepseek-ai-dsh-experimental-client-ui-threads/table-of-contents:
+  en: 76368b6b1da79c80
+  zh: 52384aee991ac542
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package:
+  en: b0468d49cb1ef59f
+  zh: ca8969e0407f0096
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/when-to-choose-it:
+  en: 77e7a01e2500bee1
+  zh: ec95a43af7b7a964
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/configuration:
+  en: 8251681d36980420
+  zh: 3572a1d3dee47086
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/what-the-control-shows:
+  en: 7ba8ea9b21c1f1c0
+  zh: ce7b6a79c796d84d
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/row-actions:
+  en: 295345509b3c1180
+  zh: 4f054dc525c1e886
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/opening-a-thread:
+  en: 1ba3a0636544fa30
+  zh: 30f5dd7765221e6c
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/starting-a-thread:
+  en: 426a8fd8ee63726d
+  zh: 2ce1e4bc68c4717f
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/starting-a-project:
+  en: ed38c98352bf92c6
+  zh: 56c9a64bc4e60e7b
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/thread-header:
+  en: 1d4d6ad15f5c80c3
+  zh: 6fbc775516ceee62
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/project-memory:
+  en: 6226c095672cd183
+  zh: a4ed47f8504666b2
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation:
+  en: ee4615a04fa6503d
+  zh: ee2c5fb2204a43cf
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/design-philosophy:
+  en: 6bff1b59c4f72ac2
+  zh: bf2c99fbd7b20452
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/source-map:
+  en: ac263e10d171a45b
+  zh: 3c0c8744098216ca
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/the-dropdown-interaction-is-the-catalog-s:
+  en: e13ce1dcee3de435
+  zh: 59a76585e057e5d9
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/thread-identity-is-the-session-identity:
+  en: 5d1a68e09ee2012f
+  zh: 7d35777e0570e29a
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/visibility-needs-evidence:
+  en: de61d6578d7dafe4
+  zh: cb28df7407b42868
+/deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/project-identity-is-a-composition-not-a-flag:
+  en: 8c36a24718a53fc7
+  zh: f0df93b0683aee93
+/deepseek-ai-dsh-experimental-client-ui-threads/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-client-ui-threads/model-experience/the-threads-roster-and-chat:
+  en: f703367a30f0718e
+  zh: 08f3565012362a2f
+/deepseek-ai-dsh-experimental-client-ui-threads/model-experience/the-threads-roster-and-chat/what-the-model-sees:
+  en: cd6cad314952620f
+  zh: fe4e0fdd0dc3ef49
+/deepseek-ai-dsh-experimental-client-ui-threads/model-experience/the-threads-roster-and-chat/token-effect:
+  en: 62e5001c53ba29c3
+  zh: cb505bf36759f90d
+/deepseek-ai-dsh-experimental-client-ui-threads/model-experience/the-threads-roster-and-chat/kv-cache-effect:
+  en: e7ba08477bf22c4e
+  zh: 62caf67747c125dc
+/deepseek-ai-dsh-experimental-client-ui-threads/known-limitations-and-deferred-work:
+  en: b5230ca951ae3824
+  zh: 028aefd51a9171d4
+/deepseek-ai-dsh-experimental-client-ui-threads/known-limitations-and-deferred-work/dev-note:
+  en: f804cd2f50cf4324
+  zh: e08fb3022a07bd34
