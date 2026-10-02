@@ -76,24 +76,30 @@ export function createAgentMessage(
  * Append adjacent-Agent return guidance to a continuable child's initial task.
  * @param parentId - durable parent session id named in the guidance.
  * @param prompt - initial model-visible task blocks.
+ * @param isolatedCwd - the child's own checkout when its cwd differs from the
+ *   parent's; absent for a child that shares the parent's workspace.
  * @returns task blocks followed by the continuable return guidance.
  */
 export function withContinuableReturnGuidance(
   parentId: SessionId,
   prompt: ContentBlock[],
+  isolatedCwd?: string,
 ): ContentBlock[] {
   const encodedParentId = JSON.stringify(parentId)
-  return [
-    ...prompt,
-    {
-      type: 'text',
-      text: `Your parent agent id is ${encodedParentId}. Before you finish, send your result to that agent with `
-        + `send_message({ agent_id: ${encodedParentId}, message: "<self-contained result>" }). The parent shares `
-        + 'your workspace but does not automatically receive your transcript, tool output, or reasoning. Send '
-        + 'earlier messages as well when a finding changes what the parent should do next; sending a message '
-        + 'does not end your turn.',
-    },
-  ]
+  const send = `Your parent agent id is ${encodedParentId}. Before you finish, send your result to that agent with `
+    + `send_message({ agent_id: ${encodedParentId}, message: "<self-contained result>" }). `
+  const cadence = 'Send earlier messages as well when a finding changes what the parent should do next; sending a message '
+    + 'does not end your turn.'
+  const text = isolatedCwd === undefined
+    ? send
+      + 'The parent shares your workspace but does not automatically receive your transcript, tool output, or '
+      + `reasoning. ${cadence}`
+    : send
+      + `You work in your own separate checkout at ${JSON.stringify(isolatedCwd)}. The parent does not see files `
+      + 'you change there until it inspects that checkout, and it does not automatically receive your transcript, '
+      + 'tool output, or reasoning. State in the message what changed, where, and how you verified it. '
+      + cadence
+  return [...prompt, { type: 'text', text }]
 }
 
 /**

@@ -15,7 +15,7 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { AppendOptions, CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SessionSeedEventState, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { SurfaceManager, validateSessionEventData, validateSurfaceMetadata } from './surface.ts'
 import type { SessionSurface, SessionMessageProjection } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
@@ -692,7 +692,10 @@ export class Session {
    *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
-   * @param opts - Surface metadata: `surfaceOp` controls how the event enters
+   * @param opts - For non-surface types, an optional {@link AppendOptions}:
+   *   `{ ignorable: true }` stamps the envelope marker that lets a reader which
+   *   does not know `type` skip the event instead of refusing the log; use it
+   *   only for purely informational records. For surface types, surface metadata: `surfaceOp` controls how the event enters
    *   the ordered surface; `sourceEventSeqs` lists the seq numbers of earlier
    *   events this one derives from. REQUIRED for
    *   {@link SurfaceEventType} events (every message-producing event must
@@ -722,9 +725,14 @@ export class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : [opts?: AppendOptions]
   ): SessionEvent<T> {
-    const surfaceOpts: SurfaceIntent | undefined = opts[0]
+    // The conditional rest tuple keeps surface and log-only options apart for
+    // callers; the body reads the union, and the surface manager rejects stray
+    // surface metadata on log-only types.
+    const appendOpts: Partial<SurfaceIntent> & AppendOptions | undefined = opts[0]
+    const surfaceOpts = appendOpts
+    const ignorable = appendOpts?.ignorable === true
     const surfaceMetadata = {
       ...surfaceOpts?.sourceEventSeqs === undefined ? {} : { sourceEventSeqs: surfaceOpts.sourceEventSeqs },
       ...surfaceOpts?.surfaceOp === undefined ? {} : { surfaceOp: surfaceOpts.surfaceOp },
@@ -746,8 +754,9 @@ export class Session {
       seq: SessionSeq(this.log.length),
       time: Date.now(),
       data: dataSnapshot,
-      ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
-    } as unknown as SessionEvent<T>)
+      ...ignorable ? { ignorable: true } : {},
+      ...surfaceMetadataSnapshot,
+    } as SessionEvent<T>)
     validateSessionEventData(event, `session event "${type}" at seq ${event.seq}`)
     this.surfaceManager.validateNext(event as SessionEvent)
 

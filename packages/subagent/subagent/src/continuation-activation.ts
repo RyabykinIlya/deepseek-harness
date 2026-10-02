@@ -27,7 +27,7 @@ import type {
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import {
   appendDelegatedPolicyOverrides,
-  applyChildComposition,
+  applyContinuableChildComposition,
 } from './child-agent.ts'
 import type { DelegatedPolicyOverrides } from './child-agent.ts'
 import { createSettlementMessage } from './continuation-messages.ts'
@@ -620,14 +620,16 @@ export class ContinuableActivationRegistry {
   ): Promise<Activation> {
     const { childId, provider, parent, create } = inputs
     inputs.signal.throwIfAborted()
-    const setup = (childCtx: Context, child: Agent): void => {
+    const setup = async (childCtx: Context, child: Agent): Promise<void> => {
       // Only fresh creation appends the descriptor and delegated policy after
       // the inherited marker; a cold resume replays those persisted events.
       if (create !== undefined) {
         child.session.append('subagent/descriptor', create.descriptor)
         appendDelegatedPolicyOverrides(child.session, create.delegatedPolicies)
       }
-      applyChildComposition(childCtx, parent, inputs.composition)
+      await applyContinuableChildComposition(
+        childCtx, parent, inputs.composition, child.session.header.agentPreset,
+      )
     }
     const observer = this.observeActivation(provider, childId, parent)
     const handle: AgentHandle = create === undefined

@@ -98,8 +98,27 @@ export function rejectPrompt(error: unknown, childSessionId: SessionId, signal: 
       default:
         break
     }
+  } else {
+    const rejection = providerRejection(error)
+    if (rejection !== undefined) throw rejection
   }
   throw new RemoteError('gateway/internal', 'subagent prompt failed', {}, { cause: error })
+}
+
+/**
+ * Translate a subagent provider's coded refusal into the typed Remote error.
+ * Any error carrying a string `code` that is not a {@link SubagentError}
+ * qualifies (a `HarnessError` subclass such as a worktree provider's error);
+ * the package's own codes keep their admission mapping. Remote surfaces that
+ * start continuable children use this before falling back to `gateway/internal`.
+ * @param error - the thrown value.
+ * @returns `subagent/provider-rejected` carrying the provider's `code` and message, or `undefined` when `error` has no string `code`.
+ */
+export function providerRejection(error: unknown): RemoteError<'subagent/provider-rejected'> | undefined {
+  if (error instanceof SubagentError || !(error instanceof Error)) return undefined
+  const code = (error as { code?: unknown }).code
+  if (typeof code !== 'string') return undefined
+  return new RemoteError('subagent/provider-rejected', error.message, { code, message: error.message }, { cause: error })
 }
 
 function isCancellation(error: unknown, signal: AbortSignal): boolean {

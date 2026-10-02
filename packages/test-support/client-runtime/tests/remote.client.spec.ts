@@ -37,7 +37,8 @@ describe('TestRemote', () => {
   it('refuses $mount, which needs the real Client Remote service', async () => {
     const ctx = new Context()
     const remote = new TestRemote(ctx)
-    await expect(remote.$mount()).rejects.toThrow('needs the real Client Remote service')
+    await expect(remote.$mount({ package: '@deepseek-ai/dsh-test', descriptors: [] }))
+      .rejects.toThrow('needs the real Client Remote service')
     await ctx.fiber.dispose()
   })
 

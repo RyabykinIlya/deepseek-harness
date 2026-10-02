@@ -119,6 +119,14 @@ export function resolveChildAgentOptions(
   return resolved
 }
 
+/** Provider-supplied values that replace what a child would inherit from its parent. */
+export interface ChildMetaOverrides {
+  /** Absolute working directory replacing the parent's cwd. */
+  readonly cwd?: string | undefined
+  /** Agent preset id replacing the parent's composed preset. */
+  readonly agentPreset?: string | undefined
+}
+
 /**
  * Build the child session's durable creation metadata: the parent's workspace,
  * its direct lineage, coarse product origin, the recursion budget that must
@@ -134,17 +142,26 @@ export function resolveChildAgentOptions(
  * @param parent - the delegating parent agent.
  * @param childDepth - the resolved delegation depth to persist.
  * @param isSeeded - whether this child inherits a parent-log prefix, including an explicitly empty one.
+ * @param overrides - provider-supplied `cwd` and `agentPreset` that replace the values inherited from the parent.
  * @returns the `meta` for `ctx.agents.create()`.
  */
 export function childSessionMeta(
   parent: Agent,
   childDepth: number,
   isSeeded: boolean,
+  overrides: ChildMetaOverrides = {},
 ): NonNullable<CreateAgentOptions['meta']> {
   const parentHeader = parent.session.header
-  const agentPreset = parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
+  // The recorded id is only metadata: composition is driven by
+  // `applyContinuableChildComposition`, which mounts this same id.
+  const agentPreset = overrides.agentPreset ?? parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
+  // A provider that isolates the child in its own working directory (e.g. a git
+  // worktree) supplies an absolute override; absent it, the child inherits the
+  // parent's cwd exactly as before. The override is durable session metadata, so
+  // cold resume restores the isolated root from the persisted header.
+  const childCwd = overrides.cwd ?? parentHeader.cwd
   return {
-    ...parentHeader.cwd !== undefined ? { cwd: parentHeader.cwd } : {},
+    ...childCwd !== undefined ? { cwd: childCwd } : {},
     ...agentPreset === undefined ? {} : { agentPreset },
     parentSession: parentHeader.id,
     isSeeded,
@@ -203,6 +220,39 @@ export function applyChildComposition(
   composition: ChildComposition,
 ): void {
   childCtx.get('agentPresets')?.composeFrom(childCtx, parent.ctx)
+  registerChildComposition(childCtx, composition)
+}
+
+/**
+ * Compose one continuable child like {@link applyChildComposition}, except the
+ * child joins `agentPreset` when that id differs from the parent's composed
+ * preset. A fresh child carries the provider's override in its header; a cold
+ * resume reads the same header value, so both compose from one preset.
+ * @param childCtx - the child agent's scoped creation context.
+ * @param parent - the delegating parent whose composition the child joins by default.
+ * @param composition - the per-child persona and tool filter to install.
+ * @param agentPreset - preset id recorded in the child's session header, if any.
+ * @throws when the preset registry rejects `agentPreset` (unknown or invalid preset).
+ */
+export async function applyContinuableChildComposition(
+  childCtx: Context,
+  parent: Agent,
+  composition: ChildComposition,
+  agentPreset: string | undefined,
+): Promise<void> {
+  const presets = childCtx.get('agentPresets')
+  if (presets !== undefined) {
+    if (agentPreset !== undefined && agentPreset !== presets.composedPreset(parent.ctx)) {
+      await presets.mount(childCtx, agentPreset)
+    } else {
+      presets.composeFrom(childCtx, parent.ctx)
+    }
+  }
+  registerChildComposition(childCtx, composition)
+}
+
+/** Register the delegation statement, persona section, and tool restriction on a child scope. */
+function registerChildComposition(childCtx: Context, composition: ChildComposition): void {
   childCtx.systemPrompt.context({
     name: 'subagent:delegation',
     order: childCtx.systemPrompt.getContextOrder('SUBAGENT_DELEGATION'),

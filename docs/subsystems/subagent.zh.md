@@ -220,7 +220,9 @@ interface SubagentSettledMessageSource {
 }
 ```
 
-提供方只参与准备初始创建 spec，`spawn` 与 `fork` 在此有所不同。其返回的 spec 只携带分离的、提供方专属的创建输入——即可选的父级历史种子——不含 Agent、`AgentHandle`、提示词投递、结果、dispose 或恢复操作。冷恢复根本不经由提供方分发：管理器折叠通用描述符，通过同一个 activation-owner 作用域调用 `ctx.agents.resume()`，并提交等待中的轮次。
+提供方只参与准备初始创建 spec，`spawn` 与 `fork` 在此有所不同。其返回的 spec 只携带分离的、提供方专属的创建输入——即可选的父级历史种子、绝对路径 `cwd` 与 `agentPreset` id——不含 Agent、`AgentHandle`、提示词投递、结果、dispose 或恢复操作。冷恢复根本不经由提供方分发：管理器折叠通用描述符，通过同一个 activation-owner 作用域调用 `ctx.agents.resume()`，并提交等待中的轮次。
+
+管理器在物化之前校验 `cwd`（绝对路径、已存在且可进入的目录：`INVALID_PROVIDER_CWD`）与 `agentPreset`（在 preset 注册表中已定义且可用：`UNKNOWN_AGENT_PRESET`）。两者都写入 child 的 session header；child 挂载 header 中的 preset，而不是加入 parent 的 preset，因此冷恢复无需 provider 即可用相同方式组合。当 child 的 cwd 与 parent 不同时，初始返回指引会说明 child 在自己独立的 checkout 中工作，并必须用 `send_message` 发送自包含的结果（改了什么、在哪里、如何验证）；与 parent 共享 cwd 的 child 保留共享工作区的措辞。带字符串 `code` 的 provider 错误会以 `subagent/provider-rejected`（`{ code, message }`）到达 Remote 调用方；`SubagentError` code 保持原有映射，不带 code 的错误仍为 `gateway/internal`。
 
 ```ts type-equiv
 /**
@@ -257,6 +259,28 @@ interface ContinuableCreateSpec {
    * `CreateAgentOptions.seed`: contiguous from seq 0, lossless JSON, balanced.
    */
   readonly seed?: readonly SessionEvent[]
+  /**
+   * Absolute working directory for the child, when the provider isolates it from
+   * the parent (e.g. a dedicated git worktree). Absent — the child inherits the
+   * parent's cwd, the default every existing provider relies on. It is DATA, not
+   * a capability: the continuation manager still owns creation, composition,
+   * delivery, resume, and disposal. Because the value becomes durable session
+   * metadata, a cold resume restores the isolated root from the persisted header
+   * without the provider re-creating anything. The manager requires an absolute
+   * path to an existing, enterable directory and rejects anything else with a
+   * {@link SubagentError} (`INVALID_PROVIDER_CWD`) before the child exists.
+   */
+  readonly cwd?: string
+  /**
+   * Id of the agent preset the child is composed from, when the provider wants a
+   * composition other than the parent's. Absent — the child joins the parent's
+   * composed preset. The manager mounts this preset on the child's scope and
+   * records the id in the child's session header, so cold resume composes the
+   * child from the same preset. An id the preset registry does not define, or a
+   * composition without a preset registry, fails the start with a
+   * {@link SubagentError} (`UNKNOWN_AGENT_PRESET`) before the child exists.
+   */
+  readonly agentPreset?: string
 }
 ```
 

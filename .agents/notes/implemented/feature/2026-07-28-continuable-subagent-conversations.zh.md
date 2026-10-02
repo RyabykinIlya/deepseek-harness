@@ -34,7 +34,7 @@ persisted Session
 
 ### 物化与公开操作
 
-具名 subagent 提供方只参与准备初始创建规格，此时 `spawn` 与 `fork` 有所区别。其可选的 `prepareContinuable(request): Promise<ContinuableCreateSpec>` 方法就是可继续创建能力。返回的规格只包含与 Agent 实例分离且由提供方决定的创建输入，例如可选的 parent 历史种子；它不包含 Agent、`AgentHandle`、提示词投递、结果、dispose 或恢复操作。管理器会预留 child 身份，解析持久化描述符和通用 Agent 配置，通过私有 activation-owner 作用域调用 `ctx.agents.create()`，将返回的 `AgentHandle` 安装到激活中，建立适用的可继续 parent 所有权，然后调用 `Agent.followup(initialPrompt)`。inbox 接受消息后会产生一个 `MessageId`；`ctx.subagents.startContinuable()` 在此边界返回 `{ childId, messageId }`，不等待轮次开始，也不等待消息写入会话日志。
+具名 subagent 提供方只参与准备初始创建规格，此时 `spawn` 与 `fork` 有所区别。其可选的 `prepareContinuable(request): Promise<ContinuableCreateSpec>` 方法就是可继续创建能力。返回的规格只包含与 Agent 实例分离且由提供方决定的创建输入，例如可选的 parent 历史种子，此外还包括（自 [Provider-chosen working directory for a continuable child](../architecture/2026-10-02-continuable-child-cwd-seam.zh.md) 起）child 的工作目录与 agent 预设；它不包含 Agent、`AgentHandle`、提示词投递、结果、dispose 或恢复操作。管理器会预留 child 身份，解析持久化描述符和通用 Agent 配置，通过私有 activation-owner 作用域调用 `ctx.agents.create()`，将返回的 `AgentHandle` 安装到激活中，建立适用的可继续 parent 所有权，然后调用 `Agent.followup(initialPrompt)`。inbox 接受消息后会产生一个 `MessageId`；`ctx.subagents.startContinuable()` 在此边界返回 `{ childId, messageId }`，不等待轮次开始，也不等待消息写入会话日志。
 
 inbox 接受消息前发生任何失败，操作都会在不返回任何 id 的情况下被拒绝。Agent 创建流程负责 handle 移交前的回滚；移交后，管理器会保留一个对并发投递和 drain 可见的关闭事务，dispose 已创建的 handle、移除激活并回滚 parent `ownedChildren` 中的任何成员关系，再拒绝操作。在驻留 start 事件发布前失败不会发布终止事件，start 发布后失败则通过正常 dispose 闭合生命周期配对。
 
@@ -153,7 +153,7 @@ activation-owner 作用域之所以存在，是因为普通 Cordis owner effect 
 
 **等待期间 dispose Agent。** child 仍属于上一个进程内所有权图时重建 parent，需要持久化所有权与拆卸协议。只为尚未完成的所有权图保留 `AgentHandle`，可以在不让已结算历史驻留的前提下，保留 child-first 拆卸。
 
-**让提供方通过 Agent handle 创建、恢复 child 或投递消息。** 初始提供方只持有 `prepareContinuable()` 及其分离式创建规格这一项差异：child 是全新启动，还是带有 parent 前缀。管理器必须通过私有 activation-owner 作用域自行调用 `ctx.agents.create()`，使该作用域成为每个 handle 的结构化所有者。持久化的进程内会话已经包含初始前缀及通用重建描述符，消息投递则属于 Agent inbox。让提供方持有任何后续 handle、`SubagentRun` 或消息所有权，会让提供方保留所有权，却没有已发布行为需要它。
+**让提供方通过 Agent handle 创建、恢复 child 或投递消息。** 初始提供方只持有 `prepareContinuable()` 及其分离式创建规格这一项差异：child 是全新启动，还是带有 parent 前缀，以及（自 [Provider-chosen working directory for a continuable child](../architecture/2026-10-02-continuable-child-cwd-seam.zh.md) 起）child 在何处运行、由哪个预设组装。管理器必须通过私有 activation-owner 作用域自行调用 `ctx.agents.create()`，使该作用域成为每个 handle 的结构化所有者。持久化的进程内会话已经包含初始前缀及通用重建描述符，消息投递则属于 Agent inbox。让提供方持有任何后续 handle、`SubagentRun` 或消息所有权，会让提供方保留所有权，却没有已发布行为需要它。
 
 **将报告投递纳入基础生命周期。** 可重复的 child 到 parent 报告与该生命周期兼容，但静默投递还是 next-step 投递、确认、持久性和重试行为都是独立的产品决策。后续的 report 包保持可选，并消费一个显式的 child 设置钩子，因此可继续驻留不会默认授予返回通道。
 

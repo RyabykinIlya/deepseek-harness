@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ToolCallId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { createSettlementMessage } from '../src/continuation-messages.ts'
+import { createSettlementMessage, withContinuableReturnGuidance } from '../src/continuation-messages.ts'
 
 const childId = SessionId('settled-child')
 const summary = { type: 'text', text: `Background subagent ${childId} finished and will do no further work unless you send it more.` }
@@ -52,6 +52,41 @@ describe('continuable settlement content', () => {
       { type: 'text', text: 'Its closing message:' },
       first,
       second,
+    ])
+  })
+})
+
+describe('continuable return guidance', () => {
+  const parentId = SessionId('parent-1')
+  const task: ContentBlock[] = [{ type: 'text', text: 'task' }]
+
+  it('keeps the shared-workspace text for a child in the parent cwd', () => {
+    expect(withContinuableReturnGuidance(parentId, task)).toEqual([
+      task[0],
+      {
+        type: 'text',
+        text: 'Your parent agent id is "parent-1". Before you finish, send your result to that agent with '
+          + 'send_message({ agent_id: "parent-1", message: "<self-contained result>" }). The parent shares '
+          + 'your workspace but does not automatically receive your transcript, tool output, or reasoning. Send '
+          + 'earlier messages as well when a finding changes what the parent should do next; sending a message '
+          + 'does not end your turn.',
+      },
+    ])
+  })
+
+  it('states the separate checkout and the self-contained result for an isolated child', () => {
+    expect(withContinuableReturnGuidance(parentId, task, '/work/tree')).toEqual([
+      task[0],
+      {
+        type: 'text',
+        text: 'Your parent agent id is "parent-1". Before you finish, send your result to that agent with '
+          + 'send_message({ agent_id: "parent-1", message: "<self-contained result>" }). You work in your own '
+          + 'separate checkout at "/work/tree". The parent does not see files you change there until it '
+          + 'inspects that checkout, and it does not automatically receive your transcript, tool output, or '
+          + 'reasoning. State in the message what changed, where, and how you verified it. Send earlier '
+          + 'messages as well when a finding changes what the parent should do next; sending a message does '
+          + 'not end your turn.',
+      },
     ])
   })
 })

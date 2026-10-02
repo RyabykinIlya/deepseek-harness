@@ -357,6 +357,8 @@ type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
 
 Required for `SurfaceEventType` events — every message-producing event must declare how it joins the surface, the sole source of derived model history. A human-facing transcript is the other projection and reads the log's append-origin events instead, because the surface deliberately shadows the ranges a replacement summarizes (`isAppendSurfaceEvent` in [dsh-session](../../packages/core/session/README.md)). Non-surface types reject it at compile time.
 
+For log-only (non-surface) types, the third argument is an optional `AppendOptions`: `{ ignorable: true }` stamps the envelope's `ignorable` marker, so a reader that does not know the type skips the event instead of refusing the log. Use it only for purely informational records. Surface types keep `SurfaceIntent` and take no `AppendOptions`.
+
 `assistant/message` cannot carry `sourceEventSeqs`; its `stream` owns exact provider evidence. Other surface events omit the field when they cite no earlier event and use a complete non-empty list when they do.
 
 <a id="plugin-owned-message-projections"></a>
@@ -581,7 +583,10 @@ declare class Session {
    *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
-   * @param opts - Surface metadata: `surfaceOp` controls how the event enters
+   * @param opts - For non-surface types, an optional {@link AppendOptions}:
+   *   `{ ignorable: true }` stamps the envelope marker that lets a reader which
+   *   does not know `type` skip the event instead of refusing the log; use it
+   *   only for purely informational records. For surface types, surface metadata: `surfaceOp` controls how the event enters
    *   the ordered surface; `sourceEventSeqs` lists the seq numbers of earlier
    *   events this one derives from. REQUIRED for
    *   {@link SurfaceEventType} events (every message-producing event must
@@ -611,7 +616,7 @@ declare class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : [opts?: AppendOptions]
     ): SessionEvent<T>;
   /**
    * The {@link EpochHeader} in force after the log's last header event — the

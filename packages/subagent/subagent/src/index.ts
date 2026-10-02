@@ -120,6 +120,7 @@ export { assertSubagentMaxDepth, delegationDepthOf } from './depth.ts'
 export {
   appendDelegatedPolicyOverrides,
   applyChildComposition,
+  applyContinuableChildComposition,
   captureDelegatedPolicyOverrides,
   childSessionMeta,
   parentAgentOptionsForDelegation,
@@ -127,7 +128,8 @@ export {
   resolveChildDepth,
   SubagentDepthError,
 } from './child-agent.ts'
-export type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
+export type { ChildComposition, ChildMetaOverrides, DelegatedPolicyOverrides } from './child-agent.ts'
+export { providerRejection } from './control.ts'
 export type { AgentMessageSource, SubagentSettledMessageSource } from './continuation-messages.ts'
 export type * from './control-types.ts'
 export type { SubagentDescendantListEntry } from './list-children.ts'

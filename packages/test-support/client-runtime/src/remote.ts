@@ -1,5 +1,6 @@
 /** Test-owned Remote face: `$on` subscriptions with an explicit test event driver. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 
 // Value re-export for spec-side failure construction: the api-remotes facade
 // cannot carry it — its src top-level imports owner /remote lib artifacts, so a
@@ -16,7 +17,8 @@ export { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
  *
  * `$mount` rejects: a spec that needs a real generated contribution installed —
  * codecs, descriptors, and the wire — has outgrown this double and needs the
- * real Client Remote service.
+ * real Client Remote service. A spec that only needs the mount lifecycle
+ * substitutes `$mount` on this double.
  *
  * One deliberate asymmetry with production: a throwing listener propagates out
  * of the emit instead of being contained and logged, so a spec cannot lean on
@@ -94,10 +96,13 @@ export class TestRemote {
   }
 
   /**
-   * Generated-namespace mount, unsupported by this double.
+   * Generated-namespace mount, unsupported by this double. The signature matches
+   * the real Client Remote service so a spec that scripts mounting substitutes
+   * this method; an unstubbed call still rejects.
+   * @param _contribution - generated Remote contribution a scripted double accepts (unused).
    * @returns never; always rejects.
    */
-  $mount(): Promise<() => Promise<void>> {
+  $mount(_contribution: TypertRemoteContribution): Promise<() => Promise<void>> {
     return Promise.reject(new Error('TestRemote: $mount needs the real Client Remote service'))
   }
 }

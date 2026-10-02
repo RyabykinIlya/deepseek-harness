@@ -220,7 +220,9 @@ interface SubagentSettledMessageSource {
 }
 ```
 
-The provider participates only in preparing the initial creation spec, where `spawn` and `fork` differ. Its returned spec carries only detached provider-specific creation inputs — the optional parent-history seed — and no Agent, `AgentHandle`, prompt delivery, result, disposal, or resume operation. Cold resume does not dispatch through a provider at all: the manager folds the generic descriptor, calls `ctx.agents.resume()` through the same activation-owner scope, and submits the waiting turn.
+The provider participates only in preparing the initial creation spec, where `spawn` and `fork` differ. Its returned spec carries only detached provider-specific creation inputs — the optional parent-history seed, an absolute `cwd`, and an `agentPreset` id — and no Agent, `AgentHandle`, prompt delivery, result, disposal, or resume operation. Cold resume does not dispatch through a provider at all: the manager folds the generic descriptor, calls `ctx.agents.resume()` through the same activation-owner scope, and submits the waiting turn.
+
+The manager validates `cwd` (absolute, existing, enterable directory: `INVALID_PROVIDER_CWD`) and `agentPreset` (defined and usable in the preset registry: `UNKNOWN_AGENT_PRESET`) before materialization. Both land in the child's session header; the child mounts the header preset instead of joining the parent's, so a cold resume composes the same way without the provider. When the child cwd differs from the parent's, the initial return guidance states that the child works in its own separate checkout and must send a self-contained result (what changed, where, how verified) with `send_message`; a child sharing the parent cwd keeps the shared-workspace wording. A provider error with a string `code` reaches Remote callers as `subagent/provider-rejected` (`{ code, message }`); `SubagentError` codes keep their mappings and uncoded errors stay `gateway/internal`.
 
 ```ts type-equiv
 /**
@@ -257,6 +259,28 @@ interface ContinuableCreateSpec {
    * `CreateAgentOptions.seed`: contiguous from seq 0, lossless JSON, balanced.
    */
   readonly seed?: readonly SessionEvent[]
+  /**
+   * Absolute working directory for the child, when the provider isolates it from
+   * the parent (e.g. a dedicated git worktree). Absent — the child inherits the
+   * parent's cwd, the default every existing provider relies on. It is DATA, not
+   * a capability: the continuation manager still owns creation, composition,
+   * delivery, resume, and disposal. Because the value becomes durable session
+   * metadata, a cold resume restores the isolated root from the persisted header
+   * without the provider re-creating anything. The manager requires an absolute
+   * path to an existing, enterable directory and rejects anything else with a
+   * {@link SubagentError} (`INVALID_PROVIDER_CWD`) before the child exists.
+   */
+  readonly cwd?: string
+  /**
+   * Id of the agent preset the child is composed from, when the provider wants a
+   * composition other than the parent's. Absent — the child joins the parent's
+   * composed preset. The manager mounts this preset on the child's scope and
+   * records the id in the child's session header, so cold resume composes the
+   * child from the same preset. An id the preset registry does not define, or a
+   * composition without a preset registry, fails the start with a
+   * {@link SubagentError} (`UNKNOWN_AGENT_PRESET`) before the child exists.
+   */
+  readonly agentPreset?: string
 }
 ```
 

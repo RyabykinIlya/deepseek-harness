@@ -464,6 +464,19 @@ export type SurfaceOp =
   | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq }
 
 /**
+ * Options of {@link Session.append} for log-only (non-surface) event types.
+ */
+export interface AppendOptions {
+  /**
+   * Stamps the envelope's {@link SessionEvent.ignorable} marker so a reader
+   * that does not know the event type skips it instead of refusing the log.
+   * Set it only on purely informational records whose loss cannot change
+   * reconstruction.
+   */
+  readonly ignorable?: true
+}
+
+/**
  * Surface placement and cited source-event seqs for {@link Session.append}. Required on
  * message-producing events and forbidden on log-only events.
  */

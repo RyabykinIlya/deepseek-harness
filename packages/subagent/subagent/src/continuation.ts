@@ -38,6 +38,7 @@ import {
   withContinuableReturnGuidance,
 } from './continuation-messages.ts'
 import { assertSubagentMaxDepth } from './depth.ts'
+import { assertUsableCwd } from './out-of-process.ts'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor.ts'
 import { establishCatalogChild } from './catalog.ts'
 import { SubagentError } from './error.ts'
@@ -143,6 +144,9 @@ export class SubagentContinuationManager {
       spec.signal.throwIfAborted()
       this.activations.assertAdmitting(parent)
 
+      if (prepared.cwd !== undefined) this.assertProviderCwd(spec.provider, prepared.cwd)
+      if (prepared.agentPreset !== undefined) await this.assertProviderPreset(spec.provider, prepared.agentPreset)
+
       const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
       const seed = prepared.seed
       const messageId = await this.activations.locks.run(childId, async () => {
@@ -164,7 +168,12 @@ export class SubagentContinuationManager {
           parent,
           create: {
             seed,
-            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined),
+            // A provider that isolated this child (e.g. in its own git worktree)
+            // supplies an absolute cwd; absent it the child inherits the parent's.
+            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, {
+              cwd: prepared.cwd,
+              agentPreset: prepared.agentPreset,
+            }),
             inheritedEventCount,
             delegatedPolicies,
             descriptor,
@@ -177,7 +186,11 @@ export class SubagentContinuationManager {
         return await this.submitMaterialized(
           activation,
           isAdjacentAgentSendMessageTool(this.ctx.get('tools')?.get('send_message', activation.handle.agent))
-            ? withContinuableReturnGuidance(parent.id, request.prompt)
+            ? withContinuableReturnGuidance(
+              parent.id,
+              request.prompt,
+              childHeader.cwd !== parent.session.header.cwd ? childHeader.cwd : undefined,
+            )
             : request.prompt,
           { source: { kind: 'user' }, signal: spec.signal, delivery: 'queue' },
           parent,
@@ -188,6 +201,46 @@ export class SubagentContinuationManager {
     } catch (error: unknown) {
       releaseHold()
       throw error
+    }
+  }
+
+  /** Refuse a provider cwd that is not an absolute, enterable directory, before any child exists. */
+  private assertProviderCwd(provider: string, cwd: string): void {
+    try {
+      assertUsableCwd('subagent', `provider "${provider}" cwd`, cwd)
+    } catch (error: unknown) {
+      throw new SubagentError(
+        error instanceof Error ? error.message : String(error),
+        'INVALID_PROVIDER_CWD',
+        { cause: error },
+      )
+    }
+  }
+
+  /** Refuse a provider agent preset the registry cannot compose, before any child exists. */
+  private async assertProviderPreset(provider: string, agentPreset: string): Promise<void> {
+    const presets = this.ctx.get('agentPresets')
+    if (presets === undefined) {
+      throw new SubagentError(
+        `provider "${provider}" requested agent preset "${agentPreset}" but no agent preset registry is composed`,
+        'UNKNOWN_AGENT_PRESET',
+      )
+    }
+    let resolved: Awaited<ReturnType<typeof presets.resolve>>
+    try {
+      resolved = await presets.resolve(agentPreset)
+    } catch (error: unknown) {
+      throw new SubagentError(
+        `provider "${provider}" requested unknown agent preset "${agentPreset}"`,
+        'UNKNOWN_AGENT_PRESET',
+        { cause: error },
+      )
+    }
+    if (resolved.broken !== undefined) {
+      throw new SubagentError(
+        `provider "${provider}" requested agent preset "${agentPreset}", which is not usable: ${resolved.broken}`,
+        'UNKNOWN_AGENT_PRESET',
+      )
     }
   }
 

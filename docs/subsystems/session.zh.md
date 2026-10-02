@@ -359,6 +359,8 @@ type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
 
 对 `SurfaceEventType` 事件必填：每个产生消息的事件都必须声明它如何加入 surface（派生模型历史的唯一来源）。面向人类的 transcript（文本记录）是另一个投影，读取的是日志中追加来源的事件，因为 surface 会有意遮蔽替换所概括的范围（见 [dsh-session](../../packages/core/session/README.zh.md) 的 `isAppendSurfaceEvent`）。非 surface 类型在编译期拒绝此参数。
 
+对于仅日志（非 surface）类型，第三个参数是可选的 `AppendOptions`：`{ ignorable: true }` 会写入信封的 `ignorable` 标记，使不认识该类型的读取方跳过该事件而不是拒绝整个日志。仅用于纯信息性记录。surface 类型继续使用 `SurfaceIntent`，不接受 `AppendOptions`。
+
 `assistant/message` 不能携带 `sourceEventSeqs`；它的 `stream` 拥有精确 provider 证据。其他 surface event 不引用较早 event 时省略该字段，需要引用时使用完整非空 list。
 
 <a id="plugin-owned-message-projections"></a>
@@ -583,7 +585,10 @@ declare class Session {
    *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
-   * @param opts - Surface metadata: `surfaceOp` controls how the event enters
+   * @param opts - For non-surface types, an optional {@link AppendOptions}:
+   *   `{ ignorable: true }` stamps the envelope marker that lets a reader which
+   *   does not know `type` skip the event instead of refusing the log; use it
+   *   only for purely informational records. For surface types, surface metadata: `surfaceOp` controls how the event enters
    *   the ordered surface; `sourceEventSeqs` lists the seq numbers of earlier
    *   events this one derives from. REQUIRED for
    *   {@link SurfaceEventType} events (every message-producing event must
@@ -613,7 +618,7 @@ declare class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : [opts?: AppendOptions]
     ): SessionEvent<T>;
   /**
    * The {@link EpochHeader} in force after the log's last header event — the

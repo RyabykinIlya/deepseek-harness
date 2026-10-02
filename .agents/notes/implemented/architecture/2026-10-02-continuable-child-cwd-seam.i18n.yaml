@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-02-continuable-child-cwd-seam.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-02-continuable-child-cwd-seam.md
+/agent-note-provider-chosen-working-directory-for-a-continuable-child:
+  en: 0dc051a1d2cc85f9
+  zh: 338bb10da190ed22
+/agent-note-provider-chosen-working-directory-for-a-continuable-child/problem:
+  en: d75bfac4d93e8972
+  zh: c24c9053378b9743
+/agent-note-provider-chosen-working-directory-for-a-continuable-child/decision:
+  en: 8156d5a90166e5a2
+  zh: 5a34f493365a882d
+/agent-note-provider-chosen-working-directory-for-a-continuable-child/what-a-relocated-child-is-not-confined-from:
+  en: 93b1380e79079fde
+  zh: a08b17bf0ebec274
+/agent-note-provider-chosen-working-directory-for-a-continuable-child/alternatives-considered:
+  en: a44dfb839f76db68
+  zh: 03e25f185ff9e4f8
+/agent-note-provider-chosen-working-directory-for-a-continuable-child/consequences:
+  en: 45132cfa2cc8ca84
+  zh: 58788d1827de104f

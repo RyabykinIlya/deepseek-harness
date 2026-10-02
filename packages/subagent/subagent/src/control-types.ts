@@ -136,5 +136,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'subagent/attachment-invalid': { readonly reason: string }
     /** The child exists but its inbox cannot admit the message now. */
     'subagent/delivery-unavailable': { readonly childSessionId: SessionId }
+    /**
+     * A subagent provider refused to prepare a child and named the reason with a
+     * machine-readable `code` (e.g. a worktree provider's `NOT_A_GIT_REPO`).
+     * The package does not enumerate provider codes.
+     */
+    'subagent/provider-rejected': { readonly code: string; readonly message: string }
   }
 }

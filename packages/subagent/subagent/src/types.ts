@@ -241,6 +241,28 @@ export interface ContinuableCreateSpec {
    * `CreateAgentOptions.seed`: contiguous from seq 0, lossless JSON, balanced.
    */
   readonly seed?: readonly SessionEvent[]
+  /**
+   * Absolute working directory for the child, when the provider isolates it from
+   * the parent (e.g. a dedicated git worktree). Absent — the child inherits the
+   * parent's cwd, the default every existing provider relies on. It is DATA, not
+   * a capability: the continuation manager still owns creation, composition,
+   * delivery, resume, and disposal. Because the value becomes durable session
+   * metadata, a cold resume restores the isolated root from the persisted header
+   * without the provider re-creating anything. The manager requires an absolute
+   * path to an existing, enterable directory and rejects anything else with a
+   * {@link SubagentError} (`INVALID_PROVIDER_CWD`) before the child exists.
+   */
+  readonly cwd?: string
+  /**
+   * Id of the agent preset the child is composed from, when the provider wants a
+   * composition other than the parent's. Absent — the child joins the parent's
+   * composed preset. The manager mounts this preset on the child's scope and
+   * records the id in the child's session header, so cold resume composes the
+   * child from the same preset. An id the preset registry does not define, or a
+   * composition without a preset registry, fails the start with a
+   * {@link SubagentError} (`UNKNOWN_AGENT_PRESET`) before the child exists.
+   */
+  readonly agentPreset?: string
 }
 
 /**

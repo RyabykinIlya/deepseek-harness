@@ -4,10 +4,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AttachmentStore, { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import type { MessageId } from '@deepseek-ai/dsh-llm'
+import { HarnessError, type MessageId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime, {
   SubagentError,
+  providerRejection,
   type SubagentPromptRequestId,
 } from '@deepseek-ai/dsh-subagent'
 import { deliverSubagentPrompt, type HostPromptDeliverer } from '@deepseek-ai/dsh-subagent/internal'
@@ -251,6 +252,23 @@ describe('subagent prompt Remote', () => {
     delivery.mockRejectedValue(new Error('inbox exploded'))
     await expect(subagents.prompt(promptRequest(), signal))
       .rejects.toMatchObject({ code: 'gateway/internal', message: 'subagent prompt failed' })
+  })
+
+  it('routes a provider error carrying a string code to subagent/provider-rejected', async () => {
+    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const delivery = promptDelivery(subagents)
+    delivery.mockRejectedValue(new HarnessError('not a repository', 'NOT_A_GIT_REPO'))
+    await expect(subagents.prompt(promptRequest(), signal)).rejects.toMatchObject({
+      code: 'subagent/provider-rejected',
+      details: { code: 'NOT_A_GIT_REPO', message: 'not a repository' },
+    })
+  })
+
+  it('keeps an uncoded error internal and the package codes on their own mapping', async () => {
+    expect(providerRejection(new Error('no code'))).toBeUndefined()
+    expect(providerRejection(new SubagentError('refused', 'NOT_RESUMABLE'))).toBeUndefined()
+    expect(providerRejection('plain string')).toBeUndefined()
+    expect(providerRejection(Object.assign(new Error('numeric'), { code: 42 }))).toBeUndefined()
   })
 
   it('answers a caller-cancelled delivery as cancelled rather than a failure', async () => {
