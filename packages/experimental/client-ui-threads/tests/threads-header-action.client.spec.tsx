@@ -115,6 +115,7 @@ function props(
       captureInsertion: vi.fn(() => EMPTY_SPAN),
       insertText: vi.fn(() => true),
       setDraft: unused,
+      persistDraft: unused,
       addAttachments: unused,
       removeAttachment: unused,
       pruneAttachments: unused,
