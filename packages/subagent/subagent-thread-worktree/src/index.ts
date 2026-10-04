@@ -35,8 +35,8 @@ import type {
   SubagentCapabilities,
   SubagentProvider,
 } from '@deepseek-ai/dsh-subagent'
-import { resolveRepoTopLevel, runGit, threadSlug, WorktreeError } from '@deepseek-ai/dsh-worktree-manager'
-import type { WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
+import { resolveRepoTopLevel, threadSlug, WorktreeError } from '@deepseek-ai/dsh-worktree-manager'
+import type { WorktreeBasePolicy, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
 import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 
 export const name = 'subagent-thread-worktree'
@@ -69,8 +69,17 @@ export interface Config {
   branchTemplate: string
   /** Agent preset id the Thread is composed from; absent means the child inherits the parent's preset. */
   childAgentPreset?: string
-  /** What the worktree starts from (default `head`). */
-  baseRef: ThreadBase
+  /**
+   * Which base the service resolves (default `head`).
+   *
+   * The service owns the policy — including the `git stash create` that captures
+   * the parent's uncommitted state. This provider used to run that snapshot
+   * itself and hand the service a commit sha under the name `baseRef`, which
+   * now means "the ref the request named" while the snapshot lands in
+   * `baseSha`. Naming the field after the service's own vocabulary keeps the two
+   * from colliding.
+   */
+  base: WorktreeBasePolicy
 }
 
 export const Config: z<Config> = z.object({
@@ -78,7 +87,7 @@ export const Config: z<Config> = z.object({
   branchPerThread: z.boolean().default(true),
   branchTemplate: z.string().default('dsh/thread-{{id}}'),
   childAgentPreset: z.string(),
-  baseRef: z.union(['head', 'head-with-uncommitted'] as const).default('head'),
+  base: z.union(['head', 'head-with-uncommitted'] as const).default('head'),
 })
 
 /**
@@ -137,15 +146,19 @@ class ThreadWorktreeProvider implements SubagentProvider {
     const branch = this.config.branchPerThread
       ? this.config.branchTemplate.replace('{{id}}', slug)
       : undefined
-    const baseRef = await this.resolveBaseRef(parentCwd)
-
     // The service writes a durable `reserved` intent BEFORE `git worktree add`, so a
     // crash mid-add is recoverable by reconcile. `create` rolls back on its own
     // failure and on abort.
+    //
+    // `baseRef` names the ref the snapshot is taken against and the fallback when
+    // the working tree is clean; `base` is the policy that decides whether a
+    // snapshot happens at all. The service owns both, so this provider runs no
+    // git of its own here.
     const record = await this.worktrees.create({
       repoRoot: parentCwd,
       threadId: request.sessionId,
-      baseRef,
+      baseRef: 'HEAD',
+      base: this.config.base,
       ...branch === undefined ? {} : { branch },
     }, request.signal)
 
@@ -161,21 +174,6 @@ class ThreadWorktreeProvider implements SubagentProvider {
       await this.worktrees.remove(record, { force: true })
       throw error
     }
-  }
-
-  /** The ref the worktree is created from, per `config.baseRef`. */
-  private async resolveBaseRef(parentCwd: string): Promise<string> {
-    if (this.config.baseRef === 'head') return 'HEAD'
-    const stash = await runGit(['stash', 'create'], parentCwd)
-    if (stash.code !== 0) {
-      throw new WorktreeError(
-        `thread worktrees: git stash create failed in ${parentCwd}: ${stash.stderr.trim()}`,
-        'WORKTREE_CREATE_FAILED',
-      )
-    }
-    // Empty output means no tracked change to capture.
-    const sha = stash.stdout.trim()
-    return sha === '' ? 'HEAD' : sha
   }
 }
 

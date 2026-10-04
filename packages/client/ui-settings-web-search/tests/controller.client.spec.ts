@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubConfigForm, type StubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
-import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
+import { WebSearchCardController, type WebSearchCardState, type WebSearchSectionFieldState, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites<T>(host: StubConfigForm<T>): void {
@@ -38,6 +38,18 @@ function ctxWith(namespaces: object) {
   return { remote: namespaces } as never
 }
 
+/**
+ * One declared section field as the snapshot carries it.
+ * @param state - the card snapshot.
+ * @param field - field name to read.
+ * @returns that field's entry, which must exist because the card declared it.
+ */
+function section(state: WebSearchCardState, field: string): WebSearchSectionFieldState {
+  const declared = state.sectionFields.find(entry => entry.field === field)
+  expect(declared, `card declares no ${field}`).toBeDefined()
+  return declared!
+}
+
 function credentialsApi(configured: boolean) {
   const describe = vi.fn(() => Promise.resolve({
     ok: true as const,
@@ -58,10 +70,8 @@ describe('WebSearchCardController', () => {
     host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://search.test/v1' }, user: {} })
     await vi.waitFor(() => { expect(state().apiKeyConfigured).toBe(true) })
 
-    expect(state()).toMatchObject({
-      baseURL: { text: 'https://search.test/v1', overridden: false },
-      apiKey: { text: '', overridden: false },
-    })
+    expect(section(state(), 'baseURL')).toMatchObject({ text: 'https://search.test/v1', overridden: false })
+    expect(state().apiKey).toMatchObject({ text: '', overridden: false })
   })
 
   it('writes the staged key through the credentials domain, never the settings section', async () => {
@@ -174,11 +184,8 @@ describe('WebSearchCardController', () => {
     face.save()
     await vi.waitFor(() => { expect(set).toHaveBeenCalled() })
 
-    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({
-      available: true,
-      apiKeyConfigured: false,
-      baseURL: { text: 'https://search.test/v1' },
-    })
+    expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({ available: true, apiKeyConfigured: false })
+    expect(section(face.hooks.webSearchCard.getSnapshot(), 'baseURL')).toMatchObject({ text: 'https://search.test/v1' })
   })
 
   it('ignores a credential read the Host refused', async () => {

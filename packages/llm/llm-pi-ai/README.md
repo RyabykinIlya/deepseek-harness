@@ -148,6 +148,7 @@ The adapter is built on immutable snapshots and per-operation resolution. Each o
 | [`src/context.ts`](src/context.ts) | Harness-to-pi-ai context conversion, image handling, replay restore |
 | [`src/stream.ts`](src/stream.ts) | pi-ai event conversion into harness `StreamChunk` values |
 | [`src/replay.ts`](src/replay.ts) | Versioned `ReplayEnvelope` storage and validation |
+| [`src/dispatch.ts`](src/dispatch.ts) | `ctx.piAiDispatch`: one stream call carrying a per-call OpenRouter `provider` block, plus `piAiResponseIdentity` |
 | [`src/discovery.ts`](src/discovery.ts) | Endpoint interrogation for configuration surfaces |
 
 ### Registration and directory
@@ -157,6 +158,10 @@ The plugin declares every installed catalog provider it can authenticate in the 
 ### Replay and vocabulary
 
 Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and uses it to retain same-model signatures; provider-reported response models remain diagnostic metadata. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks.
+
+### Per-call routing blocks
+
+A route’s `compat.openRouterRouting` belongs to the model descriptor, so every request on that route shares it. An adapter that must pin one request to one upstream provider — and knows which session that request belongs to, so it can pin per session rather than per call — reads it through `ctx.piAiDispatch.stream(request, { openRouterRouting })` instead. The call goes straight through the same adapter instance as `stream()`, without `ctx.llm`, because the caller is itself an adapter and has already received runtime-projected messages; the block reaches the wire unchanged, and a model that speaks anything but `openai-completions` refuses it with `INVALID_CONFIG` rather than dropping the pin silently. `piAiResponseIdentity(replayState)` reads the upstream `responseId`/`responseModel` back out of an envelope, or `undefined` when it is foreign, missing, or malformed. Choosing which endpoint to pin is not this package’s job; `dsh-experimental-model-routing` owns that.
 
 </details>
 

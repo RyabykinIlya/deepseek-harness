@@ -10,10 +10,11 @@ import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ThreadsHeaderAction, type ThreadsRosterInjected } from './ThreadsHeaderAction.tsx'
+import { ProjectTokenUsage, type ProjectTokensInjected } from './ProjectTokenUsage.tsx'
 import {
   NewProjectFooterAction, type NewProjectInjected, type NewProjectResult,
 } from './project/NewProjectFooterAction.tsx'
-import { toActionResult, toMemoryResult } from './actions.ts'
+import { toActionResult, toLibraryResult, toMemoryResult } from './actions.ts'
 import { projectAgentPreset } from './project.ts'
 import type { Config as ThreadsConfig } from './config.ts'
 import { ThreadHeaderAction } from './ThreadChatHeader.tsx'
@@ -132,6 +133,8 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
       toMemoryResult(await ctx.remote.projectMemory.update({ projectId: projectIdOf(projectId), id, text })),
     removeMemory: async (projectId, id) =>
       toMemoryResult(await ctx.remote.projectMemory.delete({ projectId: projectIdOf(projectId), id })),
+    // `library`'s request is keyed by the Session id itself, unlike `projectMemory`'s branded `ProjectId`.
+    listLibrary: async projectId => toLibraryResult(await ctx.remote.threads.library({ projectId })),
     projectAgentPresets,
   })
   ctx.slots.inject(
@@ -157,6 +160,19 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
       locale: NS,
       inject: () => threadActions,
     }, ThreadHeaderAction),
+  )
+  ctx.slots.inject(
+    'conversation.session.header.actions',
+    () => ctx.slots.register({
+      name: 'conversation.session.header.actions',
+      id: 'project-tokens',
+      // Directly after the roster (-25): the ledger counts exactly the Threads
+      // the roster beside it lists, so the two read as one figure about the
+      // Project's background work, ahead of Team navigation (-20).
+      order: -24,
+      locale: NS,
+      inject: (): ProjectTokensInjected => ({ projectAgentPresets }),
+    }, ProjectTokenUsage),
   )
   const newProjectActions = (): NewProjectInjected => ({
     startProject: async (workspaceId: WorkspaceId): Promise<NewProjectResult> => {

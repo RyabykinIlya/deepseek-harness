@@ -33,12 +33,14 @@ kind: "package-reference"
     worktreeRoot: /Users/you/.dsh/worktrees
     maxWorktreesPerRepo: 32
     adoptionGraceMs: 600000
+    base: head-with-uncommitted
 ```
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `worktreeRoot` | `~/.dsh/worktrees` | 保存意图日志与全部受管 worktree 的绝对目录，不得位于任何已注册 checkout 之内。 |
 | `repoRootResolution` | `explicit` | `spec.repoRoot` 为空时的来源：`explicit`（调用方必须显式给出）或 `parent-cwd`（宿主进程启动时所在的 checkout）。 |
+| `base` | `head` | 新 Thread 的 worktree 从何处创建：`head`（已提交的 `HEAD`）或 `head-with-uncommitted`（再加上父 checkout 已被跟踪的未提交改动）。spec 上的 `base` 可逐次覆盖它。见[基座策略](#understand-the-implementation/the-base-policy)。 |
 | `pruneOnStart` | `true` | 服务加载时执行对账清理。 |
 | `maxWorktreesPerRepo` | `32` | 每个仓库处于活动（非终态）的 worktree 上限，整数 ≥ 1。超出时抛出 `WORKTREE_LIMIT_REACHED`，其消息列出现有 Thread id；删除其中一个即可释放名额。运行中 Thread 的并发由 `dsh-subagent` 的 `maxActiveSubagents` 单独限制。 |
 | `adoptionGraceMs` | `600000` | 记录至少存在这么久之后，缺失会话才会使其成为孤儿；覆盖 worktree 创建与会话发布之间的时间窗。 |
@@ -69,6 +71,25 @@ ctx.worktrees.sessionExists = async (threadId: string) => (await ctx.sessionPers
 
 <a id="understand-the-implementation"></a>
 ## 实现原理
+
+<a id="understand-the-implementation/the-base-policy"></a>
+### 基座策略
+
+`create()` 用 `spec.base`（缺省时回落到配置的 `base`）决定 Thread 从哪个提交开始。默认值是 **`head`**，与本策略出现之前本包的行为完全一致：把 `baseRef` 解析为提交，仅此而已。
+
+**`head`** —— 已提交的状态。在协调者改到一半时派生出的 Thread **看不到**那处改动，这正是干净基座的用意：两个 Thread 源自同一提交，不会因对方没做过的改动而冲突。
+
+**`head-with-uncommitted`** —— 该提交**再加上父 checkout 已被跟踪的未提交改动**，用 `git stash create` 捕获为一个提交对象。因此在协调者改到一半时启动的 Thread 能看到进行中的工作，之后的合并也不会在父方从未提交过的那些行上冲突。该提交落在 Thread 自己的分支上，所以它是 Thread 的**起点**：`status()` 报告 `commitsAhead: 0`，`changes()` 在 Thread 自己提交之前不报告任何提交。
+
+有三条性质需要直说，因为读者无法从 git 自己的文档推出来：
+
+- **父工作树绝不会被改动。** `git stash create` 只向对象库添加条目 —— 引用命名空间里什么都不会留下，没有文件被移动，`git stash list` 仍为空。`git stash push`/`pop` 则会掏空父工作树，并与同一 checkout 中的其他 agent 发生竞态，正因如此才没有采用。
+- **未跟踪的文件**不**包含在内。** 不加 `-u` 时 git 无法在 stash 中表示它们，而这里刻意不传 `-u`。已暂存的新文件**会**包含在内，因为它属于索引的一部分。
+- **工作树干净不是失败。** 此时 `git stash create` 以 0 退出且输出为空；已提交的基座就是全部事实，Thread 就从它创建。而 `git stash create` **失败**是另一回事，会让整个 create 以 `WORKTREE_CREATE_FAILED` 失败 —— 悄悄回退到 `HEAD` 会把一个没人要求的基座交给 Thread，并让冲突重新出现。
+
+两种策略下 `baseRef` 都会被解析和校验，因此不可用的基座在任一策略下都会被拒绝。在 `head-with-uncommitted` 下，它表示快照所依据的 ref，也是工作树干净时的回退目标；`WorktreeRecord.baseSha` 始终是真正使用的提交，`WorktreeRecord.base` 记录产生它的策略。
+
+**重启**的 Thread 绝不重新快照。它通过 `git worktree add <path> <branch>` 重建，因此分支保留自己的历史；重新快照父 checkout 会记录下一个不再是该 Thread 工作的祖先的基座，使 `changes`/`filePatch` 拿它去和该 Thread 从未有过的提交做差异对比。取而代之的是继承上一条血脉的 `baseSha` —— 以及产生它的策略 —— 于是恢复的 Thread 仍然从它真正出发的地方度量。
 
 ### 意图先于副作用落盘
 
@@ -103,7 +124,7 @@ rolled-back ──────────────────── orphane
 
 ### 记录的基线与变更
 
-`create()` 把 `baseRef` 解析为提交并作为 `baseSha` 存入日志（更早写入的记录没有该字段，回退到 `baseRef`）。`get(threadId)` 返回任意状态下的最新记录。`status()` 增加 `commitsAhead`（`git rev-list --count baseSha..HEAD`）。`changes(record, { maxCommits, maxFiles })` 返回最新在前的提交、`baseSha..HEAD` 已提交的文件（含二进制识别）、总数以及未提交数量。`filePatch(record, path, maxBytes)` 返回单个仓库相对路径的已提交 diff，按字节在字符边界截断；绝对路径与 `..` 路径会被拒绝。所有列表与补丁都有上限。 `mergeCheck(record, { target }, maxConflicts)` 用 `git merge-tree --write-tree` 预测把 worktree 的 HEAD 合并进 `target`（在主检出中解析）是否冲突，列出至多 `maxConflicts` 个冲突路径并给出总数；不移动任何引用或工作树，git 低于 2.38 时返回 `{ supported: false }`。
+`create()` 按基座策略解析出提交，作为 `baseSha` 存入日志，并连同产生它的策略一起存为 `base`（更早写入的记录两者都没有，回退到 `baseRef`）。`get(threadId)` 返回任意状态下的最新记录。`status()` 增加 `commitsAhead`（`git rev-list --count baseSha..HEAD`）。`changes(record, { maxCommits, maxFiles })` 返回最新在前的提交、`baseSha..HEAD` 已提交的文件（含二进制识别）、总数以及未提交数量。`filePatch(record, path, maxBytes)` 返回单个仓库相对路径的已提交 diff，按字节在字符边界截断；绝对路径与 `..` 路径会被拒绝。所有列表与补丁都有上限。 `mergeCheck(record, { target }, maxConflicts)` 用 `git merge-tree --write-tree` 预测把 worktree 的 HEAD 合并进 `target`（在主检出中解析）是否冲突，列出至多 `maxConflicts` 个冲突路径并给出总数；不移动任何引用或工作树，git 低于 2.38 时返回 `{ supported: false }`。
 
 ### 多进程共用同一根目录
 
@@ -171,6 +192,7 @@ rolled-back ──────────────────── orphane
 ### 开发备注
 
 - 源码布局：`src/index.ts`（服务）、`src/registry.ts`（持久化意图日志与状态机）、`src/git.ts`（git 子进程表面）、`src/error.ts`（类型化失败）、`src/types.ts`（公共数据结构）、`src/states.ts`（状态集合）。
+- 基座策略的测试会真实地构造一个未干净的父 checkout，并从磁盘上读回所创建 worktree 里的文件；因此 `git stash create` 与 `git stash push`/`pop` 的区别是靠它对父 checkout **没有**做什么来证明的（`git status --porcelain` 不变、`git stash list` 为空），而不是靠一个被 mock 的返回值。
 - 测试为每个用例构建真实的临时 git 仓库（`mkdtemp` + `git init` + 一次提交），并把每条断言都从 git 本身读回——`git worktree list --porcelain`、`git branch --list`、`git status --porcelain`——而不是相信服务自己的账本。它们覆盖 SBFT 第 A1–A9 行，以及配置守卫与状态机各条边。
 - `SBFT A6`（add 进行中途中止）通过安装一个会 `sleep` 的 `post-checkout` 钩子变成确定性用例，从而保证 abort 确实落在 `git worktree add` 执行期间，而不是与它赛跑。
 

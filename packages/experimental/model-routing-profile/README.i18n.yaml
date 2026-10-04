@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/model-routing-profile/README.md
+/:
+  en: 50a5bd089a53fac7
+  zh: 50a5bd089a53fac7
+/deepseek-ai-dsh-experimental-model-routing-profile:
+  en: 41568906effc3daa
+  zh: 83db42be05237723
+/deepseek-ai-dsh-experimental-model-routing-profile/summary:
+  en: a827c8f7f26f0da6
+  zh: 00aad4d4a04d00a0
+/deepseek-ai-dsh-experimental-model-routing-profile/table-of-contents:
+  en: 3460b3e585e0c020
+  zh: bb83d3d282b286d8
+/deepseek-ai-dsh-experimental-model-routing-profile/use-this-package:
+  en: f4cc1349d40ce724
+  zh: 038b3316746a7889
+/deepseek-ai-dsh-experimental-model-routing-profile/use-this-package/configure-the-tiers:
+  en: dd4d8274643b4c0d
+  zh: fc0a45a9c33b17a3
+/deepseek-ai-dsh-experimental-model-routing-profile/use-this-package/store-the-openrouter-credential:
+  en: a32d66bbb8c5c618
+  zh: 701c4f83eb7baf92
+/deepseek-ai-dsh-experimental-model-routing-profile/understand-the-implementation:
+  en: 12e50a47625c8dff
+  zh: 5ef95b092be65341
+/deepseek-ai-dsh-experimental-model-routing-profile/understand-the-implementation/patch-document:
+  en: 0b8caf3b2fa9dc38
+  zh: 96a422c5a37594a2
+/deepseek-ai-dsh-experimental-model-routing-profile/understand-the-implementation/why-the-bundle-carries-no-configuration:
+  en: a79482fd353d25ce
+  zh: 6afb43aaec7527e7
+/deepseek-ai-dsh-experimental-model-routing-profile/model-experience:
+  en: 8614585823ee66b0
+  zh: 1338aca6f9b16690
+/deepseek-ai-dsh-experimental-model-routing-profile/model-experience/kv-cache-effect:
+  en: 7f30baa8b06716d6
+  zh: 221a104d057f5f29
+/deepseek-ai-dsh-experimental-model-routing-profile/known-limitations-and-deferred-work:
+  en: f48de14c7d0445d5
+  zh: 7f9bd3da373c5599
+/deepseek-ai-dsh-experimental-model-routing-profile/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

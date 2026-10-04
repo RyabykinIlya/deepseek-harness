@@ -1105,7 +1105,7 @@ describe('compat switches', () => {
   })
 
   it('refuses compat keys pi-ai’s catalog owns, pointing at the catalog route', () => {
-    for (const compat of [{ openRouterRouting: {} }, { supportsAdditionalTools: true }]) {
+    for (const compat of [{ vercelGatewayRouting: { only: ['bedrock'] } }, { supportsAdditionalTools: true }]) {
       expect(() => resolveProfiles({
         'acme-gateway': {
           api: 'openai-completions',
@@ -1114,6 +1114,44 @@ describe('compat switches', () => {
         },
       })).toThrow(/which is not configurable here/)
     }
+  })
+
+  it('accepts OpenRouter routing on a model and resolves it onto that model', () => {
+    // openRouterRouting moved from 'withhold' to 'offer' on 2026-10-03: the
+    // disposition's stated rationale was that pi-ai's installed catalog sets the
+    // field for a named vendor, and for this field that is not true — no entry
+    // in the installed openrouter catalog sets it, and pi-ai's own default is an
+    // empty value it omits from the wire. One model id is served by many
+    // upstreams at different prices, so `sort`/`max_price`/`order` have to be
+    // reachable from a hand-declared route.
+    const models = resolveProfiles({
+      'openrouter': {
+        api: 'openai-completions',
+        baseURL: 'https://openrouter.ai/api/v1',
+        models: [{
+          id: 'deepseek/deepseek-v4-pro',
+          compat: {
+            openRouterRouting: {
+              order: ['StreamLake', 'DeepInfra'],
+              sort: 'price',
+              max_price: { prompt: 1 },
+              preferred_min_throughput: 40,
+            },
+          },
+        }],
+      },
+    }).get('openrouter')?.piProvider?.getModels() ?? []
+    const model = models.find(one => one.id === 'deepseek/deepseek-v4-pro')
+    const compat = model?.compat
+    // `Model.compat` is a union over every wire protocol, so the field is read
+    // through an `in` narrowing rather than a cast.
+    const routing = compat !== undefined && 'openRouterRouting' in compat ? compat.openRouterRouting : undefined
+    expect(routing).toEqual({
+      order: ['StreamLake', 'DeepInfra'],
+      sort: 'price',
+      max_price: { prompt: 1 },
+      preferred_min_throughput: 40,
+    })
   })
 })
 

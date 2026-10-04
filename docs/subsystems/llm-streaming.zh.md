@@ -1084,6 +1084,25 @@ Types: [FileAttachmentRef](attachment.zh.md)
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxpiaidispatch--piaidispatch"></a>
+
+### `ctx.piAiDispatch` — `PiAiDispatch`
+
+`ctx.piAiDispatch`: streams one request through a configured pi-ai route with per-call options.
+
+```ts cordis-catalog
+/**
+ * Same contract as `PiAiAdapter.stream`. The call does not go through `ctx.llm`:
+ * the caller is itself an adapter and has already received runtime-projected messages.
+ * @param options - a request whose `provider` is a pi-ai route key (for example `openrouter`).
+ * @param dispatch - per-call options.
+ * @returns the chunk stream of one provider attempt.
+ */
+stream(options: GenerateOptions, dispatch?: PiAiDispatchOptions): AsyncIterable<StreamChunk>
+```
+
+Source: [`packages/llm/llm-pi-ai/src/dispatch.ts`](../../packages/llm/llm-pi-ai/src/dispatch.ts)
+
 <a id="llm-events"></a>
 
 ### `llm/*` events

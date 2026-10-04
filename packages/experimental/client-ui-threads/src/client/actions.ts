@@ -41,3 +41,21 @@ export function toMemoryResult<T>(
 ): MemoryResult<T> {
   return result.ok ? { ok: true, value: result.value } : { ok: false, code: result.error.code, message: result.error.message }
 }
+
+/** Result of one Library read: the value, or the Remote failure's code and message. */
+export type LibraryResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly code: string; readonly message: string }
+
+/**
+ * Fold a Remote result into a {@link LibraryResult}.
+ * @param result - the resolved Remote call.
+ * @returns the value, or the failure's code and message.
+ */
+export function toLibraryResult<T>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } },
+): LibraryResult<T> {
+  return result.ok ? { ok: true, value: result.value } : { ok: false, code: result.error.code, message: result.error.message }
+}

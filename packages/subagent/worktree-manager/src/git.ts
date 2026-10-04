@@ -231,6 +231,24 @@ export function worktreeStatus(worktreePath: string): Promise<GitOutput> {
   return runGit(['status', '--porcelain'], worktreePath)
 }
 
+/**
+ * Snapshot the repository's tracked uncommitted changes as a commit object, WITHOUT touching the
+ * working tree or the index.
+ *
+ * `git stash create` writes only into the object database — nothing lands in the ref namespace and
+ * no file moves — so it is safe to run while other agents are working in the same checkout. A plain
+ * `git stash push`/`pop` would not be: it rewrites the parent's working tree under everyone else's
+ * feet, and two Threads starting at once would pop each other's stash.
+ *
+ * The commit is a real merge commit whose tree is the working state, so `git worktree add <path>
+ * <sha>` materializes exactly what the parent was looking at.
+ * @param repoRoot - absolute path inside the owning repository.
+ * @returns git's raw result; empty `stdout` with exit 0 means "nothing tracked is modified".
+ */
+export function stashCreate(repoRoot: string): Promise<GitOutput> {
+  return runGit(['stash', 'create'], repoRoot)
+}
+
 
 /** Result of {@link runGitBounded}. */
 export interface BoundedGitOutput {

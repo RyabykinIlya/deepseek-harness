@@ -33,6 +33,23 @@ export interface PinnedResponse {
 /** Resolver signature used to test public-address policy without process DNS changes. */
 export type AddressResolver = (hostname: string, options: { all: true; order: 'verbatim' }) => Promise<LookupAddress[]>
 
+/** The production resolver, named so a caller can pass further policy arguments explicitly. */
+export const systemAddressResolver: AddressResolver = systemLookup
+
+/**
+ * One operator-declared CIDR block whose addresses are accepted as reachable destinations.
+ *
+ * A transparent proxy in `fake-ip` mode answers DNS for every proxied domain with a synthetic
+ * address from its own pool, and the address never names a host on the wire. Declaring that
+ * pool is the only way this guard can be told those answers are not rebinding attempts.
+ */
+export interface TrustedAddressRange {
+  /** Network address of the block, exactly as `ipaddr.parseCIDR` read it. */
+  readonly network: ipaddr.IPv4 | ipaddr.IPv6
+  /** Prefix length in bits, as written in the declared block. */
+  readonly prefixLength: number
+}
+
 /** RFC 6052 prefix lengths that may carry an IPv4 destination through NAT64. */
 const RFC6052_PREFIX_LENGTHS = [32, 40, 48, 56, 64, 96] as const
 const IPV4ONLY_DISCOVERY_HOST = 'ipv4only.arpa'
@@ -44,23 +61,80 @@ interface Nat64Prefix {
 }
 
 /**
+ * Compile declared CIDR blocks into the ranges the address policy matches against.
+ *
+ * This runs once, at plugin construction, so a malformed block is a configuration error rather
+ * than a request-time surprise — and so the hot path never re-parses the operator's strings.
+ *
+ * @param entries - CIDR blocks exactly as configured, e.g. `['198.18.0.0/15', 'fd00::/8']`.
+ * @returns the compiled ranges in declaration order.
+ * @throws when an entry is not an IPv4 or IPv6 CIDR block `ipaddr.parseCIDR` accepts.
+ */
+export function compileTrustedAddressRanges(entries: readonly string[]): TrustedAddressRange[] {
+  return entries.map((entry, index) => {
+    try {
+      const [network, prefixLength] = ipaddr.parseCIDR(entry)
+      return { network, prefixLength }
+    } catch (error: unknown) {
+      throw new Error(
+        `web-fetch-http: trustedProxyAddressRanges[${index}] "${entry}" is not a valid IPv4 or IPv6 CIDR block`,
+        { cause: error },
+      )
+    }
+  })
+}
+
+/**
  * Return whether an address is globally reachable unicast. IPv4-mapped IPv6 is
  * classified by its embedded IPv4 address; transition and translation prefixes
  * remain blocked because their eventual IPv4 destination cannot be pinned here.
  *
+ * An address that is not publicly routable is still accepted when it falls inside one of the
+ * operator-declared {@link TrustedAddressRange}s — the synthetic pool a local proxy answers
+ * with. An IPv4-mapped address is decided as the IPv4 address it embeds, so a declared IPv4
+ * block governs it and a declared IPv6 block can never widen the set of embedded addresses.
+ * With no declared range, this is exactly the public-unicast test it has always been.
+ *
  * @param input - textual IPv4 or IPv6 address.
- * @returns true only for a public unicast destination.
+ * @param trustedAddressRanges - operator-declared blocks; the empty default trusts nothing.
+ * @returns true for a public unicast destination or one inside a declared block.
  */
-export function isPublicIpAddress(input: string): boolean {
+export function isPublicIpAddress(
+  input: string,
+  trustedAddressRanges: readonly TrustedAddressRange[] = [],
+): boolean {
   let parsed: ipaddr.IPv4 | ipaddr.IPv6
   try {
     parsed = ipaddr.parse(stripIpv6Brackets(input))
   } catch {
     return false
   }
-  if (parsed instanceof ipaddr.IPv4) return parsed.range() === 'unicast'
-  if (parsed.isIPv4MappedAddress()) return parsed.toIPv4Address().range() === 'unicast'
-  return parsed.range() === 'unicast'
+  const address = effectiveAddress(parsed)
+  if (address.range() === 'unicast') return true
+  return isTrustedAddress(address, trustedAddressRanges)
+}
+
+/**
+ * The address the publicness decision is actually made about: an IPv4-mapped IPv6 form decides
+ * as the IPv4 address it embeds, so declared IPv4 blocks reach mapped forms and a mapped form
+ * can never borrow an IPv6 block's trust.
+ */
+function effectiveAddress(parsed: ipaddr.IPv4 | ipaddr.IPv6): ipaddr.IPv4 | ipaddr.IPv6 {
+  if (parsed instanceof ipaddr.IPv4) return parsed
+  return parsed.isIPv4MappedAddress() ? parsed.toIPv4Address() : parsed
+}
+
+/**
+ * Whether an address falls inside a declared block. Blocks of the other family never match:
+ * `ipaddr` refuses cross-family matches, and a declared IPv6 block must not be able to name an
+ * embedded IPv4 destination (or the reverse).
+ */
+function isTrustedAddress(
+  address: ipaddr.IPv4 | ipaddr.IPv6,
+  trustedAddressRanges: readonly TrustedAddressRange[],
+): boolean {
+  return trustedAddressRanges.some(range =>
+    range.network.kind() === address.kind() && address.match(range.network, range.prefixLength))
 }
 
 /**
@@ -70,12 +144,14 @@ export function isPublicIpAddress(input: string): boolean {
  * @param hostname - URL hostname, including brackets when it is an IPv6 literal.
  * @param signal - aborts the wait for system resolution; an in-flight OS lookup may finish unused.
  * @param resolver - lookup implementation, overridden only by focused tests.
+ * @param trustedAddressRanges - operator-declared blocks accepted as reachable; empty by default.
  * @returns the validated, non-empty address set.
  */
 export async function resolvePublicAddresses(
   hostname: string,
   signal: AbortSignal,
-  resolver: AddressResolver = systemLookup,
+  resolver: AddressResolver = systemAddressResolver,
+  trustedAddressRanges: readonly TrustedAddressRange[] = [],
 ): Promise<PublicAddress[]> {
   const unbracketed = stripIpv6Brackets(hostname)
   const literalFamily = isIP(unbracketed)
@@ -97,11 +173,14 @@ export async function resolvePublicAddresses(
     if ((entry.family !== 4 && entry.family !== 6) || isIP(entry.address) !== entry.family) {
       throw new WebError(`hostname "${hostname}" resolved to an invalid IP address`, 'WEB_PROVIDER_ERROR')
     }
-    if (!isPublicIpAddress(entry.address)) {
+    if (!isPublicIpAddress(entry.address, trustedAddressRanges)) {
       throw new WebError(`URL hostname "${hostname}" resolves to a non-public IP address`, 'WEB_BLOCKED_URL')
     }
+    // A NAT64 answer is accepted or refused by the same rule applied to a plain address: the
+    // operator's declared pool may hold the translated IPv4 destination just as it may hold the
+    // address itself, and declaring it is the only way to say so.
     const translatedIpv4 = translatedIpv4Address(entry.address, nat64Prefixes)
-    if (translatedIpv4 !== undefined && !isPublicIpAddress(translatedIpv4)) {
+    if (translatedIpv4 !== undefined && !isPublicIpAddress(translatedIpv4, trustedAddressRanges)) {
       throw new WebError(`URL hostname "${hostname}" resolves through NAT64 to a non-public IPv4 address`, 'WEB_BLOCKED_URL')
     }
     addresses.push({ address: entry.address, family: entry.family })
@@ -165,12 +244,19 @@ function embeddedIpv4Address(bytes: readonly number[], prefixLength: Nat64Prefix
  * resolution: the address is already stated, and handing it to a proxy running on this machine
  * would reach exactly the loopback or private service the checks exist to keep out of reach.
  *
+ * The operator's declared ranges apply here too: an address inside one is no longer a service
+ * this guard must keep out of reach, so it is judged like any other acceptable destination.
+ *
  * @param hostname - a URL's hostname, bracketed or not.
+ * @param trustedAddressRanges - operator-declared blocks; the empty default trusts nothing.
  * @returns true when the host is a literal address no request may be sent to.
  */
-export function isNonPublicIpLiteral(hostname: string): boolean {
+export function isNonPublicIpLiteral(
+  hostname: string,
+  trustedAddressRanges: readonly TrustedAddressRange[] = [],
+): boolean {
   const unbracketed = stripIpv6Brackets(hostname)
-  return isIP(unbracketed) !== 0 && !isPublicIpAddress(unbracketed)
+  return isIP(unbracketed) !== 0 && !isPublicIpAddress(unbracketed, trustedAddressRanges)
 }
 
 /**

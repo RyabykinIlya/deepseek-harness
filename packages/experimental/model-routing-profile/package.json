@@ -1,0 +1,51 @@
+{
+  "name": "@deepseek-ai/dsh-experimental-model-routing-profile",
+  "description": "The tiers model route, its settings page, and the composer chip in one experimental bundle",
+  "version": "0.2.0-rc.2",
+  "icon": "./icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/experimental/model-routing-profile"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "icon.svg",
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-experimental-client-ui-model-routing": "workspace:*",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-experimental-client-ui-model-routing": "workspace:*",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*",
+    "js-yaml": "^4.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

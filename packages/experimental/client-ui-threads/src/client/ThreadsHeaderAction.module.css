@@ -385,3 +385,87 @@
 .memoryError {
   color: var(--dsw-alias-state-error-primary);
 }
+
+.librarySection {
+  padding: 6px 9px;
+}
+
+.librarySection + .librarySection {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.libraryHeading {
+  margin: 0 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.libraryList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.libraryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.libraryPrimary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libraryMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.libraryBadge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-default);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.libraryFiles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 0 0 0 10px;
+  list-style: none;
+}
+
+.libraryFile {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.libraryFilePath {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -73,6 +73,7 @@
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-client-ui-workspace": "workspace:*",
     "@deepseek-ai/dsh-experimental-project-memory": "workspace:*",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*",
     "@deepseek-ai/dsh-experimental-threads": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",

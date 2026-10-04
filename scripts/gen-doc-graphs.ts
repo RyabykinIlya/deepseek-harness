@@ -867,6 +867,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it.',
   },
   {
+    key: 'modelRouting',
+    pkg: 'experimental-model-routing',
+    title: 'Tier-based model and provider selection',
+    mode: 'service',
+    consumers: ['experimental-tool-threads'],
+    note: 'Folds model-routing/decision into the modelRouting projection, prices what a tier\'s models would cost, and records a Thread\'s tier override. The route adapter is its direct consumer, the thread_tier tool calls setThreadTier, and the settings page reads quote and freeUsage.',
+  },
+  {
+    key: 'piAiDispatch',
+    pkg: 'llm-pi-ai',
+    title: 'Per-call pi-ai dispatch with a routing block',
+    mode: 'service',
+    consumers: ['experimental-model-routing'],
+    note: 'Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer.',
+  },
+  {
     key: 'projectMemory',
     pkg: 'experimental-project-memory',
     title: 'Project-shared durable memory',

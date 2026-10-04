@@ -284,6 +284,9 @@ flowchart LR
   pkg_experimental_threads["experimental-threads"]
   pkg_experimental_tool_threads["experimental-tool-threads"]
   svc_threads["ctx.threads<br/>Project Thread status and archival"]
+  pkg_experimental_model_routing["experimental-model-routing"]
+  svc_modelRouting["ctx.modelRouting<br/>Tier-based model and provider selection"]
+  svc_piAiDispatch["ctx.piAiDispatch<br/>Per-call pi-ai dispatch with a routing block"]
   pkg_experimental_project_memory["experimental-project-memory"]
   svc_projectMemory["ctx.projectMemory<br/>Project-shared durable memory"]
   pkg_agent --> svc_agents
@@ -334,6 +337,7 @@ flowchart LR
   pkg_experimental_browser_use_stagehand_native --> svc_browserUse
   pkg_experimental_computer_use_cua_driver_mcp --> svc_computerUse
   pkg_experimental_computer_use_cua_driver_native --> svc_computerUse
+  pkg_experimental_model_routing --> svc_modelRouting
   pkg_experimental_project_memory --> svc_projectMemory
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
@@ -359,6 +363,7 @@ flowchart LR
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
+  pkg_llm_pi_ai --> svc_piAiDispatch
   pkg_llm_replay --> svc_llm
   pkg_lsp --> svc_lsp
   pkg_lsp_stdio --> svc_lsp
@@ -492,9 +497,11 @@ flowchart LR
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
+  svc_modelRouting --> pkg_experimental_tool_threads
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
+  svc_piAiDispatch --> pkg_experimental_model_routing
   svc_pluginManager --> pkg_plugin_manager
   svc_pluginManager --> pkg_ui_settings_plugin_inventory
   svc_pluginRegistryProbe --> pkg_client_ui_plugin_manager
@@ -688,6 +695,8 @@ flowchart LR
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
 | `ctx.worktrees` | `service` | [`worktree-manager`](../packages/subagent/worktree-manager) | - | [`subagent-thread-worktree`](../packages/subagent/subagent-thread-worktree), [`experimental-threads`](../packages/experimental/threads), `experimental-tool-threads` | - | 负责 worktree 的创建、仅追加的 JSONL 意图注册表、状态机以及孤儿记录的对账。thread 提供方是唯一的写入方；Thread 领域包与 diff 工具只读取记录、提交与变更。它靠给 child Session 一个工作目录来限定范围，而不是代管文件，因此使用方必须自行设置 Session 的 cwd，并把记录继续传递下去。 |
 | `ctx.threads` | `service` | [`experimental-threads`](../packages/experimental/threads) | - | `experimental-tool-threads` | - | 把仅写日志的 thread/* 事件折叠成 threads 投影；存活状态按运行时实时计算，而不是取自日志；同时负责归档 Thread。写入方是 subagent/start 与 subagent/end 监听器；status 与 diff 工具是直接使用方，而 Project profile 扩展包只挂载该服务，并不调用它。 |
+| `ctx.modelRouting` | `service` | [`experimental-model-routing`](../packages/experimental/model-routing) | - | `experimental-tool-threads` | - | Folds model-routing/decision into the modelRouting projection, prices what a tier's models would cost, and records a Thread's tier override. The route adapter is its direct consumer, the thread_tier tool calls setThreadTier, and the settings page reads quote and freeUsage. |
+| `ctx.piAiDispatch` | `service` | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | [`experimental-model-routing`](../packages/experimental/model-routing) | - | Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer. |
 | `ctx.projectMemory` | `service` | [`experimental-project-memory`](../packages/experimental/project-memory) | - | - | - | 在 storage domain 上按 Project Session 存放有上限的条目集合，并通过 Session 血缘把 Thread 解析回它的 Project。除自身包之外没有进程内使用方：agent 经由 memory_read 与 memory_write 工具访问，浏览器经由它的 Remote 命名空间访问。 |
 
 维护模式：混合模式。服务从 Cordis 声明中发现；接口、实现和消费方角色在 `scripts/gen-doc-graphs.ts` 中分类，并设有完整性守卫。

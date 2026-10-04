@@ -16,6 +16,7 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
 import WorktreeService from '@deepseek-ai/dsh-worktree-manager'
@@ -312,6 +313,28 @@ describe('threads.library', () => {
       const refused = await ctx.threads.library({ projectId: SessionId(id) }).catch((error: unknown) => error)
       expect(remoteErrorOf(refused)).toMatchObject({ code: 'threads/project-not-found', details: { reason: 'not-project' } })
     }
+  })
+
+  it('reads a Project switched to its preset after creation', async () => {
+    // How the New Project button composes a Session: created under the deployment
+    // default, then recomposed before the first turn. The creation header stays frozen
+    // on the default, so reading it alone refuses a real Project.
+    const ctx = await mount()
+    ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    const p = project(ctx, 'switched', 'standard')
+    p.append('agent-preset/selected', { agentPreset: 'project' })
+    say(p, [{ type: 'file', attachment: { attachmentId: 'sha256:s' as AttachmentId, name: 's.txt', bytes: 4 } }])
+    expect(p.header.agentPreset).toBe('standard')
+    expect((await ctx.threads.library({ projectId: p.id })).attachments.items.map(item => item.name)).toEqual(['s.txt'])
+  })
+
+  it('refuses a Project switched away from its preset', async () => {
+    const ctx = await mount()
+    ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    const p = project(ctx, 'left', 'project')
+    p.append('agent-preset/selected', { agentPreset: 'standard' })
+    const refused = await ctx.threads.library({ projectId: p.id }).catch((error: unknown) => error)
+    expect(remoteErrorOf(refused)).toMatchObject({ code: 'threads/project-not-found', details: { reason: 'not-project' } })
   })
 
   it('reads a persisted Project when it is not live and honours configured Project presets', async () => {

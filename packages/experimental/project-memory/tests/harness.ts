@@ -6,6 +6,8 @@ import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -27,6 +29,8 @@ export async function harness(options: {
   service?: false
   /** Headers served by a fake `sessionPersistence.stat`, by Session id; the service is absent when omitted. */
   persisted?: Readonly<Record<string, { agentPreset?: string; parentSession?: string }>>
+  /** Mount the projection registry with the real `agentPreset` unit; absent by default so the header stays the only answer. */
+  projections?: boolean
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -34,6 +38,10 @@ export async function harness(options: {
   await ctx.plugin(SystemPrompt, {})
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(Storage)
+  if (options.projections === true) {
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.effect(() => ctx.sessionProjections.register(agentPresetProjectionDefinition))
+  }
   const pool = options.pool ?? new MemoryMediaPool()
   const backend = new MemoryStorageBackend(pool)
   ctx.effect(() => ctx.storage.backend.register('fixture', backend))
@@ -81,6 +89,17 @@ export function agentFor(ctx: Context, id: string, meta: { agentPreset?: string;
     send() {}, followup() {}, steer() {}, inject() {}, cancel() {},
     whenIdle: async () => {}, runMaintenance: operation => operation(new AbortController().signal),
   }
+}
+
+/**
+ * Recompose a live Session under another preset, the way `agentPresets.select` does:
+ * the composition moves and the event is appended, while the deep-frozen creation
+ * header keeps naming the preset the Session started with.
+ * @param agent - the Session to switch.
+ * @param agentPreset - the preset the composition moves to.
+ */
+export function selectPreset(agent: Agent, agentPreset: string): void {
+  agent.session.append('agent-preset/selected', { agentPreset })
 }
 
 let call = 0

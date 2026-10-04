@@ -64,6 +64,7 @@ import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-us
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolThreads from '@deepseek-ai/dsh-experimental-threads-tool'
+import type { ModelRoutingControl } from '@deepseek-ai/dsh-experimental-model-routing'
 import * as ProjectMemoryTools from '@deepseek-ai/dsh-experimental-project-memory/tools'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
@@ -81,6 +82,22 @@ import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-depe
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
+/**
+ * The routing seam `thread_tier` registers behind.
+ *
+ * The tool exists to ask this service to record a decision in a Project log, so
+ * the schema harvest never reaches the recording path; every call refuses.
+ */
+class CatalogModelRouting implements ModelRoutingControl {
+  tierNames(): readonly string[] {
+    return ['pro', 'flash']
+  }
+
+  setThreadTier(): void {
+    throw new Error('gen-tool-catalog: thread_tier execution is unreachable during schema harvest')
+  }
+}
+
 class CatalogAttachmentStore extends AttachmentStore {
   readonly imageLimits: ImageAttachmentLimits = Object.freeze({
     maxImageBytes: 1,
@@ -624,16 +641,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-experimental-threads-tool',
     dir: 'tool-threads',
     source: 'packages/experimental/tool-threads/src/index.ts',
-    requires: ['ctx.tools', 'a calling Agent owning the Project session', 'ctx.threads with the threads projection loaded'],
+    requires: ['ctx.tools', 'a calling Agent owning the Project session', 'ctx.threads with the threads projection loaded', 'ctx.modelRouting (thread_tier registration)'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
-      // The tool registers from the tool registry alone, so the catalog can
-      // harvest its schema without the Threads domain; an unavailable
-      // projection is a runtime error, never a missing schema.
+      // The tools register from the tool registry alone, so the catalog can
+      // harvest their schemas without the Threads domain; an unavailable
+      // projection is a runtime error, never a missing schema. `thread_tier`
+      // is the one exception: it registers only while a routing service is
+      // present, so the catalog provides the seam its registration waits on.
+      ctx.provide('modelRouting', new CatalogModelRouting())
       await ctx.plugin(ToolThreads)
     },
     note:
-      'Both tools read only Threads in the calling Project Session\'s own `threads` projection, and every result is bounded in bytes with an explicit omission line. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.',
+      'All four tools read only the calling Project Session\'s own Thread and Library state, and every result is bounded in bytes with an explicit omission line. `thread_status`, `thread_diff` and `thread_tier` read its `threads` projection; `library_list` reads the Library read model, which derives from Session logs and worktrees rather than that projection. `thread_tier` is registered only while @deepseek-ai/dsh-experimental-model-routing is mounted, because without it there are no tiers to name. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.',
   },
   {
     pkg: '@deepseek-ai/dsh-experimental-project-memory',

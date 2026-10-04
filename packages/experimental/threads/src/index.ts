@@ -18,6 +18,7 @@ import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-sess
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type { WorktreeRecord, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
@@ -198,7 +199,7 @@ export class ThreadsService extends TypertRemoteService {
     if (project === undefined) {
       throw new RemoteError('threads/project-not-found', `Unknown project: ${projectId}`, { projectId, reason: 'unknown' })
     }
-    const preset = project.header.agentPreset
+    const preset = this.projectPresetOf(projectId, project.header)
     if (preset === undefined || !this.config.projectPresets.includes(preset)) {
       throw new RemoteError('threads/project-not-found', `Session ${projectId} is not a project`, { projectId, reason: 'not-project' })
     }
@@ -222,8 +223,27 @@ export class ThreadsService extends TypertRemoteService {
     }
   }
 
+  /**
+   * The preset a Project Session currently runs.
+   *
+   * `SessionHeader.agentPreset` is a creation fact and stays frozen, while
+   * `agentPresets.select` changes the mounted composition of a still-blank Session —
+   * which is exactly how a New Project is composed. The `agentPreset` Session
+   * projection is the effective value, so it wins whenever the registry is loaded;
+   * the header answers only for a Session that is not live or whose projection
+   * registry is absent.
+   * @param id - the Session being classified.
+   * @param header - its header, used when no live projection is available.
+   * @returns the effective preset id, or undefined when the Session runs none.
+   */
+  private projectPresetOf(id: SessionId, header: SessionHeader): string | undefined {
+    const live = this.ctx.get('sessions')?.get(id)
+    const projected = live === undefined ? undefined : this.registry?.stateOf(live, 'agentPreset')
+    return projected === undefined ? header.agentPreset : projected ?? undefined
+  }
+
   private async loadSession(id: SessionId): Promise<LoggedSession | undefined> {
-    const live = this.ctx.sessions.get(id)
+    const live = this.ctx.get('sessions')?.get(id)
     if (live !== undefined) {
       // oxlint-disable-next-line typescript/no-deprecated -- Deferred migration: whole-log read, no paged reader yet.
       return { header: live.header, events: live.snapshotEvents() }

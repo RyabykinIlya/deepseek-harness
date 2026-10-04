@@ -1,0 +1,69 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../llm/llm-pi-ai"
+    },
+    {
+      "path": "../../llm/token-meter"
+    },
+    {
+      "path": "../../llm/llm-retry"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../compaction/compaction"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../util/launch-environment"
+    }
+  ]
+}

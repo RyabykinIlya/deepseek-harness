@@ -1,0 +1,52 @@
+{
+  "status": 200,
+  "request": {
+    "state": {
+      "latest_user_message": "продолжай"
+    }
+  },
+  "response": {
+    "model": "typesafe/jev-1.13-20260917",
+    "answers": {
+      "tier": {
+        "type": "choice",
+        "choice": "flash",
+        "probabilities": {
+          "flash": 0.77,
+          "pro": 0.23
+        },
+        "confidence": 0.54
+      },
+      "difficulty": {
+        "type": "score",
+        "score": 0.18,
+        "legend": {
+          "0": "Trivial",
+          "1": "Routine",
+          "2": "Moderate",
+          "3": "Hard",
+          "4": "Very hard"
+        },
+        "probabilities": {
+          "0": 0.87,
+          "1": 0.1,
+          "2": 0.01,
+          "3": 0.01,
+          "4": 0.01
+        },
+        "confidence": 0.85
+      },
+      "precision": {
+        "type": "noul",
+        "noul": 0.19
+      }
+    },
+    "usage": {
+      "input_tokens": 518,
+      "output_tokens": 61,
+      "cost": 2.1756e-05
+    },
+    "id": "gen-dec-1791059790-0tQwzoWlnhSPCeaocan7",
+    "provider": "TypeSafe"
+  }
+}

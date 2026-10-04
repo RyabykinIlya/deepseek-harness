@@ -1,6 +1,13 @@
 /**
- * The web-search page's staged form over the `web-search-deepseek` settings
+ * The web-search page's staged form over one search provider's settings
  * namespace.
+ *
+ * Each provider's section declares its OWN fields, so what this form stages is
+ * declared per provider rather than assumed: the three namespaces agree on
+ * `baseURL` and on little else. DeepSeek bounds the searches one request may
+ * run, Brave the results it asks for and the timeout, Tavily the result count,
+ * the timeout and the snippet length — and a control bound to a field the Host
+ * does not serve is one whose every save is refused.
  *
  * The key is the one control that does not live in the section: its literal
  * never rides a response, so the page learns only whether one is configured
@@ -15,29 +22,138 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   SettingsFormModel, settingsNumberField, settingsTextField,
-  type SettingsFieldState, type SettingsFormActions, type SettingsFormShell, type SettingsFormScope, type SettingsFormScopeSnapshot,
+  type SettingsFieldSpec, type SettingsFieldState, type SettingsFormActions, type SettingsFormShell, type SettingsFormScope,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { WebSearchSettingsLocaleKey } from './locales.ts'
+
+/** Which named provider a block configures, and where its section comes from. */
+export type WebSearchProviderId = 'deepseek-official' | 'brave' | 'tavily'
 
 /**
- * Namespace of the DeepSeek search provider. Spelled here rather than
- * imported: a client package must not depend on a Host package.
+ * One field of a provider's settings section, as its card edits it.
+ *
+ * A section field, never the credential: the key is written through
+ * `remote.credentials` and is deliberately absent from every provider's list.
  */
-export const WEB_SEARCH_NS = 'web-search-deepseek'
+export interface WebSearchSectionField {
+  /** Field name inside this provider's namespace section. */
+  readonly field: string
+  /** Whether the section stores a number, which its control renders as one. */
+  readonly numeric: boolean
+  /** Locale key naming this control. */
+  readonly label: WebSearchSettingsLocaleKey
+  /** Locale key explaining what this control changes. */
+  readonly hint: WebSearchSettingsLocaleKey
+}
 
-/** Credential reference the provider resolves when the section names none. */
-const DEFAULT_API_KEY_REF = 'DEEPSEEK_API_KEY'
+/** One search provider this page can configure. */
+export interface WebSearchProviderSpec {
+  /** Provider id written to `web.searchProvider` when this one is selected. */
+  readonly id: WebSearchProviderId
+  /** Settings namespace the Host serves for this provider. */
+  readonly namespace: string
+  /** Credential reference used when the section names none. */
+  readonly defaultApiKeyRef: string
+  /**
+   * The section fields this provider's card edits, in render order.
+   *
+   * Every name here is a key of that provider's own `z.object({ ... })`, the
+   * Host's schema being the only authority on what its namespace carries. A
+   * name the schema lacks is not merely hidden: the Host rejects a write to it,
+   * so a card built over another provider's field set fails its own save.
+   */
+  readonly sectionFields: readonly WebSearchSectionField[]
+}
+
+/**
+ * Every search provider the page knows how to configure.
+ *
+ * Namespaces and section fields are spelled here rather than imported: a client
+ * package must not depend on a Host package, so the schemas these names mirror
+ * cannot be read here. A provider is rendered only while the Host serves its
+ * namespace, so listing one that is not mounted costs nothing.
+ *
+ * DuckDuckGo is absent on purpose. It holds no key, and its namespace declares
+ * no section field at all, so there is no credential block and nothing to edit.
+ */
+export const WEB_SEARCH_PROVIDERS: readonly WebSearchProviderSpec[] = [
+  {
+    id: 'deepseek-official',
+    namespace: 'web-search-deepseek',
+    defaultApiKeyRef: 'DEEPSEEK_API_KEY',
+    sectionFields: [
+      { field: 'baseURL', numeric: false, label: 'baseUrl', hint: 'baseUrlHint' },
+      { field: 'maxUses', numeric: true, label: 'maxUses', hint: 'maxUsesHint' },
+    ],
+  },
+  {
+    id: 'brave',
+    namespace: 'web-search-brave',
+    defaultApiKeyRef: 'BRAVE_API_KEY',
+    sectionFields: [
+      { field: 'baseURL', numeric: false, label: 'baseUrl', hint: 'baseUrlHint' },
+      { field: 'maxResults', numeric: true, label: 'maxResults', hint: 'maxResultsHint' },
+      { field: 'timeoutMs', numeric: true, label: 'timeoutMs', hint: 'timeoutMsHint' },
+    ],
+  },
+  {
+    id: 'tavily',
+    namespace: 'web-search-tavily',
+    defaultApiKeyRef: 'TAVILY_API_KEY',
+    sectionFields: [
+      { field: 'baseURL', numeric: false, label: 'baseUrl', hint: 'baseUrlHint' },
+      { field: 'numResults', numeric: true, label: 'numResults', hint: 'numResultsHint' },
+      { field: 'timeoutMs', numeric: true, label: 'timeoutMs', hint: 'timeoutMsHint' },
+      { field: 'maxContentChars', numeric: true, label: 'maxContentChars', hint: 'maxContentCharsHint' },
+    ],
+  },
+]
+
+/**
+ * The conversion one declared section field stages through.
+ * @param declared - the field this provider's card edits.
+ * @returns its `SettingsFormModel` spec.
+ */
+function sectionSpec(declared: WebSearchSectionField): SettingsFieldSpec {
+  return declared.numeric ? settingsNumberField(declared.field) : settingsTextField(declared.field)
+}
+
+/** Namespace of the DeepSeek search provider, kept for callers that name one. */
+export const WEB_SEARCH_NS = WEB_SEARCH_PROVIDERS[0]!.namespace
 
 /** Form field the credential control stages under. */
 const API_KEY_FIELD = 'apiKey'
 
-/** The search-provider fields this page edits. */
+/**
+ * The section fields the served namespaces carry between them.
+ *
+ * One type for three schemas: a scope is bound per provider and the Host serves
+ * whatever that provider declares, so every field is optional here and a card
+ * reads only the ones its own provider lists. The last three are DeepSeek's and
+ * no card edits them: they are listed so this describes what the namespaces
+ * hold, not only what this page happens to touch.
+ */
 export interface WebSearchSettings {
   /** Credential reference naming the environment key. */
   apiKeyEnv?: string
   /** Provider endpoint; blank inherits the provider default. */
   baseURL?: string
-  /** Maximum searches served within one request. */
+  /** Brave's result count for a search that carries no bound of its own. */
+  maxResults?: number
+  /** Tavily's result count for a search that carries no bound of its own. */
+  numResults?: number
+  /** Tavily's character cap on one result's snippet. */
+  maxContentChars?: number
+  /** Request timeout in milliseconds. */
+  timeoutMs?: number
+  /** DeepSeek's maximum searches served within one request. */
   maxUses?: number
+  /** DeepSeek's Anthropic-format model name. */
+  model?: string
+  /** DeepSeek's `anthropic-version` header value. */
+  apiVersion?: string
+  /** DeepSeek's upper bound on tokens generated for one search. */
+  maxTokens?: number
 }
 
 /** What the credentials domain last reported, and for which reference. */
@@ -50,12 +166,45 @@ interface CredentialState {
   writable: boolean
 }
 
+/**
+ * One declared section field, as its control renders it.
+ *
+ * The locale keys ride the field rather than the card, because the label is a
+ * property of the provider's schema: two providers can name the same control
+ * `maxResults` and `numResults` for the same idea, and no card-side switch can
+ * tell which of them it is rendering.
+ */
+export interface WebSearchSectionFieldState extends SettingsFieldState {
+  /** Field name inside the section; the form's edit and reset address it. */
+  readonly field: string
+  /** Whether this control renders as a numeric one. */
+  readonly numeric: boolean
+  /** Locale key naming this control. */
+  readonly label: WebSearchSettingsLocaleKey
+  /** Locale key explaining what this control changes. */
+  readonly hint: WebSearchSettingsLocaleKey
+}
+
 /** What the web-search page renders. */
 export interface WebSearchCardState extends SettingsFormShell {
-  /** Provider endpoint. */
-  baseURL: SettingsFieldState
-  /** Searches allowed per request. */
-  maxUses: SettingsFieldState
+  /**
+   * The section fields THIS provider declares, in render order.
+   *
+   * A list rather than one property per field: the fields differ per provider,
+   * so a card written against DeepSeek's two would show Brave a search budget
+   * that its namespace has no field for.
+   */
+  sectionFields: readonly WebSearchSectionFieldState[]
+  /**
+   * Which provider this card configures, and so the prefix every control id on
+   * this card carries.
+   *
+   * The Plugins page renders one card per served provider at once, and `baseURL`
+   * is declared by all three. Without the provider in the id, every card would
+   * publish the same DOM id, `htmlFor` would resolve to whichever came first,
+   * and a label could move focus into another provider's control.
+   */
+  providerId: WebSearchProviderId
   /** The staged credential, which starts blank on every load. */
   apiKey: SettingsFieldState
   /** Whether the Host reports a credential configured for the referenced key. */
@@ -72,7 +221,7 @@ export interface WebSearchCardFace extends SettingsFormActions {
   }
 }
 
-/** Bridges the `web-search-deepseek` scope and the credentials domain onto the page. */
+/** Bridges one provider's scope and the credentials domain onto the page. */
 export class WebSearchCardController {
   private readonly form: SettingsFormModel<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
@@ -80,17 +229,19 @@ export class WebSearchCardController {
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param scope - the bound settings scope for the `web-search-deepseek` namespace.
+   * @param scope - the bound settings scope for this provider's namespace.
    * @param ctx - the page plugin's context, whose `remote.credentials` namespace
    * answers for the credential the section references.
    */
   constructor(
     private readonly scope: SettingsFormScope<WebSearchSettings>,
     private readonly ctx: ClientContext,
+    /** Which provider's namespace this form edits. */
+    private readonly provider: WebSearchProviderSpec = WEB_SEARCH_PROVIDERS[0]!,
   ) {
     this.form = new SettingsFormModel(
       scope,
-      [settingsTextField('baseURL'), settingsNumberField('maxUses')],
+      this.provider.sectionFields.map(sectionSpec),
       [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }],
     )
     this.store = this.form.bind(() => this.projection())
@@ -101,8 +252,14 @@ export class WebSearchCardController {
   private projection(): WebSearchCardState {
     return {
       ...this.form.shell(),
-      baseURL: this.form.field('baseURL'),
-      maxUses: this.form.field('maxUses'),
+      sectionFields: this.provider.sectionFields.map(declared => ({
+        field: declared.field,
+        numeric: declared.numeric,
+        label: declared.label,
+        hint: declared.hint,
+        ...this.form.field(declared.field),
+      })),
+      providerId: this.provider.id,
       apiKey: this.form.field(API_KEY_FIELD),
       apiKeyConfigured: this.credential.configured,
       apiKeyWritable: this.credential.writable,
@@ -118,7 +275,7 @@ export class WebSearchCardController {
    * reference in force.
    */
   private async readCredential(): Promise<void> {
-    const ref = refOf(this.scope.getSnapshot())
+    const ref = this.refOf()
     if (ref !== this.credential.ref) {
       // A new reference knows nothing yet; keeping the old answer would claim
       // the key is configured under a name nobody has checked.
@@ -126,7 +283,7 @@ export class WebSearchCardController {
       this.store.set(this.projection())
     }
     const response = await this.ctx.remote.credentials.describe([ref])
-    if (!response.ok || ref !== refOf(this.scope.getSnapshot())) return
+    if (!response.ok || ref !== this.refOf()) return
     const view = response.value[ref]
     const next: CredentialState = {
       ref,
@@ -169,22 +326,21 @@ export class WebSearchCardController {
   private async writeKey(value: string): Promise<boolean> {
     // Refusals surface through the re-read below: the Host is the only
     // authority on whether the key now exists.
-    await this.ctx.remote.credentials.set(refOf(this.scope.getSnapshot()), value)
+    await this.ctx.remote.credentials.set(this.refOf(), value)
     await this.readCredential()
     return this.credential.configured
   }
   /** Release configuration subscriptions. */
   dispose(): void { this.unsubscribe(); this.form.dispose() }
 
-}
-
-/**
- * The credential reference the section names, or the provider's default.
- * @param snapshot - the current scope snapshot.
- * @returns the reference to address.
- */
-function refOf(snapshot: SettingsFormScopeSnapshot<WebSearchSettings>): string {
-  const declared = snapshot.value?.apiKeyEnv
-  return declared !== undefined && declared.length > 0 ? declared : DEFAULT_API_KEY_REF
+  /**
+   * The credential reference in force: what the section names, else this
+   * provider's default.
+   * @returns the reference to address.
+   */
+  private refOf(): string {
+    const declared = this.scope.getSnapshot().value?.apiKeyEnv
+    return declared !== undefined && declared.length > 0 ? declared : this.provider.defaultApiKeyRef
+  }
 
 }

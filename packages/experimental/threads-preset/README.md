@@ -71,6 +71,8 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 | `mergePolicy` | `ask` | Coordinator contract: `ask` or `auto` |
 | `tools` | `{ defaultLimit: 20, maxLimit: 100 }` | Config of the `thread_status` / `thread_diff` row; that plugin validates every key |
 | `threadProvider`, `threadModel`, `threadReasoningEffort`, `threadMaxTokens` | unset | Model options for every Thread; all four are required together |
+| `threadModels` | `[]` | Exact routes the coordinator may choose per Thread; a non-empty list is what gives `subagent` its `provider`/`model` parameters |
+| `tierContract` | `none` | Adds the tier sentences to both contracts; `tiers` requires `threadModels` to offer both `flash` and `pro` |
 
 `basePreset` exists because the Web agent plane disables its tool rows in the host composition and mounts them per preset instead. A deployment whose tools are global rows omits it, and each Threads preset then contributes only its own rows.
 

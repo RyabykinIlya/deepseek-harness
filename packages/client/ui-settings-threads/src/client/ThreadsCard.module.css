@@ -1,0 +1,26 @@
+.section {
+  min-width: 0;
+  padding: 16px 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+}
+
+.note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.warning {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-error);
+}

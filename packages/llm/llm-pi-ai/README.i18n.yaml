@@ -48,14 +48,17 @@
   en: 280416de410744bb
   zh: 64cbfc0902e3f436
 /deepseek-ai-dsh-llm-pi-ai/understand-the-implementation/source-map:
-  en: 20afee7bbfb332ca
-  zh: b080cf4e97094366
+  en: f636313da6aa7e75
+  zh: 3a7613051e870278
 /deepseek-ai-dsh-llm-pi-ai/understand-the-implementation/registration-and-directory:
   en: 4da379c9be65c18a
   zh: fd305d4bd3dfa452
 /deepseek-ai-dsh-llm-pi-ai/understand-the-implementation/replay-and-vocabulary:
-  en: 36e0c59a0f9f5980
-  zh: 90a62c4a9cd23429
+  en: caedd6dd024c4f12
+  zh: f0e38514ad197ccf
+/deepseek-ai-dsh-llm-pi-ai/understand-the-implementation/per-call-routing-blocks:
+  en: 0d040f1fa9d113fc
+  zh: e04968ef22d8ad84
 /deepseek-ai-dsh-llm-pi-ai/further-exploration:
   en: a2a2ccdeae59d408
   zh: c47ee091aa90ad91

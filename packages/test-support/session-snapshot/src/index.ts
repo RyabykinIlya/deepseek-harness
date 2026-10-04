@@ -44,14 +44,18 @@ export {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
+  roleFixtureCwd,
   scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
+  sessionRoleCwds,
   tokenizeSessionFixtureCwd,
   type CwdPathMode,
   type NormalizeContext,
   type NormalizeOptions,
+  type SessionRoleCwd,
+  type TokenizeFixtureOptions,
 } from './normalize.ts'
 export {
   parseSnapshotManifest,

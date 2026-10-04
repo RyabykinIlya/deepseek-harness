@@ -249,7 +249,15 @@ const COMPLETIONS_COMPAT_GATE = {
   supportsStrictMode: 'offer',
   cacheControlFormat: 'offer',
   supportsLongCacheRetention: 'offer',
-  openRouterRouting: 'withhold',
+  // Offered deliberately, against the disposition's stated rationale. That
+  // rationale is "pi-ai's installed catalog already sets it for a named vendor",
+  // and for this field it does not: no entry in the installed openrouter catalog
+  // sets `openRouterRouting` in its compat, and pi-ai only defaults it to `{}`
+  // as an empty value it then omits from the wire. Verified 2026-10-03. The
+  // field is exactly the knob a deployment needs when one model id is served by
+  // many upstreams at different prices, and withholding it leaves `sort`,
+  // `max_price` and `order` unreachable while the route is hand-declared.
+  openRouterRouting: 'offer',
   vercelGatewayRouting: 'withhold',
   zaiToolStream: 'withhold',
   supportsOpenAIGrammarTools: 'withhold',
@@ -425,6 +433,13 @@ export interface PiAiCompatProfile {
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /**
+   * OpenRouter upstream-provider routing, sent as the request's `provider` field;
+   * `openai-completions` on an OpenRouter route. `sort`, `max_price` and the
+   * throughput/latency floors are enforced by OpenRouter itself; `only`, `order`
+   * and `ignore` pin upstream providers by slug. Omitted unless configured.
+   */
+  openRouterRouting?: NonNullable<OpenAICompletionsCompat['openRouterRouting']>
+  /**
    * Whether the endpoint accepts long prompt-cache retention;
    * `openai-completions`, the three Responses protocols, `anthropic-messages`.
    */
@@ -496,9 +511,37 @@ export type EveryProfileFieldMatchesUpstream = AssertTrue<
  */
 function configuredCompatEntries(compat: PiAiCompatProfile | undefined): readonly (readonly [string, unknown])[] {
   return Object.entries(compat ?? {}).flatMap(([field, value]) => {
-    const empty = typeof value === 'object' && value !== null && !Array.isArray(value)
-      && Object.keys(value as object).length === 0
-    return empty ? [] : [[field, value] as const]
+    return statesNoChoice(value) ? [] : [[field, value] as const]
+  })
+}
+
+/**
+ * Whether one compat value states nothing.
+ *
+ * An object whose members are ALL empty states nothing either, and normalization
+ * produces exactly that shape for a structured field nobody wrote: schemastery
+ * materializes the declared nested members, so a routing block absent from the
+ * configuration arrives as `{ order: [], only: [], max_price: {} }` rather than
+ * the `{}` a two-key check would recognise. Counting that as a configured switch
+ * makes a route that never mentioned the field fail the protocol check below as
+ * if it had.
+ *
+ * A scalar is never valueless here: `zdr: false` and `data_collection: "deny"`
+ * are choices, and a value schemastery lets through without one is refused by
+ * {@link assertOfferedCompatFields} before this runs rather than filtered.
+ * @param value - one compat entry's value.
+ * @returns whether it leaves the request exactly as leaving the field out would.
+ */
+function statesNoChoice(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  // Annotated rather than left to inference: `Object.values` on a narrowed
+  // `object` widens its members to `any`, which would defeat the narrowing the
+  // per-member checks below exist to perform.
+  const members: readonly unknown[] = Object.values(value)
+  return members.every((inner) => {
+    if (Array.isArray(inner)) return inner.length === 0
+    if (typeof inner !== 'object' || inner === null) return false
+    return Object.keys(inner).length === 0
   })
 }
 

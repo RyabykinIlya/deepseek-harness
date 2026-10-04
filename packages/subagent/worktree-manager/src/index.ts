@@ -37,6 +37,7 @@ import {
   resolveRepoTopLevel,
   runGit,
   runGitBounded,
+  stashCreate,
   worktreeStatus,
 } from './git.ts'
 import { WorktreeRegistry } from './registry.ts'
@@ -44,6 +45,7 @@ import type { WorktreeRecordFields } from './registry.ts'
 import { ACTIVE_WORKTREE_STATES, TERMINAL_WORKTREE_STATES } from './states.ts'
 import type {
   SessionExistsProbe,
+  WorktreeBasePolicy,
   WorktreeChanges,
   WorktreeChangesOptions,
   WorktreeFileChange,
@@ -91,6 +93,21 @@ export interface Config {
   worktreeRoot?: string
   /** Where `repoRoot` comes from when a {@link WorktreeSpec} leaves it empty (default `explicit`). */
   repoRootResolution?: RepoRootResolution
+  /**
+   * What a new Thread's worktree is created from (default `head`).
+   *
+   * `head` is the committed `HEAD` a caller gets today. `head-with-uncommitted` snapshots the
+   * parent's tracked uncommitted changes with `git stash create`, so a Thread started while a
+   * coordinator is mid-edit sees the work in progress rather than the last commit — the failure
+   * mode where the Thread cannot see an edit the parent never committed, and a later merge
+   * conflicts on those exact lines. Untracked files are not part of the snapshot.
+   *
+   * {@link WorktreeSpec.base} overrides this per call. The default is `head`, not
+   * `head-with-uncommitted`: switching it by default would silently move the base of every
+   * existing deployment's Threads, and the snapshot also commits the parent's working state onto
+   * the Thread branch, which is a policy each deployment should choose on purpose.
+   */
+  base?: WorktreeBasePolicy
   /** Run {@link WorktreeService.reconcile} when the service loads (default `true`). */
   pruneOnStart?: boolean
   /**
@@ -239,8 +256,74 @@ function recordFields(record: WorktreeRecord): WorktreeRecordFields {
     repoRoot: record.repoRoot,
     baseRef: record.baseRef,
     ...record.branch === undefined ? {} : { branch: record.branch },
+    ...record.base === undefined ? {} : { base: record.base },
     ...record.baseSha === undefined ? {} : { baseSha: record.baseSha },
   }
+}
+
+/**
+ * What the locked reservation hands down to {@link resolveBase}: what the Thread's leftover record
+ * says about the lineage being restarted, or the empty defaults when there is no such record.
+ */
+interface RestartFacts {
+  /** The Thread's own terminal record still owns `branch`, so the branch is re-checked-out, not created. */
+  ownBranch: boolean
+  /** Commit that record's lineage was measured from; absent on records written before `baseSha` existed. */
+  baseSha: string | undefined
+  /** Policy that record's `baseSha` came from; absent on records written before `base` existed. */
+  base: WorktreeBasePolicy | undefined
+}
+
+/**
+ * The commit a new worktree is created at, and the policy that produced it.
+ *
+ * `head` is the resolved `baseRef` and nothing more — the behaviour this package shipped before
+ * the policy existed, so a caller that asks for nothing gets exactly that.
+ *
+ * `head-with-uncommitted` asks `git stash create` for a commit object holding the parent's tracked
+ * uncommitted changes, and the Thread starts from that instead of from `HEAD`. It is `create` and
+ * not `push`/`pop` on purpose: `create` only adds object-database entries, so the parent's working
+ * tree and index stay exactly as they were and a second agent creating a Thread at the same moment
+ * cannot observe or clobber the first one's in-progress edit.
+ *
+ * Two failure-shaped cases are decided here rather than left to the caller:
+ *
+ * - nothing tracked is modified → git exits 0 with empty output. That is not an error, it is the
+ *   clean-tree case, and the committed base is the whole story.
+ * - git fails → the create fails LOUDLY with `WORKTREE_CREATE_FAILED`. Falling back to plain `HEAD`
+ *   would hand the Thread a base nobody asked for, and the conflict this policy exists to prevent
+ *   would reappear silently, which is the exact degradation this service refuses everywhere else.
+ *
+ * @param requested - the policy the spec resolved to (`spec.base ?? service.base`).
+ * @param restart - what the reservation found about the lineage being restarted.
+ * @param refSha - `baseRef` already resolved to a commit.
+ * @param repoRoot - repository top level, where the working state is snapshotted.
+ * @returns the commit to create the branch at, and the policy the record must carry.
+ */
+async function resolveBase(
+  requested: WorktreeBasePolicy,
+  restart: RestartFacts,
+  refSha: string,
+  repoRoot: string,
+): Promise<{ base: WorktreeBasePolicy; baseSha: string }> {
+  // A restart re-checks-out the branch the Thread already owns so its earlier commits survive.
+  // Snapshotting the parent again here would record a base that is no longer an ancestor of the
+  // Thread's own history, and `changes`/`filePatch` would diff that Thread against a commit it has
+  // never heard of. The earlier lineage's base — and the policy that produced it — is inherited
+  // instead, so a resumed Thread measures its work from where it actually started.
+  if (restart.ownBranch && restart.baseSha !== undefined) {
+    return { base: restart.base ?? requested, baseSha: restart.baseSha }
+  }
+  if (requested === 'head') return { base: requested, baseSha: refSha }
+  const snapshotted = await stashCreate(repoRoot)
+  if (snapshotted.code !== 0) {
+    throw new WorktreeError(
+      `worktree-manager: git stash create failed while basing a worktree on the uncommitted changes of ${repoRoot}: ${snapshotted.stderr.trim()}`,
+      'WORKTREE_CREATE_FAILED',
+    )
+  }
+  const sha = snapshotted.stdout.trim()
+  return { base: requested, baseSha: sha === '' ? refSha : sha }
 }
 
 /** Reject a count bound that is not a non-negative safe integer. */
@@ -276,6 +359,7 @@ export class WorktreeService extends Service {
     // stored root is absolute and checkout-guarded however it was supplied.
     worktreeRoot: z.string(),
     repoRootResolution: z.union(['explicit', 'parent-cwd'] as const).default('explicit'),
+    base: z.union(['head', 'head-with-uncommitted'] as const).default('head'),
     pruneOnStart: z.boolean().default(true),
     maxWorktreesPerRepo: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_WORKTREES_PER_REPO),
     adoptionGraceMs: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_ADOPTION_GRACE_MS),
@@ -288,6 +372,8 @@ export class WorktreeService extends Service {
   readonly worktreeRoot: string
   /** How an empty `spec.repoRoot` is resolved. */
   readonly repoRootResolution: RepoRootResolution
+  /** Base policy a spec falls back to when it names none; see {@link Config.base}. */
+  readonly base: WorktreeBasePolicy
   /** Whether the startup sweep runs on load. */
   readonly pruneOnStart: boolean
   /** Maximum active worktrees per repository. */
@@ -330,6 +416,7 @@ export class WorktreeService extends Service {
     // schemastery (static Config) already filled the defaulted fields; the casts
     // record that runtime fact for fields whose interface form is optional.
     this.repoRootResolution = config.repoRootResolution ?? 'explicit'
+    this.base = config.base ?? 'head'
     this.pruneOnStart = config.pruneOnStart ?? true
     this.maxWorktreesPerRepo = config.maxWorktreesPerRepo ?? DEFAULT_MAX_WORKTREES_PER_REPO
     this.adoptionGraceMs = config.adoptionGraceMs ?? DEFAULT_ADOPTION_GRACE_MS
@@ -363,7 +450,10 @@ export class WorktreeService extends Service {
    * spawned, and again after the add resolves — and either way the reserved
    * intent is rolled back with `git worktree remove --force`.
    * Each call first runs {@link WorktreeService.reconcile}, so abandoned worktrees do not hold limit slots.
-   * @param spec - the repository, Thread, base ref, and optional branch.
+   * The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured
+   * `base` — and `head-with-uncommitted` snapshots the parent's tracked uncommitted changes with
+   * `git stash create`, which leaves the parent's working tree untouched.
+   * @param spec - the repository, Thread, base ref and policy, and optional branch.
    * @param signal - aborts the attempt; the worktree is rolled back, never left half-created.
    * @returns the `ready` record whose `path` may be used as a session cwd.
    */
@@ -648,7 +738,9 @@ export class WorktreeService extends Service {
       const sessionAlive = this.sessionExists === undefined
         ? undefined
         : await this.sessionExists(record.threadId)
-      if (live && sessionAlive !== false) continue
+      // A worktree git still owns, whose Thread still has a session, is not an orphan.
+      const keepLive = live && sessionAlive !== false
+      if (keepLive) continue
       // A session that is not there yet may still be on its way: the creator publishes it after the worktree.
       if (live && Date.now() - (record.createdAt ?? 0) < this.adoptionGraceMs) continue
       const orphaned = await registry.transition(record.threadId, 'orphaned', fields)
@@ -730,9 +822,12 @@ export class WorktreeService extends Service {
 
     const bucket = join(this.worktreeRoot, repositoryBucket(repoRoot))
     const path = join(bucket, threadSlug(spec.threadId))
-    const fields: WorktreeRecordFields = { path, repoRoot, baseRef: spec.baseRef, branch }
+    // Resolved once, here, so the `reserved` intent line already states the policy this attempt
+    // will follow — a crash mid-create then leaves a record that says what was being attempted.
+    const base: WorktreeBasePolicy = spec.base ?? this.base
+    const fields: WorktreeRecordFields = { path, repoRoot, baseRef: spec.baseRef, branch, base }
     /** Facts the lock-held check hands to the add below. */
-    const restart: { ownBranch: boolean; baseSha: string | undefined } = { ownBranch: false, baseSha: undefined }
+    const restart: RestartFacts = { ownBranch: false, baseSha: undefined, base: undefined }
     // The checks and the `reserved` append share one registry lock, so processes sharing the root
     // cannot both pass the limit, path, or branch check.
     const { record: reserved, created } = await registry.reserve(spec.threadId, fields, async (transaction) => {
@@ -778,6 +873,7 @@ export class WorktreeService extends Service {
         && TERMINAL_WORKTREE_STATES.includes(existing.state)
         && existing.branch === branch
       restart.baseSha = existing?.baseSha
+      restart.base = existing?.base
       const claimed = active.some(record => record.branch === branch)
       if (claimed || !restart.ownBranch && await branchExists(repoRoot, branch)) {
         throw new WorktreeError(`worktree-manager: branch already exists: ${branch}`, 'WORKTREE_BRANCH_EXISTS')
@@ -800,16 +896,24 @@ export class WorktreeService extends Service {
           'WORKTREE_CREATE_FAILED',
         )
       }
-      // A restart keeps the base its earlier lineage was measured from.
-      const baseSha = restart.ownBranch && restart.baseSha !== undefined ? restart.baseSha : resolved.stdout.trim()
+      // The policy decides the commit; a restart keeps the base its earlier lineage was
+      // measured from rather than re-snapshotting the parent (see `resolveBase`).
+      const effective = await resolveBase(base, restart, resolved.stdout.trim(), repoRoot)
       const added = restart.ownBranch
         ? await addWorktreeAtExistingBranch(repoRoot, path, branch)
-        : await addWorktree(repoRoot, path, branch, baseSha)
+        : await addWorktree(repoRoot, path, branch, effective.baseSha)
       if (added.code !== 0) throw classifyAddFailure(added.stderr, added.stdout, path, branch)
       // Checked while the record is still `reserved`, so an abort here rolls back
       // through the single legal `reserved → rolled-back` edge.
       signal.throwIfAborted()
-      const ready = await registry.transition(spec.threadId, 'ready', { ...fields, baseSha })
+      // The EFFECTIVE policy, not the requested one: a restart that inherited an earlier
+      // lineage's base records the policy that produced it, so the line never claims
+      // a snapshot was taken when none was.
+      const ready = await registry.transition(spec.threadId, 'ready', {
+        ...fields,
+        base: effective.base,
+        baseSha: effective.baseSha,
+      })
       committed = true
       return ready
     } finally {

@@ -184,7 +184,10 @@ export interface PiAiProviderProfile {
 
 /** Validated profile with its route stamped and every adapter-owned default resolved. */
 export interface ResolvedPiAiProviderProfile
-  extends Omit<PiAiProviderProfile, 'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'> {
+  extends Omit<
+    PiAiProviderProfile,
+    'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'
+  > {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
   /** Resolved display name for selectors and configuration surfaces. */
@@ -255,6 +258,48 @@ const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
   }),
 ])
 
+/**
+ * Percentile cutoffs, as OpenRouter accepts for a throughput or latency floor:
+ * a bare number is the p50, and an object sets the p50/p75/p90/p99 cutoffs apart.
+ */
+const percentileFloor = z.union([
+  z.number(),
+  z.object({ p50: z.number(), p75: z.number(), p90: z.number(), p99: z.number() }),
+])
+
+/**
+ * OpenRouter's per-request `provider` field: which upstream providers may serve
+ * a route, in what preference order, and under which floors.
+ *
+ * The numeric floors here are OpenRouter-side filters, so they only bind a route
+ * that is genuinely OpenRouter-shaped. `only`/`order`/`ignore` take provider
+ * slugs; the base slug is the broad net (`"google-vertex"`) and the full slug
+ * pins one variant (`"deepinfra/turbo"`).
+ */
+const openRouterRouting: z<NonNullable<PiAiCompatProfile['openRouterRouting']>> = z.object({
+  allow_fallbacks: z.boolean(),
+  require_parameters: z.boolean(),
+  data_collection: z.union(['deny', 'allow']),
+  zdr: z.boolean(),
+  order: z.array(z.string()),
+  only: z.array(z.string()),
+  ignore: z.array(z.string()),
+  quantizations: z.array(z.string()),
+  sort: z.union([
+    z.string(),
+    z.object({ by: z.string(), partition: z.union([z.string(), z.const(null)]) }),
+  ]),
+  max_price: z.object({
+    prompt: z.union([z.number(), z.string()]),
+    completion: z.union([z.number(), z.string()]),
+    image: z.union([z.number(), z.string()]),
+    audio: z.union([z.number(), z.string()]),
+    request: z.union([z.number(), z.string()]),
+  }),
+  preferred_min_throughput: percentileFloor,
+  preferred_max_latency: percentileFloor,
+})
+
 const compatProfile: z<PiAiCompatProfile> = z.object({
   supportsStore: z.boolean(),
   supportsDeveloperRole: z.boolean(),
@@ -275,6 +320,7 @@ const compatProfile: z<PiAiCompatProfile> = z.object({
   supportsMaxOutputTokens: z.boolean(),
   supportsStrictMode: z.boolean(),
   cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
+  openRouterRouting,
   supportsLongCacheRetention: z.boolean(),
   supportsEagerToolInputStreaming: z.boolean(),
   supportsCacheControlOnTools: z.boolean(),
@@ -487,7 +533,13 @@ export function resolveProfiles(
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
       catalogError ??= error.message
     }
-    const { apiKeyEnv, retryPolicy, models: _models, displayName: _displayName, ...rest } = source
+    const {
+      apiKeyEnv,
+      retryPolicy,
+      models: _models,
+      displayName: _displayName,
+      ...rest
+    } = source
     resolved.set(provider, {
       ...rest,
       provider,

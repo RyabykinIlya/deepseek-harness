@@ -1,0 +1,133 @@
+# Replay patch for the Threads/Projects headless composition.
+#
+# The base `text-turn` composition owns the ordinary replay row set (keyless
+# `llm-replay`, the pass-through sandbox runner, and the raw JSONL writer); this
+# layer adds the Threads feature rows on top of it, because that feature lives
+# on the Host plane and is composed by a profile rather than by an agent preset.
+#
+# The model script comes from this scenario's committed session JSONL, exactly
+# as it does for the ordinary headless composition.
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  disabled: true
+
+- id: plugin-package-inventory-deepseek
+  disabled: true
+
+- id: session-title-llm
+  disabled: true
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand:
+      - bash
+      - -c
+      - while [ "$1" != "--" ]; do shift; done; shift; exec "$@"
+      - passthrough-runner
+    runnerFailureSignatures:
+      - 'passthrough-runner: profile rejected'
+
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: deepseek-official
+            name: DeepSeek
+            models:
+              - id: deepseek-v4-flash
+          - id: deepseek-messages
+            name: DeepSeek Messages
+            models:
+              - id: deepseek-v4-flash
+
+    # One worktree per Thread plus the intent sidecar that makes them
+    # recoverable after a crash. The generated workspace is itself a Git
+    # checkout, so the service's own `~/.dsh/worktrees` default — and any root
+    # under the generated `$DSH_HOME` — is refused at load for living inside
+    # the registered checkout. The root therefore names a sibling of the
+    # generated workspace, which the launcher allocates and removes with it.
+    - id: worktree-manager
+      name: '@deepseek-ai/dsh-worktree-manager'
+      config:
+        worktreeRoot: !!js process.cwd() + '/../' + process.cwd().split('/').pop() + '-worktrees'
+        pruneOnStart: true
+
+    # The `threads` Session projection plus the worktree-isolated continuable
+    # backend whose `subagent` row the Host `tool-subagent` below delegates to.
+    - id: threads
+      name: '@deepseek-ai/dsh-experimental-threads'
+
+    - id: subagent-thread-worktree
+      name: '@deepseek-ai/dsh-subagent-thread-worktree'
+      config:
+        providerName: thread
+        branchPerThread: true
+        branchTemplate: dsh/thread-{{id}}
+        childAgentPreset: project-thread
+
+    - id: project-memory
+      name: '@deepseek-ai/dsh-experimental-project-memory'
+
+    # The Threads tools on the Host plane: the one-shot driver composes no
+    # preset, so the coordinator reads its Threads through the same row the
+    # Project preset mounts.
+    - id: tool-threads
+      name: '@deepseek-ai/dsh-experimental-threads-tool'
+
+    # The one-shot `headless` profile carries no preset roster at all, so the
+    # Threads presets have nothing to extend: `standard` is inserted here
+    # before `threads-preset` names it as its `basePreset`.
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+
+    - id: preset-standard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard
+        order: 1
+        plugins:
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+              backgroundMode: continuable
+
+    - id: threads-preset
+      name: '@deepseek-ai/dsh-experimental-threads-preset'
+      config:
+        id: project
+        workerId: project-thread
+        provider: thread
+        basePreset: standard
+        workerMaxDepth: 2
+
+# The Project coordinator delegates to the worktree-isolated `thread` backend
+# instead of the ordinary in-process `spawn` one, so the delegation the run
+# records is a Thread with its own checkout. The coordinator itself keeps the
+# Host-plane tool rows because the one-shot driver composes no preset.
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: thread
+    toolName: subagent
+    backgroundMode: continuable

@@ -14,7 +14,7 @@
  * are slot entries with their own behavior, so this component threads no
  * action callbacks and hosts no action surface.
  */
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
   Button, IconArchiveCheckOutlineRegular, IconArchiveOffOutlineRegular, IconArchiveOutlineRegular,
@@ -36,7 +36,7 @@ import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
 } from '../tree.ts'
-import { ProjectRowItem, SearchResultItem, SessionNodeItem } from './Rows.tsx'
+import { ProjectRowItem, SearchResultItem, SessionNodeItem, ThreadNodeItem } from './Rows.tsx'
 import { AnimatedRows } from './AnimatedRows.tsx'
 import { FLAT_SESSION_ORDER_KEY, type SessionGroupBy } from '../stores.ts'
 import { WorkspacePickFlow } from '../WorkspacePicker.tsx'
@@ -422,7 +422,10 @@ function SessionTree({
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
     const sessions = visible.rows
-    for (const node of sessions) rowKeys.push(`session:${node.id}`)
+    for (const node of sessions) {
+      rowKeys.push(`session:${node.id}`)
+      for (const thread of node.threads) rowKeys.push(`thread:${thread.id}`)
+    }
     if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
       ? workspaceDrag.over.half
@@ -562,20 +565,40 @@ function SessionTree({
             },
           }
           return (
-            <SessionNodeItem
-              key={node.id}
-              node={node}
-              currentId={current}
-              now={now}
-              onOpen={open}
-              onRenameRequest={onSessionRenameRequest}
-              renderSlot={renderSlot}
-              onReveal={node.id === revealSessionId && group.key === revealGroup
-                ? () => { onSessionRevealed(node.id) }
-                : undefined}
-              drag={dragProps}
-              t={t}
-            />
+            <Fragment key={node.id}>
+              <SessionNodeItem
+                node={node}
+                currentId={current}
+                now={now}
+                onOpen={open}
+                onRenameRequest={onSessionRenameRequest}
+                renderSlot={renderSlot}
+                onReveal={node.id === revealSessionId && group.key === revealGroup
+                  ? () => { onSessionRevealed(node.id) }
+                  : undefined}
+                drag={dragProps}
+                t={t}
+              />
+              {/* A Thread is a child Session, so its row rides its Project's
+                  slot: same leading cell, same open path, no row verbs. The
+                  owner's own overflow limit counts Project rows only, so a
+                  long roster never hides a sibling Session behind it. */}
+              {node.threads.length > 0 && (
+                <div role="group" className={css.threadNest}>
+                  {node.threads.map(thread => (
+                    <ThreadNodeItem
+                      key={thread.id}
+                      thread={thread}
+                      currentId={current}
+                      now={now}
+                      onOpen={open}
+                      renderSlot={renderSlot}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              )}
+            </Fragment>
           )
         })}
         {collapsed.hiddenCount > 0 && (

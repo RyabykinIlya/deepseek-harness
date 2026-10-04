@@ -6,7 +6,15 @@ import WebRuntime from '@deepseek-ai/dsh-web'
 import { HttpFetchProvider, LOCAL_FETCH_PROVIDER_ID } from '@deepseek-ai/dsh-web-fetch-http'
 import type { HttpFetchLimits, HttpFetchResolver } from '@deepseek-ai/dsh-web-fetch-http'
 import * as fetchPlugin from '@deepseek-ai/dsh-web-fetch-http'
-import { createPinnedLookup, isPublicIpAddress, publicHttpNetwork, requestPinned, resolvePublicAddresses } from '../src/network.ts'
+import {
+  compileTrustedAddressRanges,
+  createPinnedLookup,
+  isNonPublicIpLiteral,
+  isPublicIpAddress,
+  publicHttpNetwork,
+  requestPinned,
+  resolvePublicAddresses,
+} from '../src/network.ts'
 import {
   classifyContentType,
   decoderForCharset,
@@ -253,6 +261,133 @@ describe('public-network policy', () => {
     } finally {
       await request.close()
     }
+  })
+})
+
+describe('declared proxy address ranges', () => {
+  /** The synthetic pool a transparent `fake-ip` proxy answers with. */
+  const FAKE_IP_POOL = '198.18.0.0/15'
+
+  /**
+   * Every address class this guard refuses, one representative per `ipaddr.js` range name, so the
+   * default-off contract is asserted against the documented block list rather than a sample.
+   */
+  const DOCUMENTED_BLOCK_LIST: Record<string, readonly string[]> = {
+    reserved: ['198.18.3.178', '192.0.2.1', '203.0.113.1', '240.0.0.1'],
+    private: ['10.0.0.1', '172.16.0.1', '192.168.1.1'],
+    carrierGradeNat: ['100.64.0.1'],
+    loopback: ['127.0.0.1', '::1'],
+    linkLocal: ['169.254.1.1', 'fe80::1'],
+    uniqueLocal: ['fc00::1'],
+    multicast: ['224.0.0.1', 'ff02::1'],
+    broadcast: ['255.255.255.255'],
+    unspecified: ['0.0.0.0', '::'],
+    ipv4Mapped: ['::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:169.254.1.1'],
+  }
+
+  it('refuses the whole documented block list when no range is declared', () => {
+    for (const [name, addresses] of Object.entries(DOCUMENTED_BLOCK_LIST)) {
+      for (const address of addresses) {
+        expect(isPublicIpAddress(address), `${name}: ${address}`).toBe(false)
+        expect(isPublicIpAddress(address, []), `${name}: ${address}`).toBe(false)
+      }
+    }
+  })
+
+  it('accepts only the declared pool and leaves every private address blocked', () => {
+    const trusted = compileTrustedAddressRanges([FAKE_IP_POOL])
+    for (const address of ['198.18.0.0', '198.18.3.178', '198.19.255.255', '::ffff:198.18.3.178']) {
+      expect(isPublicIpAddress(address, trusted), address).toBe(true)
+    }
+    for (const address of [
+      // The local network, and the IPv4-mapped forms of it.
+      '10.0.0.1', '172.16.0.1', '192.168.1.1', '100.64.0.1', '127.0.0.1', '169.254.1.1',
+      'fc00::1', '::1', 'fe80::1', '0.0.0.0', '224.0.0.1', '255.255.255.255',
+      '192.0.2.1', '203.0.113.1',
+      '::ffff:10.0.0.1', '::ffff:172.16.0.1', '::ffff:192.168.1.1', '::ffff:100.64.0.1',
+      '::ffff:127.0.0.1', '::ffff:169.254.1.1', '::ffff:192.0.2.1',
+    ]) {
+      expect(isPublicIpAddress(address, trusted), address).toBe(false)
+    }
+    // RFC 2544 neighbours just outside /15 are ordinary public unicast: declaring the pool neither
+    // adds nor removes them, which is what "only the declared block changes" means.
+    for (const address of ['198.17.255.255', '198.20.0.1']) {
+      expect(isPublicIpAddress(address), address).toBe(true)
+      expect(isPublicIpAddress(address, trusted), address).toBe(true)
+    }
+  })
+
+  it('honours a declared IPv6 block and a mixed-family list', () => {
+    const trusted = compileTrustedAddressRanges(['fd00:1234::/48', FAKE_IP_POOL])
+    for (const address of ['fd00:1234::1', 'fd00:1234:0:abcd::1', '198.18.3.178']) {
+      expect(isPublicIpAddress(address, trusted), address).toBe(true)
+    }
+    for (const address of ['fd00:1234:1::1', 'fd00:1235::1', 'fc00::1', '::1', '10.0.0.1', '192.0.2.1']) {
+      expect(isPublicIpAddress(address, trusted), address).toBe(false)
+    }
+  })
+
+  it('never lets a block of one family widen the other', () => {
+    // Even a maximally broad block stays inside its own family, so declaring every IPv6 address
+    // (`::/0`) cannot reach one IPv4 destination, nor the reverse.
+    const allIpv6 = compileTrustedAddressRanges(['::/0'])
+    const allIpv4 = compileTrustedAddressRanges(['0.0.0.0/0'])
+    for (const address of ['10.0.0.1', '127.0.0.1', '198.18.3.178', '::ffff:10.0.0.1']) {
+      expect(isPublicIpAddress(address, allIpv6), address).toBe(false)
+    }
+    for (const address of ['::1', 'fc00::1', 'fe80::1', '::']) {
+      expect(isPublicIpAddress(address, allIpv4), address).toBe(false)
+    }
+    // A mapped form is judged as the IPv4 address it embeds, so an IPv6 block naming every mapped
+    // address (`::ffff:0:0/96`) cannot lend trust to any embedded IPv4 destination.
+    expect(isPublicIpAddress('::ffff:10.0.0.1', compileTrustedAddressRanges(['::ffff:0:0/96']))).toBe(false)
+  })
+
+  it('rejects a malformed block at compile time, naming the offending entry', () => {
+    expect(() => compileTrustedAddressRanges([FAKE_IP_POOL, '198.18.0.0/33']))
+      .toThrow('web-fetch-http: trustedProxyAddressRanges[1] "198.18.0.0/33" is not a valid IPv4 or IPv6 CIDR block')
+    for (const invalid of ['198.18.0.0', 'not-a-cidr', '198.18.0.0/', '2001:db8::/129', '/15']) {
+      expect(() => compileTrustedAddressRanges([invalid]), invalid)
+        .toThrow(/is not a valid IPv4 or IPv6 CIDR block/)
+    }
+  })
+
+  it('retains a synthetic DNS answer only when its pool is declared', async () => {
+    const resolver = vi.fn(async () => [{ address: '198.18.3.178', family: 4 }])
+    await expect(resolvePublicAddresses('cursor.test', new AbortController().signal, resolver))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+    await expect(resolvePublicAddresses(
+      'cursor.test',
+      new AbortController().signal,
+      resolver,
+      compileTrustedAddressRanges([FAKE_IP_POOL]),
+    )).resolves.toEqual([{ address: '198.18.3.178', family: 4 }])
+  })
+
+  it('applies the declared blocks to a NAT64-translated IPv4 destination', async () => {
+    const resolver = vi.fn(async (hostname: string) => hostname === 'ipv4only.arpa'
+      ? [{ address: '2001:4860:64:64::c000:aa', family: 6 }]
+      : [{ address: '2001:4860:64:64::c612:1b2', family: 6 }])
+
+    // The outer address is public unicast; the embedded 198.18.1.178 is what the pool covers.
+    await expect(resolvePublicAddresses('nat64.test', new AbortController().signal, resolver))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+    await expect(resolvePublicAddresses(
+      'nat64.test',
+      new AbortController().signal,
+      resolver,
+      compileTrustedAddressRanges([FAKE_IP_POOL]),
+    )).resolves.toEqual([{ address: '2001:4860:64:64::c612:1b2', family: 6 }])
+  })
+
+  it('judges an IP literal by the declared blocks too', () => {
+    const trusted = compileTrustedAddressRanges([FAKE_IP_POOL])
+    // Undeclared, a literal in the pool stays refused — the default is byte-for-byte unchanged.
+    expect(isNonPublicIpLiteral('198.18.3.178')).toBe(true)
+    expect(isNonPublicIpLiteral('198.18.3.178', trusted)).toBe(false)
+    expect(isNonPublicIpLiteral('[::ffff:198.18.3.178]', trusted)).toBe(false)
+    expect(isNonPublicIpLiteral('10.0.0.1', trusted)).toBe(true)
+    expect(isNonPublicIpLiteral('[::ffff:10.0.0.1]', trusted)).toBe(true)
   })
 })
 
@@ -623,6 +758,55 @@ describe('web-fetch-http plugin registration', () => {
     const fiber = await ctx.plugin(fetchPlugin, { maxRedirects: 0 })
     await expect(ctx.web.fetch({ url: `${base}/` }))
       .resolves.toMatchObject({ statusCode: 200 })
+    await fiber.dispose()
+  })
+
+  it('rejects a malformed address block at construction', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { fetchProvider: LOCAL_FETCH_PROVIDER_ID })
+    await expect(ctx.plugin(fetchPlugin, { trustedProxyAddressRanges: ['198.18.0.0/33'] }))
+      .rejects.toThrow(/trustedProxyAddressRanges\[0\] "198\.18\.0\.0\/33" is not a valid IPv4 or IPv6 CIDR block/)
+    await expect(ctx.plugin(fetchPlugin, { trustedProxyAddressRanges: '198.18.0.0/15' as never }))
+      .rejects.toThrow()
+  })
+
+  it('declares no address block by default, so a synthetic answer is still refused', async () => {
+    // The resolver is replaced, not the guard: the real policy still decides every answer, with
+    // exactly the blocks `apply()` compiled from an operator's empty configuration.
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve').mockImplementation(
+      (hostname, signal, _resolver, trusted) => resolvePublicAddresses(
+        hostname, signal, async () => [{ address: '198.18.3.178', family: 4 }], trusted),
+    )
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { fetchProvider: LOCAL_FETCH_PROVIDER_ID })
+    const fiber = await ctx.plugin(fetchPlugin, {})
+    await expect(ctx.web.fetch({ url: 'https://cursor.test/' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+    expect(resolve.mock.calls[0]?.[3]).toEqual([])
+    await fiber.dispose()
+  })
+
+  it('fetches a synthetic answer from the pool the operator declared', async () => {
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve').mockImplementation(
+      (hostname, signal, _resolver, trusted) => resolvePublicAddresses(
+        hostname, signal, async () => [{ address: '198.18.3.178', family: 4 }], trusted),
+    )
+    vi.spyOn(publicHttpNetwork, 'request').mockImplementation(async () => ({
+      response: new Response('synthetic', { headers: { 'content-type': 'text/plain' } }) as never,
+      close: async () => {},
+    }))
+
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { fetchProvider: LOCAL_FETCH_PROVIDER_ID })
+    const fiber = await ctx.plugin(fetchPlugin, { trustedProxyAddressRanges: ['198.18.0.0/15'] })
+    await expect(ctx.web.fetch({ url: 'https://cursor.test/' }))
+      .resolves.toMatchObject({ statusCode: 200, body: { kind: 'text', content: 'synthetic' } })
+    expect(resolve).toHaveBeenCalledWith(
+      'cursor.test',
+      expect.any(AbortSignal),
+      expect.any(Function),
+      [expect.objectContaining({ prefixLength: 15 })],
+    )
     await fiber.dispose()
   })
 })

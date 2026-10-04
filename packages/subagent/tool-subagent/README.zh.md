@@ -45,6 +45,7 @@ kind: "package-reference"
 | `provider` | 必填 | `ctx.subagents` 上的提供方名称（如 `spawn`、`fork`、`acp`） |
 | `toolName` | `subagent` | 面向模型的工具名称；每个已加载实例必须不同 |
 | `modelSelectionSettings` | `false` | 为每个顶层 Session 读取宿主的精确路由授权偏好；常驻 preset 观察匹配 Session，直接 Agent setup 则显式传入其 Session；要求提供方支持 `agentOptions` |
+| `allowedModels` | — | 本实例为每个 Session 提供的精确子路由，独立于宿主设置；非空列表会公开 `provider`/`model`/`reasoning_effort` 并挂载 `list_subagent_models`，要求提供方支持 `agentOptions`，且与 `modelSelectionSettings` 互斥 |
 | `enableRunInBackground` | `true` | 公开 `run_in_background`；禁用时也会拒绝强制后台调用 |
 | `backgroundMode` | `one-shot` | 后台策略：`one-shot` 默认前台调用；`continuable` 默认后台调用，并要求提供方具备 `prepareContinuable` 能力 |
 | `agentOptions` | — | 配置的子级 `provider`、`model`、适配器所有的 `reasoningEffort` 与正整数 `maxTokens` 默认值；要求提供方支持 `agentOptions`，并会覆盖提供方持有的路由默认值 |
@@ -63,6 +64,8 @@ kind: "package-reference"
 `maxDepth` 限制递归深度（`0` 禁止委派）；省略时，每次委派读取 Host 当前的 `subagent.maxDepth` 设置，初始值为 `1`。数值深度要求提供方具备 `depthLimit` 能力；`'provider-managed'` 把预算留给进程外提供方。当提供方支持时，`persona` 与 `toolFilter` 会配置每个子 agent；工具在达到上限时仍然可见——每次尝试启动都会检查调用 agent 的当前深度，被拒绝时返回出错的工具结果。
 
 ### 选择子级 LLM
+
+改用 `allowedModels` 可以把这份授权交给配置而不是宿主设置：非空列表让本实例的每个 Session 都拿到同样这几个精确路由，因此不需要在 Settings 页逐 Session 采样，也不会记录任何 `subagent/model-selection-policy` 事件。
 
 设置 `modelSelectionSettings: true`，即可在组合每个全新顶层 Session 时读取宿主的 `subagent-model-selection` 偏好。没有已记录策略的恢复 Session 会保持禁用，包括显式为空的恢复。启用后，非空的精确 provider/model 路由列表会记录进 Session、由子 Session 继承，后续设置编辑不会改变它。工具随后公开可选的 `provider`、`model` 与 `reasoning_effort` 字段，并注册共享的 `list_subagent_models` 工具。此模式要求后端声明 `agentOptions`；两个进程内后端和 DSH SDK 支持该能力，而 ACP、Codex 与 Claude Code 会拒绝它，而不是忽略它。
 

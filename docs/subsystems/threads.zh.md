@@ -209,6 +209,33 @@ Thread 的沙箱把写入限制在其 worktree 内。读取、网络与共享 gi
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxmodelrouting--modelroutingcontrol"></a>
+
+### `ctx.modelRouting` — `ModelRoutingControl`
+
+Host-side surface other plugins use; the plugin class implements it.
+
+```ts cordis-catalog
+/**
+ * The tier names this deployment configured, in configuration order.
+ * @returns every tier name, empty while the route is dormant.
+ */
+tierNames(): readonly string[]
+
+/**
+ * Switch a Thread to a tier from its next model request.
+ * @param project - the Project Session (the caller), whose log receives `model-routing/tier-override`.
+ * @param threadId - the Thread's child SessionId string.
+ * @param tier - a configured tier name.
+ * @throws Error `model-routing: unknown tier "<tier>"; configured tiers: <a, b>`.
+ */
+setThreadTier(project: Session, threadId: string, tier: string): void
+```
+
+Types: [Session](session.zh.md)
+
+Source: [`packages/experimental/model-routing/src/types.ts`](../../packages/experimental/model-routing/src/types.ts)
+
 <a id="ctxprojectmemory--projectmemoryservice"></a>
 
 ### `ctx.projectMemory` — `ProjectMemoryService`
@@ -264,6 +291,10 @@ remove(projectId: ProjectId, id: MemoryEntryId): Promise<void>
  * `maxLineageDepth` hops. Each ancestor is read from its live Session when loaded,
  * otherwise from its persisted header; without a `sessionPersistence` service only
  * live Sessions are consulted.
+ *
+ * The preset read is the effective one, never the header alone: a Session created
+ * under the default preset and switched to a Project preset before its first turn
+ * still names the default in its frozen creation header.
  * @param session - Calling Session.
  * @returns The Project id.
  * @throws ProjectMemoryError when no Project is found within the bound or an ancestor is neither live nor persisted.
@@ -392,7 +423,10 @@ One worktree per Thread, placed under a configured root that survives restarts. 
  * spawned, and again after the add resolves — and either way the reserved
  * intent is rolled back with `git worktree remove --force`.
  * Each call first runs {@link WorktreeService.reconcile}, so abandoned worktrees do not hold limit slots.
- * @param spec - the repository, Thread, base ref, and optional branch.
+ * The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured
+ * `base` — and `head-with-uncommitted` snapshots the parent's tracked uncommitted changes with
+ * `git stash create`, which leaves the parent's working tree untouched.
+ * @param spec - the repository, Thread, base ref and policy, and optional branch.
  * @param signal - aborts the attempt; the worktree is rolled back, never left half-created.
  * @returns the `ready` record whose `path` may be used as a session cwd.
  */

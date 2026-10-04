@@ -11,12 +11,12 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import WorktreeService, { resolveRepoTopLevel, runGit, threadSlug, WorktreeError } from '../src/index.ts'
+import WorktreeService, { REGISTRY_FILE_NAME, resolveRepoTopLevel, runGit, threadSlug, WorktreeError } from '../src/index.ts'
 import type { WorktreeRecord } from '../src/index.ts'
 
 /** Real git subprocesses and a scripted shim run here; the 5s default is too tight. */
@@ -32,6 +32,14 @@ function worktreePaths(repoRoot: string): string[] {
     .split('\n')
     .filter(line => line.startsWith('worktree '))
     .map(line => line.slice('worktree '.length).trim())
+}
+
+/** Lifecycle states of the durable sidecar, in append order. */
+function sidecarStates(root: string): string[] {
+  return readFileSync(join(root, REGISTRY_FILE_NAME), 'utf8')
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .map(line => String((JSON.parse(line) as { state: unknown }).state))
 }
 
 const temporaries: string[] = []
@@ -340,6 +348,49 @@ describe('classifying a failing git worktree add', { timeout: GIT_TIMEOUT_MS }, 
     const error = await createWithAddFailure(service, 'unknown', 'fatal: cannot lock ref: is at 1 but expected 2')
     expect(error.code).toBe('WORKTREE_CREATE_FAILED')
     expect(error.message).toContain('git worktree add failed')
+  })
+})
+
+describe('a git that refuses to snapshot the working tree', { timeout: GIT_TIMEOUT_MS }, () => {
+  it('fails the create loudly instead of quietly basing the Thread on HEAD', async () => {
+    const service = await mount(worktreeRoot)
+    writeFileSync(join(repoRoot, 'README.md'), 'seed\nparent edit\n', 'utf8')
+    const restore = scriptGit({ match: 'stash create', code: 128, err: 'fatal: cannot save the current index state' })
+    let error: WorktreeError
+    try {
+      const settled = await service
+        .create({ repoRoot, threadId: 'stash', baseRef: 'HEAD', base: 'head-with-uncommitted' }, new AbortController().signal)
+        .then(
+          (record) => { throw new Error(`the snapshot should have failed (got a ${record.state} record)`) },
+          (reason: unknown) => reason,
+        )
+      if (!(settled instanceof WorktreeError)) throw new Error(`expected a WorktreeError, got ${String(settled)}`)
+      error = settled
+    } finally {
+      restore()
+    }
+    // A Thread silently based somewhere other than where it was asked to start is the exact
+    // degradation this service refuses, so a failing snapshot takes the whole create down.
+    expect(error.code).toBe('WORKTREE_CREATE_FAILED')
+    expect(error.message).toContain('git stash create failed')
+    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    // The reservation is settled, so the next create is not refused by this Thread's own record.
+    expect(sidecarStates(worktreeRoot)).toEqual(['reserved', 'rolled-back'])
+  })
+
+  it('never asks git to snapshot anything under the plain head policy', async () => {
+    const service = await mount(worktreeRoot)
+    writeFileSync(join(repoRoot, 'README.md'), 'seed\nparent edit\n', 'utf8')
+    const restore = scriptGit({ match: 'stash create', out: 'not-a-commit\n' })
+    try {
+      // Had the snapshot been taken, the branch would have been created at `not-a-commit`
+      // and the add would have failed with it.
+      const record = await service.create({ repoRoot, threadId: 'no-stash', baseRef: 'HEAD' }, new AbortController().signal)
+      expect(record.base).toBe('head')
+      expect(record.baseSha).toBe(git(['rev-parse', 'HEAD^{commit}'], repoRoot))
+    } finally {
+      restore()
+    }
   })
 })
 

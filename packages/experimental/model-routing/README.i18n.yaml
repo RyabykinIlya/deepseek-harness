@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/model-routing/README.md
+/:
+  en: 25ddfd2b0c609786
+  zh: 25ddfd2b0c609786
+/deepseek-ai-dsh-experimental-model-routing:
+  en: 3bc983b446c7a632
+  zh: 9bfc73ea11af02af
+/deepseek-ai-dsh-experimental-model-routing/summary:
+  en: 7d1069afec132e21
+  zh: 0c5efe8676346fd6
+/deepseek-ai-dsh-experimental-model-routing/table-of-contents:
+  en: 3460b3e585e0c020
+  zh: bb83d3d282b286d8
+/deepseek-ai-dsh-experimental-model-routing/use-this-package:
+  en: 432d5ba274d825e0
+  zh: 66cb205b4b9746b1
+/deepseek-ai-dsh-experimental-model-routing/use-this-package/when-to-choose-it:
+  en: 9775893df3cf6dd9
+  zh: 5b9de68f6815072e
+/deepseek-ai-dsh-experimental-model-routing/use-this-package/tiers:
+  en: 1d4f49b132dce783
+  zh: 89a10b6b337285e5
+/deepseek-ai-dsh-experimental-model-routing/use-this-package/ranking:
+  en: 237d5d31b8cc16da
+  zh: 31d9e35dff4fd6ef
+/deepseek-ai-dsh-experimental-model-routing/understand-the-implementation:
+  en: 12e50a47625c8dff
+  zh: 5ef95b092be65341
+/deepseek-ai-dsh-experimental-model-routing/understand-the-implementation/source-map:
+  en: c52a4413aab0a662
+  zh: 5d588a1c60f85e3c
+/deepseek-ai-dsh-experimental-model-routing/understand-the-implementation/fold-identity:
+  en: e4404b282a75d7e8
+  zh: b9cacb95823b3eb4
+/deepseek-ai-dsh-experimental-model-routing/understand-the-implementation/quantization-ranks:
+  en: 79a0c6b75c2a0bb7
+  zh: b628f3460fb65fb5
+/deepseek-ai-dsh-experimental-model-routing/model-experience:
+  en: 085e5e445b0a3612
+  zh: b61c6f8567fce245
+/deepseek-ai-dsh-experimental-model-routing/model-experience/kv-cache-effect:
+  en: 97484a3f4ac7c83b
+  zh: 78b040a2128b9ddd
+/deepseek-ai-dsh-experimental-model-routing/known-limitations-and-deferred-work:
+  en: 866bee266f3c559c
+  zh: a3e59b1ac43f9201
+/deepseek-ai-dsh-experimental-model-routing/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

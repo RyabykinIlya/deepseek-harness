@@ -24,7 +24,7 @@ import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/cli
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
-import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
+import type { GroupNode, SearchResultNode, SessionNode, ThreadNode } from '../tree.ts'
 import css from './Rows.module.css'
 
 /** The standard locale seat, prop-passed from the browser root. */
@@ -415,6 +415,57 @@ function PinnedIndicator({ t }: { t: RowTranslate }) {
     <span className={css.pinIndicator} role="img" aria-label={label} title={label}>
       <IconPinFillRegular size={14} />
     </span>
+  )
+}
+
+/**
+ * One Thread row, nested under the Project row that owns it: the leading
+ * status cell, the Thread's task label, and its last-activity time.
+ *
+ * A Thread is a child Session, not an account member: it carries no row verbs
+ * (no menu, rename, pin, archive, or reorder) because its lifecycle belongs to
+ * the Threads feature, and it folds with its Workspace group like every other
+ * row in it. Its leading cell follows the session-row rule — the status dot
+ * while the Thread runs, the leading seat while it is idle — and its own time
+ * cell stays off until the Thread's Session summary reaches the list.
+ * @param props.thread - derived Thread node.
+ * @param props.currentId - selected session id (row highlight).
+ * @param props.now - epoch ms for relative-time formatting.
+ * @param props.onOpen - open the Thread's own session by id.
+ * @param props.renderSlot - child-seat renderer for the leading decoration.
+ * @param props.t - the browser root's locale seat.
+ * @returns the thread row.
+ */
+export function ThreadNodeItem({ thread, currentId, now, onOpen, renderSlot, t }: {
+  thread: ThreadNode
+  currentId: string | undefined
+  now: number
+  onOpen: (id: ThreadNode['id']) => void
+  renderSlot: RowRenderSlots
+  t: RowTranslate
+}) {
+  const selected = thread.id === currentId
+  const statuses: readonly [SessionStatus, ...SessionStatus[]] = thread.running
+    ? [{ state: 'ongoing', label: t('status.running') }]
+    : [{ state: 'idle', label: t('status.idle') }]
+  return (
+    <div
+      data-row-key={`thread:${thread.id}`}
+      className={clsx(css.sessionRow, css.threadRow, selected && css.selected)}
+      role="treeitem"
+      aria-selected={selected}
+      onClick={() => { onOpen(thread.id) }}
+    >
+      <span className={css.slot}>
+        {thread.running
+          ? <SessionStatusDots statuses={statuses} />
+          : renderSlot('sidebar.session.row.leading', { sessionId: thread.id })}
+      </span>
+      <span className={css.title}>{thread.label || t('session.untitled')}</span>
+      {thread.updatedAt !== undefined && (
+        <span className={css.time}>{timeLabel(thread.updatedAt, now, t)}</span>
+      )}
+    </div>
   )
 }
 

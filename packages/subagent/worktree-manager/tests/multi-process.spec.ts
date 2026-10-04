@@ -297,6 +297,7 @@ describe('registry log reading', { timeout: TEST_TIMEOUT_MS }, () => {
     ['repoRoot', { repoRoot: '' }],
     ['state', { state: 'bogus' }],
     ['branch', { branch: 1 }],
+    ['base', { base: 'working-tree' }],
     ['baseSha', { baseSha: 1 }],
     ['createdAt', { createdAt: 'x' }],
     ['object', 'text'],

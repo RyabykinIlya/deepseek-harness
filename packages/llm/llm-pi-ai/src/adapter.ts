@@ -59,8 +59,28 @@ import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attac
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
+import type { PiAiDispatchOptions } from './dispatch.ts'
 import { createModels, getSupportedThinkingLevels } from './models.ts'
+import type { OpenRouterRoutingBlock } from './dispatch.ts'
 import { toStreamChunks } from './stream.ts'
+
+/**
+ * The model descriptor a request dispatches under, with its routing block
+ * replaced by one resolved for this call.
+ *
+ * The copy is shallow and per-call: the resolved model belongs to an immutable
+ * snapshot that other in-flight requests are reading, so mutating its compat
+ * would repin a request that already started. Only the compat block is replaced,
+ * and only when a block was resolved, so a plain route dispatches the very object
+ * the catalog produced.
+ * @param model - the snapshot's model descriptor.
+ * @param block - the routing block resolved for this call.
+ * @returns a descriptor carrying the resolved block, or the original when none was resolved.
+ */
+function withRouting(model: Model<Api>, block: OpenRouterRoutingBlock | undefined): Model<Api> {
+  if (block === undefined) return model
+  return { ...model, compat: { ...model.compat, openRouterRouting: block } }
+}
 
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
@@ -319,17 +339,34 @@ export class PiAiAdapter extends LlmAdapter {
     const snapshot = this.current()
     return Promise.resolve({
       model: this.modelInfo(snapshot, provider, model),
-      stream: options => this.streamWithSnapshot(options, snapshot),
+      stream: options => this.streamWithSnapshot(options, snapshot, {}),
     })
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.streamWithSnapshot(options, this.current())
+    return this.streamWithSnapshot(options, this.current(), {})
+  }
+
+  /**
+   * One stream call carrying a routing block of the caller's choosing.
+   *
+   * This is what `ctx.piAiDispatch` publishes as `stream`; the block reaches the
+   * wire exactly as a configured `compat.openRouterRouting` would, because pi-ai
+   * copies it verbatim onto the request body. Everything else — the snapshot the
+   * call froze under, credential resolution, the idle watchdog, consumer
+   * teardown — is the same path {@link PiAiAdapter.stream} takes.
+   * @param options - the request; its `provider` must be a pi-ai route this adapter owns.
+   * @param dispatch - per-call options.
+   * @returns the chunk stream of one provider attempt.
+   */
+  dispatch(options: GenerateOptions, dispatch: PiAiDispatchOptions): AsyncIterable<StreamChunk> {
+    return this.streamWithSnapshot(options, this.current(), dispatch)
   }
 
   private async * streamWithSnapshot(
     options: GenerateOptions,
     snapshot: PiAiSnapshot,
+    dispatch: PiAiDispatchOptions,
   ): AsyncIterable<StreamChunk> {
     if (options.stop !== undefined) {
       throw new LlmError('llm-pi-ai does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
@@ -355,6 +392,17 @@ export class PiAiAdapter extends LlmAdapter {
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
 
     try {
+      // The caller's block is checked against the model's protocol before
+      // anything is dispatched: pi-ai sends `provider` only on
+      // `openai-completions`, so handing one to any other model would silently
+      // drop the pin the caller believes it applied.
+      if (dispatch.openRouterRouting !== undefined && model.api !== 'openai-completions') {
+        throw new LlmError(
+          `pi-ai model "${model.id}" on route "${options.provider}" cannot take an OpenRouter routing block: it speaks ${model.api}`,
+          'INVALID_CONFIG',
+        )
+      }
+      const dispatched = withRouting(model, dispatch.openRouterRouting)
       const containsImage = options.messages.some(message => contentHasImage(message.content))
       if (containsImage && !model.input.includes('image')) {
         throw new LlmError(`pi-ai model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
@@ -377,7 +425,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade)
-      const events = snapshot.models.streamSimple(model, context, {
+      const events = snapshot.models.streamSimple(dispatched, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },

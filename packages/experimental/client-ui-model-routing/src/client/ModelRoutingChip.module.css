@@ -1,0 +1,14 @@
+/* The routing chip is a read-only fact about the conversation, not a control,
+   so it takes the input bar's label colour and no border: it must not read as
+   something to click, and it must not compete with the model's own picker. */
+
+.chip {
+  overflow: hidden;
+  max-width: 260px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+}

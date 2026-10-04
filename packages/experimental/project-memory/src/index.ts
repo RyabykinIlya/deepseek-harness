@@ -15,6 +15,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { ProjectMemoryError } from './errors.ts'
@@ -242,14 +244,18 @@ export class ProjectMemoryService extends TypertRemoteService {
    * `maxLineageDepth` hops. Each ancestor is read from its live Session when loaded,
    * otherwise from its persisted header; without a `sessionPersistence` service only
    * live Sessions are consulted.
+   *
+   * The preset read is the effective one, never the header alone: a Session created
+   * under the default preset and switched to a Project preset before its first turn
+   * still names the default in its frozen creation header.
    * @param session - Calling Session.
    * @returns The Project id.
    * @throws ProjectMemoryError when no Project is found within the bound or an ancestor is neither live nor persisted.
    */
   async resolveProject(session: Session): Promise<ProjectId> {
     let current: Pick<SessionHeader, 'id' | 'agentPreset' | 'parentSession'> = session.header
+    let preset = this.effectivePreset(session)
     for (let hops = 0; ; hops++) {
-      const preset = current.agentPreset
       if (preset !== undefined && this.projectPresets.has(preset)) return brandString<ProjectId>(current.id)
       const parent = current.parentSession
       if (parent === undefined) {
@@ -260,13 +266,32 @@ export class ProjectMemoryService extends TypertRemoteService {
         throw new ProjectMemoryError('lineage-too-deep',
           `This session is not part of a Project within ${this.maxLineageDepth} levels of delegation, so it has no shared memory.`)
       }
-      const next = this.host.sessions.get(parent)?.header ?? (await this.host.get('sessionPersistence')?.stat(parent))?.header
+      const live = this.host.sessions.get(parent)
+      const next = live?.header ?? (await this.host.get('sessionPersistence')?.stat(parent))?.header
       if (next === undefined) {
         throw new ProjectMemoryError('lineage-unavailable',
           `This session is not part of a loaded Project: its parent session "${parent}" does not exist. Ask the user to reopen the Project.`)
       }
       current = next
+      // Only a live Session carries the projection; a persisted one is read from its header.
+      preset = live === undefined ? next.agentPreset : this.effectivePreset(live)
     }
+  }
+
+  /**
+   * The preset a live Session currently runs.
+   *
+   * `SessionHeader.agentPreset` is a creation fact and stays frozen, while
+   * `agentPresets.select` changes the mounted composition before the first turn. The
+   * `agentPreset` Session projection is the effective value, so it wins whenever the
+   * registry is loaded. `undefined` from the registry means the unit was never
+   * registered here, which leaves the header as the only answer.
+   * @param session - live Session to read.
+   * @returns the effective preset id, or undefined when the Session runs none.
+   */
+  private effectivePreset(session: Session): string | undefined {
+    const projected = this.host.get('sessionProjections')?.stateOf(session, 'agentPreset')
+    return projected === undefined ? session.header.agentPreset : projected ?? undefined
   }
 
   /**

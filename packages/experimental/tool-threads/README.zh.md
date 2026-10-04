@@ -1,5 +1,5 @@
 ---
-description: "有界的 thread_status 与 thread_diff 工具，让 Project 模型看到后台 Thread 在做什么并检查各自提交了什么，适用于挂载 Threads 领域的组合。"
+description: "有界的 thread_status、thread_diff 与 library_list 工具，让 Project 模型看到后台 Thread 在做什么、检查各自提交了什么，并列出其 Library，适用于挂载 Threads 领域的组合。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包添加两个模型工具。`thread_status` 列出调用方 Project 的后台 Thread，包含状态、分支、计数与简短的收尾说明；`thread_diff` 展示某个 Thread 在其分支上提交了什么。两者只读取调用方 Project 会话自己的 `threads` 投影，活跃性取自运行时，并对完整渲染结果按字节设限，同时说明省略了什么。这里没有无界模式；正是这个上限让本包独立存在，而不是复用 `list_agents`。本包以实验性名称公开发布，但不提供稳定性保证。
+本包添加四个模型工具，其中三个始终存在。`thread_status` 列出调用方 Project 的后台 Thread，包含状态、分支、计数与简短的收尾说明；`thread_diff` 展示某个 Thread 在其分支上提交了什么；`library_list` 列出调用方 Project 的 Library：聊天中发送的附件、Project 或其 Thread 展示（present）过的文件，以及各 Thread 变更过的文件；`thread_tier` 把某个 Thread 切换到另一个模型层级，仅在装载 `@deepseek-ai/dsh-experimental-model-routing` 时才注册——没有它就没有层级可指。三者都只读取调用方 Project 会话自己的数据（`thread_status` 与 `thread_diff` 通过 `threads` 投影，`library_list` 通过 Library 读模型），在适用处活跃性取自运行时，并对完整渲染结果按字节设限，同时说明省略了什么。这里没有无界模式；正是这个上限让本包独立存在，而不是复用 `list_agents`。本包以实验性名称公开发布，但不提供稳定性保证。
 
 ## 目录
 

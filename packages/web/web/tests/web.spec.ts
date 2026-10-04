@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import Loader, { type Entry } from '@deepseek-ai/cordis-plugin-loader'
+import type { Volatile } from '@deepseek-ai/cosmokit'
 import WebRuntime, {
   WebError,
+  WEB_FETCH_PROVIDER_IDS,
+  WEB_SEARCH_PROVIDER_IDS,
   type WebFetchProvider,
   type WebFetchResult,
   type WebSearchProvider,
@@ -38,6 +42,40 @@ async function mountWeb(config: ConstructorParameters<typeof WebRuntime>[1] = {}
   const ctx = new Context()
   await ctx.plugin(WebRuntime, config)
   return { ctx, web: ctx.web }
+}
+
+/**
+ * The live reference the Host resolved `searchProvider` into for a running
+ * fiber. Schemastery types a volatile field as its storage type, so the shape
+ * has to be read back through the reference protocol rather than inferred.
+ */
+function liveSelection(config: unknown): Volatile<string | undefined> {
+  return (config as { searchProvider: Volatile<string | undefined> }).searchProvider
+}
+
+/**
+ * Mount the seam through a real Loader entry the way a profile patch does, and
+ * register two usable search providers from a second, dependent entry. Returns
+ * the seam's own Loader entry, because a settings write lands on exactly that
+ * entry (`SettingsForms.write` -> `ConfigEditor.edit` -> `Include` ->
+ * `Entry.update`).
+ */
+async function mountLoadedWeb(config: Record<string, unknown>): Promise<{ ctx: Context; entry: Entry }> {
+  const ctx = new Context()
+  onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(Loader)
+  ctx.loader.builtins.web = WebRuntime
+  ctx.loader.builtins.providers = {
+    inject: ['web'],
+    apply(inner: Context) {
+      inner.web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+      inner.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    },
+  }
+  const webId = await ctx.loader.create({ name: 'cordis:web', config })
+  await ctx.loader.create({ name: 'cordis:providers' })
+  await ctx.loader.await()
+  return { ctx, entry: ctx.loader.resolve(webId) }
 }
 
 describe('WebRuntime registration', () => {
@@ -211,5 +249,105 @@ describe('WebError', () => {
     const error = new WebError('boom', 'WEB_INVALID_URL')
     expect(error.code).toBe('WEB_INVALID_URL')
     expect(error.name).toBe('WebError')
+  })
+})
+
+describe('WebRuntime provider id vocabulary', () => {
+  it('publishes the shipped search and fetch ids a settings surface renders as choices', () => {
+    expect(WEB_SEARCH_PROVIDER_IDS).toEqual([
+      'brave',
+      'deepseek-official',
+      'duckduckgo',
+      'exa',
+      'perplexity',
+      'tavily',
+    ])
+    expect(WEB_FETCH_PROVIDER_IDS).toEqual(['http'])
+  })
+})
+
+describe('WebRuntime selection inputs', () => {
+  it('auto-selects when neither configuration nor environment names an id', async () => {
+    const ctx = new Context()
+    const web = new WebRuntime(ctx)
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+  })
+
+  it('reads a plain configured id supplied directly to the constructor', async () => {
+    const ctx = new Context()
+    const web = new WebRuntime(ctx, { searchProvider: 'exa' })
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+  })
+
+  it('falls back to the environment override when no id is configured', async () => {
+    process.env.DSH_WEB_SEARCH_PROVIDER = 'perplexity'
+    onTestFinished(() => { delete process.env.DSH_WEB_SEARCH_PROVIDER })
+    const ctx = new Context()
+    const web = new WebRuntime(ctx)
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
+    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('falls back to the environment override when a live reference holds no value', async () => {
+    process.env.DSH_WEB_FETCH_PROVIDER = 'http'
+    onTestFinished(() => { delete process.env.DSH_WEB_FETCH_PROVIDER })
+    const { web } = await mountWeb()
+    web.registerFetchProvider(makeFetchProvider('http', available, fetchResult('http')))
+    web.registerFetchProvider(makeFetchProvider('other', available, fetchResult('other')))
+    await expect(web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({
+      body: { content: 'http' },
+    })
+  })
+})
+
+/**
+ * These drive the seam through the real Host path a settings write takes:
+ * `SettingsForms.write` -> `ConfigEditor.edit` -> `Include` -> `Entry.update`.
+ * `searchProvider` is volatile, so the Loader commits it into the running fiber
+ * in place and the plugin is never remounted — the selection must therefore be
+ * re-read per call rather than snapshotted at construction.
+ */
+describe('WebRuntime live provider selection', () => {
+  it('dispatches to a newly configured provider without reconstructing the runtime', async () => {
+    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
+
+    const fiberBefore = entry.fiber
+    const reference = liveSelection(entry.fiber!.config)
+    await entry.update({ config: { searchProvider: 'perplexity' } })
+    await ctx.loader.await()
+
+    // Committed in place: the plugin was never remounted, and the Host rewrote
+    // the very reference the runtime captured at construction.
+    expect(entry.fiber).toBe(fiberBefore)
+    expect(liveSelection(entry.fiber!.config)).toBe(reference)
+    expect(reference.get()).toBe('perplexity')
+    // The providers below were registered through the runtime itself, on a
+    // fiber-scoped effect; a remount would have dropped them along with it.
+    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
+  })
+
+  it('reports an unknown id at selection instead of refusing it in the schema', async () => {
+    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
+    await entry.update({ config: { searchProvider: 'someone-elses-provider' } })
+    await ctx.loader.await()
+
+    await expect(ctx.web.search({ query: 'q' })).rejects.toThrow(
+      expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }),
+    )
+  })
+
+  it('returns to auto-selection when the configured id is cleared', async () => {
+    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
+    await entry.update({ config: {} })
+    await ctx.loader.await()
+
+    await expect(ctx.web.search({ query: 'q' })).rejects.toThrow(
+      expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }),
+    )
   })
 })

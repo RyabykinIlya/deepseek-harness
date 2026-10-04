@@ -23,7 +23,7 @@
  */
 
 import type { PresetDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import type { CheckInPolicy, MergePolicy, SpawnPolicy } from './threads-contract.ts'
+import type { CheckInPolicy, MergePolicy, SpawnPolicy, TierContract } from './threads-contract.ts'
 
 /** The coordinator preset id a client matches a Project session on. */
 export const PROJECT_PRESET_ID = 'project'
@@ -129,6 +129,14 @@ export interface ThreadAgentOptions {
   readonly maxTokens: number
 }
 
+/** One exact child LLM route the coordinator may choose for a Thread. */
+export interface AllowedThreadModel {
+  /** LLM provider id, for example `tiers`. */
+  readonly provider: string
+  /** Model id on that provider, for example `flash`. */
+  readonly model: string
+}
+
 /** Everything the coordinator list depends on. */
 export interface CoordinatorOptions {
   /** Display fields of the coordinator declaration. */
@@ -147,6 +155,16 @@ export interface CoordinatorOptions {
   readonly tools: Readonly<Record<string, number>>
   /** Model options for every Thread, when configured. */
   readonly agentOptions?: ThreadAgentOptions
+  /**
+   * Routes the delegation row offers the coordinator per Thread.
+   *
+   * A non-empty list is what makes `tiers` available: without it the delegation
+   * row has no selection parameters, and a coordinator naming a tier would be
+   * refused at the call.
+   */
+  readonly threadModels?: readonly AllowedThreadModel[]
+  /** Whether the tier sentences join the coordinator and worker contracts. */
+  readonly tierContract?: TierContract
 }
 
 /** Everything the worker list depends on. */
@@ -161,6 +179,8 @@ export interface WorkerOptions {
    * helpers; unset leaves the base row's cap, and with it the Host setting.
    */
   readonly maxDepth?: number
+  /** Whether the tier sentences join the worker contract. */
+  readonly tierContract?: TierContract
 }
 
 /** One row of a preset's plugin list. */
@@ -234,6 +254,11 @@ export function coordinatorPreset(options: CoordinatorOptions): PresetDefinition
       toolName: 'subagent',
       backgroundMode: 'continuable',
       ...options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions },
+      // A copy per Thread call: the delegation tool owns this list for the whole
+      // Session, and the coordinator must not be able to edit its own policy.
+      ...options.threadModels === undefined || options.threadModels.length === 0
+        ? {}
+        : { allowedModels: options.threadModels.map(route => ({ ...route })) },
     },
   }
   // The base `subagent` row is replaced where it stands, so the Thread
@@ -251,7 +276,11 @@ export function coordinatorPreset(options: CoordinatorOptions): PresetDefinition
       {
         id: THREAD_CONTRACT_ROW_ID,
         name: row(PROJECT_PRESET_ROW_NAMES[THREAD_CONTRACT_ROW_ID], './threads-contract.ts'),
-        config: { role: 'coordinator', ...options.contract },
+        config: {
+          role: 'coordinator',
+          ...options.contract,
+          ...options.tierContract === undefined ? {} : { tierContract: options.tierContract },
+        },
       },
       ...hasDelegation ? [] : [delegation],
       {
@@ -292,7 +321,12 @@ export function workerPreset(options: WorkerOptions): PresetDefinition {
       {
         id: THREAD_CONTRACT_ROW_ID,
         name: row(PROJECT_PRESET_ROW_NAMES[THREAD_CONTRACT_ROW_ID], './threads-contract.ts'),
-        config: { role: 'worker' },
+        config: {
+          role: 'worker',
+          ...options.tierContract === undefined || options.tierContract === 'none'
+            ? {}
+            : { tierContract: options.tierContract },
+        },
       },
       {
         id: PROJECT_MEMORY_TOOLS_ROW_ID,

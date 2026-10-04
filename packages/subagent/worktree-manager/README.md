@@ -33,12 +33,14 @@ Load it as a Host service; it registers `ctx.worktrees` and validates its config
     worktreeRoot: /Users/you/.dsh/worktrees
     maxWorktreesPerRepo: 32
     adoptionGraceMs: 600000
+    base: head-with-uncommitted
 ```
 
 | Field | Default | Meaning |
 |---|---|---|
 | `worktreeRoot` | `~/.dsh/worktrees` | Absolute directory holding the intent log and every managed worktree. Must not live inside a registered checkout. |
 | `repoRootResolution` | `explicit` | Where an empty `spec.repoRoot` comes from: `explicit` (the caller must name one) or `parent-cwd` (the checkout the harness was launched in). |
+| `base` | `head` | What a new Thread's worktree is created from: `head` (the committed `HEAD`) or `head-with-uncommitted` (that plus the parent's tracked uncommitted changes). A spec's `base` overrides it per call. See [the base policy](#understand-the-implementation/the-base-policy). |
 | `pruneOnStart` | `true` | Run the reconciliation sweep when the service loads. |
 | `maxWorktreesPerRepo` | `32` | Maximum active (non-terminal) worktrees per repository, integer ≥ 1. Exceeding it throws `WORKTREE_LIMIT_REACHED`, whose message lists the existing Thread ids; remove one to free a slot. Running-Thread concurrency is limited separately by `maxActiveSubagents` in `dsh-subagent`. |
 | `adoptionGraceMs` | `600000` | Minimum age of a record before a missing session makes it an orphan; covers the window between worktree creation and session publication. |
@@ -69,6 +71,25 @@ Without a probe, `reconcile()` still repairs records whose worktree is missing f
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
+
+<a id="understand-the-implementation/the-base-policy"></a>
+### The base policy
+
+`create()` decides the commit a Thread starts from with `spec.base`, falling back to the configured `base`. The default is **`head`**, which is exactly what this package did before the policy existed: `baseRef` resolved to a commit, and nothing else.
+
+**`head`** — the committed state. A Thread branched while its coordinator is mid-edit does *not* see the edit, which is the point of a clean base: two Threads from the same commit never collide on work neither of them did.
+
+**`head-with-uncommitted`** — that commit *plus the parent's tracked uncommitted changes*, captured as a commit object with `git stash create`. A Thread started while its coordinator is mid-edit therefore sees the work in progress, and a later merge cannot conflict on lines the parent never committed. The commit lands on the Thread's own branch, so it is the Thread's *starting point*: `status()` reports `commitsAhead: 0` and `changes()` reports no commits until the Thread itself commits something.
+
+Three properties are worth stating plainly, because they are the ones a reader cannot derive from git's own documentation:
+
+- **The parent's working tree is never touched.** `git stash create` only adds object-database entries — nothing lands in the ref namespace, no file moves, `git stash list` stays empty. A `git stash push`/`pop` would empty the parent's working tree and race every other agent in the same checkout, which is why it is not used.
+- **Untracked files are NOT included.** Git cannot represent them in a stash without `-u`, which is deliberately not passed. A staged new file *is* included, because it is part of the index.
+- **A clean working tree is not a failure.** `git stash create` exits 0 with empty output; the committed base is then the whole story and the Thread is created from it. A *failing* `git stash create` is a different matter and fails the create with `WORKTREE_CREATE_FAILED` — silently falling back to `HEAD` would hand the Thread a base nobody asked for and put the conflict back.
+
+`baseRef` is still resolved and validated under both policies, so an unusable base is refused either way. Under `head-with-uncommitted` it names the ref the snapshot is taken against and the fallback for a clean tree; `WorktreeRecord.baseSha` is always the commit actually used, and `WorktreeRecord.base` records the policy that produced it.
+
+A **restarted** Thread never re-snapshots. It is re-created with `git worktree add <path> <branch>`, so its branch keeps its own history; re-snapshotting the parent would record a base that is no longer an ancestor of the Thread's work and make `changes`/`filePatch` diff it against a commit it never had. Instead the earlier lineage's `baseSha` — and the policy that produced it — are inherited, so a resumed Thread keeps measuring from where it actually started.
 
 ### Durable intent comes before the side effect
 
@@ -103,7 +124,7 @@ The sweep runs at start and before every `create()`, so abandoned worktrees do n
 
 ### Recorded base and changes
 
-`create()` resolves `baseRef` to a commit and stores it as `baseSha` in the log (records written earlier have none and fall back to `baseRef`). `get(threadId)` returns the latest record in any state. `status()` adds `commitsAhead` (`git rev-list --count baseSha..HEAD`). `changes(record, { maxCommits, maxFiles })` returns commits newest first, committed files of `baseSha..HEAD` with binary detection, totals, and the uncommitted count. `filePatch(record, path, maxBytes)` returns the committed diff of one repository-relative path, cut by bytes on a character boundary; absolute and `..` paths are rejected. Every list and patch is bounded. `mergeCheck(record, { target }, maxConflicts)` predicts with `git merge-tree --write-tree` whether merging the worktree's HEAD into `target` (resolved in the main checkout) would conflict, listing at most `maxConflicts` paths plus the total; no ref or working tree moves, and git before 2.38 yields `{ supported: false }`.
+`create()` resolves the base policy to a commit and stores it as `baseSha`, together with the policy that produced it as `base` (records written earlier have neither and fall back to `baseRef`). `get(threadId)` returns the latest record in any state. `status()` adds `commitsAhead` (`git rev-list --count baseSha..HEAD`). `changes(record, { maxCommits, maxFiles })` returns commits newest first, committed files of `baseSha..HEAD` with binary detection, totals, and the uncommitted count. `filePatch(record, path, maxBytes)` returns the committed diff of one repository-relative path, cut by bytes on a character boundary; absolute and `..` paths are rejected. Every list and patch is bounded. `mergeCheck(record, { target }, maxConflicts)` predicts with `git merge-tree --write-tree` whether merging the worktree's HEAD into `target` (resolved in the main checkout) would conflict, listing at most `maxConflicts` paths plus the total; no ref or working tree moves, and git before 2.38 yields `{ supported: false }`.
 
 ### Several processes on one root
 
@@ -171,6 +192,7 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 ### Dev Note
 
 - Source layout: `src/index.ts` (the service), `src/registry.ts` (durable intent log and state machine), `src/git.ts` (the git subprocess surface), `src/error.ts` (typed failures), `src/types.ts` (public data shapes), `src/states.ts` (state sets).
+- The base-policy suite builds a dirty parent checkout for real and reads the created worktree's files back off disk, so `git stash create` is distinguished from `git stash push`/`pop` by what it does *not* do to the parent (`git status --porcelain` unchanged, `git stash list` empty) rather than by a mocked return value.
 - The tests build a real temporary git repository per case (`mkdtemp` + `git init` + one commit) and read every assertion back out of git — `git worktree list --porcelain`, `git branch --list`, `git status --porcelain` — rather than trusting the service's own bookkeeping. They cover SBFT rows A1–A9 plus the configuration guards and the state-machine edges.
 - `sbft A6` (abort while the add is in flight) is made deterministic by installing a `post-checkout` hook that sleeps, so the abort provably lands during `git worktree add` instead of racing it.
 

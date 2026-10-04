@@ -3,6 +3,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ThreadActionResult } from '../src/client/actions.ts'
 import type { ThreadActionsInjected } from '../src/client/ThreadActions.tsx'
 import type { ThreadsRosterInjected } from '../src/client/ThreadsHeaderAction.tsx'
+import type { ProjectTokensInjected } from '../src/client/ProjectTokenUsage.tsx'
 import type { NewProjectInjected } from '../src/client/project/NewProjectFooterAction.tsx'
 
 /** A successful Thread action outcome. */
@@ -22,6 +23,17 @@ export function fake<T extends object>(part: Partial<T>): T {
 
 /** A registered entry's `inject` thunk, as a spec calls it. */
 type StoredInject = ((...args: never[]) => Record<string, unknown>) | undefined
+
+/**
+ * Call a registered Project-ledger entry's argument-less `inject`.
+ * @param inject - the entry's `inject` function.
+ * @returns the injected Project identity face.
+ */
+export function tokensInjected(inject: StoredInject): ProjectTokensInjected {
+  const call = inject as (() => ProjectTokensInjected) | undefined
+  if (call === undefined) throw new Error('entry has no inject')
+  return call()
+}
 
 /**
  * Call a registered roster entry's per-Session `inject`.

@@ -152,6 +152,8 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 The web access service. Registered as `ctx.web` (one instance per context).
 
+Selection is LIVE: the configured ids are Host-owned references committed in place by a settings write, so search and fetch resolve against the value each call, never against a construction-time snapshot.
+
 Selection semantics (resolved at execution time, never order-dependent):
 
 - A configured id that is registered and `available()` → that provider.

@@ -9,3 +9,13 @@
     apiKey: snapshot-key
     # The fixture maps this recorded authority to its OS-assigned listener.
     baseURL: http://127.0.0.1:43118/anthropic/v1
+
+# The scenario asserts on a DeepSeek search request, so it names the provider
+# instead of inheriting the shipped default. It silently depended on that
+# default being `deepseek-official` and broke the day the bundle pinned
+# `duckduckgo` — a scenario that breaks when an unrelated default moves is a
+# scenario that will break again.
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: deepseek-official

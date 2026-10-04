@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-04-model-routing-events.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-04-model-routing-events.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-04-model-routing-events:
+  en: c7fdf8f6ec9e7032
+  zh: 0a9d42aedf22ee6d
+/2026-10-04-model-routing-events/summary:
+  en: fb78a912c34ccb63
+  zh: e7c52b2fa1fdd6f3
+/2026-10-04-model-routing-events/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-04-model-routing-events/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-04-model-routing-events/compatibility:
+  en: fdf19643ec06ec71
+  zh: 5ac5a8e32c93dff3
+/2026-10-04-model-routing-events/verification:
+  en: 15e0ff1968d5b323
+  zh: cc25920d4ec1641d
+/2026-10-04-model-routing-events/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

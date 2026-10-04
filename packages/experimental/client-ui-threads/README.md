@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Show a Project Session's background Threads in one header control and open any of them as a conversation in the main workspace or a Sidebar tab. Each row shows liveness read from the Session store beside the `stopReason` of the last finished turn, and carries Stop, Archive, and Copy branch. Archive asks before it removes a worktree holding uncommitted changes. In a Project the roster is a control, not a report: it appears before the first Thread exists and opens the Project's shared memory to edit. A `New Project` action in the sidebar footer starts one.
+Show a Project Session's background Threads in one header control, and open any as a conversation in the main workspace or a Sidebar tab. Each row shows liveness read from the Session store beside the `stopReason` of the last finished turn, and carries Stop, Archive, and Copy branch. Archive asks before it removes a worktree holding uncommitted changes. In a Project the roster is a control, not a report: it appears before the first Thread exists and opens the Project's shared memory to edit, next to the Project's token spend. A `New Project` action in the sidebar footer starts one.
 
 ## Table of Contents
 
@@ -123,6 +123,29 @@ A Thread opened in the main conversation gets a compact header in the session he
 
 In a Project the roster footer has a `Memory` row next to `New thread`. It replaces the Thread list in the same popover with the Project's entries, newest first, each with its author (coordinator, thread, or you) and age. A form at the bottom adds an entry; each entry has Edit and Delete. Every change is followed by a fresh read. A refusal such as an empty or oversized text is shown in place with the Host's message, and the list stays as it was. With no entries the view says so. Leaving the Thread list pins the popover so a hover-out does not close the view; Escape closes it and the next open starts on the Threads.
 
+<a id="library"></a>
+### Library
+
+A `Library` row follows `Memory` in the roster footer. It replaces the Thread list with three read-only sections read from `ctx.remote.threads.library`: attachments sent in the Project chat, files the Project and its Threads declared with `present`, and the changed files of its newest Threads, each newest first. Each section states its own empty case, and a section whose Host-side bound was reached shows how many more entries exist. A failed read shows the Host's message beside a retry button, the same pattern the Thread list itself uses for a failed projection. There is no add, edit, or delete here: every value is derived from Session logs and live worktrees at read time.
+
+<a id="project-token-spend"></a>
+### Token spend
+
+A Project's header carries its aggregated token spend beside the roster: the sum of the `tokenUsage` projection (`llm/token-meter`) over the Project Session and every Thread it owns. The figure is the four disjoint buckets added up — uncached input, cache read, cache write, and output — exactly the aggregate the session's own usage pill uses, so the two never disagree about what a token total is. The tooltip states all four separately, and the reading updates whenever a projection value lands.
+
+Membership is the roster's, not a second rule: the Project Session plus the Threads the merged roster already lists (`subagentCatalog` continuable children over the `threads` projection rows). That choice is what makes the ledger readable:
+
+| Thread state | Contributes | Why |
+|---|---|---|
+| Running | What it has reported so far | `tokenUsage` is folded from the log, so the figure grows as its settlements land |
+| Settled or exited | Its final durable total | Exit is runtime state; usage is not |
+| Archived | Its final durable total | Archive records `thread/removed`, which drops the durable *row* and the worktree, but the Project's append-only catalog still names that child as a continuable Thread and the Thread's Session is kept — spend that happened does not stop counting because its work was filed away |
+| Nested under a Thread | Nothing | This is the Project's own spend plus its direct Threads', not a recursive roll-up |
+
+Nothing is estimated. A Thread whose projection block has not been published yet contributes nothing and the figure rises as blocks land, and a value the Host could not fold is skipped rather than partly summed. Until anything at all has been recorded, the header states that nothing has been recorded yet instead of showing a `0`: usage only exists once a provider has reported it, so a zero would claim the Project has spent nothing where the truth is that nothing has been read.
+
+Outside a Project the entry renders nothing, like the roster's empty-project case: a Session with no Threads has no Project ledger.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -142,9 +165,13 @@ Liveness is also not durable, so it cannot come from the row: `roster.ts` merges
 | [`src/client/ThreadsHeaderAction.tsx`](src/client/ThreadsHeaderAction.tsx) | The header control, its roster, its row actions, its feedback surfaces, and the mirrored dropdown interaction |
 | [`src/client/ThreadActions.tsx`](src/client/ThreadActions.tsx) | Stop, Archive and Copy branch with their toasts and the dirty-archive confirmation, shared by the roster and the Thread header |
 | [`src/client/ThreadChatHeader.tsx`](src/client/ThreadChatHeader.tsx) | The Thread header above a Sidebar chat and in the session header band |
+| [`src/client/ProjectTokenUsage.tsx`](src/client/ProjectTokenUsage.tsx) | The Project's aggregated token spend in the session header band |
 | [`src/client/MemoryPanel.tsx`](src/client/MemoryPanel.tsx) | The Memory view: list, add, edit, delete, in-place refusals |
 | [`src/client/memory-types.ts`](src/client/memory-types.ts) | The memory entry and id types read off the `projectMemory` Remote |
+| [`src/client/LibraryPanel.tsx`](src/client/LibraryPanel.tsx) | The read-only Library view: attachments, presented files, and per-Thread changes |
 | [`src/client/useThreadRoster.ts`](src/client/useThreadRoster.ts) | The merged Thread rows and load state of one Project, for both surfaces |
+| [`src/client/token-usage.ts`](src/client/token-usage.ts) | The `tokenUsage` fold over a Project and its Threads, its empty reading, and the compact figure |
+| [`src/client/useProjectTokenUsage.ts`](src/client/useProjectTokenUsage.ts) | That fold read live from the Session list's projection blocks |
 | [`src/client/mount.ts`](src/client/mount.ts) | Mounts the `threads` and `projectMemory` Remote namespaces, then registers every contribution |
 | [`src/client/roster.ts`](src/client/roster.ts) | Catalog and `threads` rows merged, then liveness attached |
 | [`src/client/actions.ts`](src/client/actions.ts) | The action outcome type shared between the Remote calls and the rows |
@@ -201,7 +228,8 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 - **No ordering beyond creation order.** Rows follow the projection's durable creation order; there is no recency or activity sort.
 - **One Project preset per deployment.** `projectAgentPresets` recognizes several presets but a New Project action always composes the first.
 - **New Project needs an existing Session to pick a Workspace.** With no Workspaces at all the button reports that instead of asking for a directory; creating a Workspace is the Workspace browser's job.
-- **Memory only.** The Library view is not part of this package yet; the Memory view edits entries as a user, and the Host stamps them with the `user` author.
+- **Library is read-only.** It has no add, edit, or delete; the Memory view is the only mutable surface here, and the Host stamps its entries with the `user` author.
+- **The token ledger counts only published readings.** It is a sum of projection values, so a Thread whose block has not reached the client yet is missing from the figure until it does. Nothing here reads a Thread's log on demand to fill that gap.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -212,6 +240,6 @@ Run the suite from the repository root:
 pnpm vitest run packages/client/ui-threads
 ```
 
-`tests/threads-header-action.client.spec.tsx` covers the projection-driven rows, each `stopReason`'s own glyph and label, liveness read from the Session store, the keyboard traversal and dismissal rules, opening a Thread, the row actions (Stop, Archive including the dirty-worktree confirmation and its forced retry, Copy branch, and every failure's toast), and everything the Project identity adds — always-visible visibility, the empty-list copy, and the New Thread row's staged instruction; `tests/roster.client.spec.ts` covers the catalog projection, the merge, and the liveness attach; `tests/project-identity.client.spec.ts` covers the identity rule, its config, and Workspace selection; `tests/new-project-footer-action.client.spec.tsx` covers the button's Workspace resolution, activation, failure copy, and re-entry guard; `tests/thread-chat.client.spec.tsx` covers the address round-trip, the resource provider's lifetime, and the embedded Conversation; `tests/browser-plugin.client.spec.ts` covers the slot registrations, the navigation they bind, and the exact Remote calls the actions make. `tests/thread-chat-header.client.spec.tsx` covers the Thread header and its shared actions; `tests/memory-panel.client.spec.tsx` covers the Memory view; `tests/index.client.spec.ts` covers the package entry points.
+`tests/threads-header-action.client.spec.tsx` covers the projection-driven rows, each `stopReason`'s own glyph and label, liveness read from the Session store, the keyboard traversal and dismissal rules, opening a Thread, the row actions (Stop, Archive including the dirty-worktree confirmation and its forced retry, Copy branch, and every failure's toast), and everything the Project identity adds — always-visible visibility, the empty-list copy, and the New Thread row's staged instruction; `tests/roster.client.spec.ts` covers the catalog projection, the merge, and the liveness attach; `tests/project-identity.client.spec.ts` covers the identity rule, its config, and Workspace selection; `tests/new-project-footer-action.client.spec.tsx` covers the button's Workspace resolution, activation, failure copy, and re-entry guard; `tests/thread-chat.client.spec.tsx` covers the address round-trip, the resource provider's lifetime, and the embedded Conversation; `tests/browser-plugin.client.spec.ts` covers the slot registrations, the navigation they bind, and the exact Remote calls the actions make. `tests/thread-chat-header.client.spec.tsx` covers the Thread header and its shared actions; `tests/memory-panel.client.spec.tsx` covers the Memory view; `tests/library-panel.client.spec.tsx` covers the Library view, its sections, and their empty and truncated cases; `tests/token-usage.client.spec.ts` covers the `tokenUsage` fold, the readings it refuses, the empty reading, and the compact figure; `tests/project-token-usage.client.spec.tsx` covers the header entry — the Project-only visibility, membership of the archived Thread, the placeholder, the four-bucket breakdown, both dictionaries, and a live store update the mounted component follows; `tests/index.client.spec.ts` covers the package entry points.
 
 **Runtime invariant:** No companion is published. Every value this package shows is projected from Host-owned state — the `threads` rows, the liveness flag read from the Session store, and the entries behind the `projectMemory` Remote — so the only thing it holds at run time is a set of slot and Remote-namespace registrations that unwind with the plugin.

@@ -14,6 +14,7 @@ import { threadStatus } from '../src/client/ThreadStatus.tsx'
 import { zh } from '../src/client/locales.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { MemoryEntry, MemoryEntryId } from '../src/client/memory-types.ts'
+import type { ThreadsLibrary } from '@deepseek-ai/dsh-experimental-threads/client'
 import { fake, okResult } from './support.client.ts'
 
 /** Thread ids whose own Session is executing; `props` publishes them in the Session store. */
@@ -128,6 +129,14 @@ function props(
     addMemory: vi.fn(),
     updateMemory: vi.fn(),
     removeMemory: vi.fn(),
+    listLibrary: vi.fn((): ReturnType<ThreadsHeaderActionProps['listLibrary']> => Promise.resolve({
+      ok: true,
+      value: {
+        attachments: { items: [], total: 0, truncated: false },
+        presented: { items: [], total: 0, truncated: false },
+        changes: { items: [], total: 0, truncated: false },
+      },
+    })),
     projectAgentPresets: project.presets ?? [],
     t,
     ...over,
@@ -725,11 +734,14 @@ describe('starting a Thread from the roster', () => {
     // The Memory row follows the add row in the same walk.
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowDown' })
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '记忆' }))
+    // The Library row follows Memory in the same walk.
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '资料库' }))
     // The walk wraps: the footer rows are rows, not a dead end.
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowDown' })
     expect(document.activeElement).toBe(rosterOptions()[0])
     fireEvent.keyDown(screen.getByRole('listbox'), { key: 'End' })
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: '记忆' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '资料库' }))
   })
 
   it('closes from the add row on Escape and returns focus to the trigger', async () => {
@@ -923,6 +935,39 @@ describe('Memory view in the roster', () => {
     }))} />)
     openRoster()
     expect(screen.queryByRole('button', { name: '记忆' })).toBeNull()
+  })
+})
+
+describe('Library view in the roster', () => {
+  const LIBRARY: ThreadsLibrary = {
+    attachments: { items: [{ kind: 'file', attachmentId: 'a1', bytes: 10, seq: 1, time: 0 }], total: 1, truncated: false },
+    presented: { items: [], total: 0, truncated: false },
+    changes: { items: [], total: 0, truncated: false },
+  }
+
+  it('opens from the roster footer of a Project, lists the attachments and returns to the Threads', async () => {
+    const listLibrary = vi.fn((): ReturnType<ThreadsHeaderActionProps['listLibrary']> => Promise.resolve({ ok: true, value: LIBRARY }))
+    render(<ThreadsHeaderAction {...props(
+      snapshot({ state: 'ready', values: { threads: [row({ threadId: 't-1' })] } }),
+      { listLibrary },
+      PROJECT,
+    )} />)
+    openRoster()
+    fireEvent.click(screen.getByRole('button', { name: '资料库' }))
+    expect(await screen.findByText(/a1/)).toBeDefined()
+    expect(listLibrary).toHaveBeenCalledWith(PARENT)
+    // The Thread list is replaced, not stacked.
+    expect(screen.queryByRole('listbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '返回线程列表' }))
+    expect(screen.getByRole('listbox')).toBeDefined()
+  })
+
+  it('does not offer Library outside a Project', () => {
+    render(<ThreadsHeaderAction {...props(snapshot({
+      state: 'ready', values: { threads: [row({ threadId: 't-1' })] },
+    }))} />)
+    openRoster()
+    expect(screen.queryByRole('button', { name: '资料库' })).toBeNull()
   })
 })
 

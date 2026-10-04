@@ -10,7 +10,7 @@ import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-
 import type {
   SessionStatusSnapshot,
 } from '@deepseek-ai/dsh-client-ui-session/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 
@@ -59,6 +59,30 @@ export interface SessionNode {
   /** In the registry-global archive set: shown grayed in place and not openable. */
   archived: boolean
   updatedAt: number
+  /**
+   * Threads this Project owns, in the projection's durable creation order.
+   * Empty for every ordinary Session and for a Project that has spawned none,
+   * which is what keeps ordinary subagent children hidden.
+   */
+  threads: readonly ThreadNode[]
+}
+
+/**
+ * One background Thread nested under its parent Project row.
+ *
+ * Sourced from the Project's `threads` projection, so a Thread exists here only
+ * because its Project durably recorded one. Its identity is the Thread child's
+ * own Session id, which is what opening the row opens.
+ */
+export interface ThreadNode {
+  /** The Thread child's Session id; opening the row opens this Session. */
+  id: SessionId
+  /** The task label the Thread was spawned with; a display fact, never identity. */
+  label: string
+  /** Running exactly when the Thread's own Session is. */
+  running: boolean
+  /** Last activity, from the Thread Session's own summary; absent until its summary lands. */
+  updatedAt?: number
 }
 
 /** Session order selected by the Workspace browser. */
@@ -234,6 +258,11 @@ export type ArchivedFilter = 'default' | 'show' | 'only'
  * is visible. Subagent children use their parent header catalog; archived
  * sessions follow the archived filter, while their accounting slots remain
  * either way so unarchiving restores position.
+ *
+ * Subagent children stay hidden here — including Threads, whose Session ids
+ * are children of a Project. A Thread reaches the browser nested under its
+ * Project's own row instead (see {@link threadNodes}), so this filter keeps
+ * every ordinary child out while no Thread is lost.
  */
 function sessionVisible(
   session: SessionSummary,
@@ -394,6 +423,87 @@ function runningChildCount(list: SessionListState, parentId: SessionId, statuses
   ) ?? 0
 }
 
+/**
+ * One Session's projection values as this package holds them: the open key
+ * space the Session Controller erases at the wire, one finished value per key.
+ */
+type ProjectionValues = SessionListState['projectionsBySession'][SessionId]['values']
+
+/**
+ * The durable facts one published Thread row carries.
+ *
+ * The Threads domain owns this shape; this package deliberately carries no
+ * dependency on it, so only the two fields the sidebar renders are restated
+ * here and the published value is re-narrowed from `unknown` rather than
+ * asserted (the Session Controller stores every key untyped).
+ */
+interface ThreadProjectionRow {
+  /** Durable Thread identity, which is also the Thread child's Session id. */
+  threadId: string
+  /** The task label the Thread was spawned with. */
+  label: string
+}
+
+/**
+ * Whether one published value is a usable Thread row.
+ *
+ * A deployment without the Threads domain has no `threads` key at all, and a
+ * row the Host could not fold is still only data: both read as absent here,
+ * never as a crash.
+ * @param value - one candidate published row.
+ * @returns whether it carries both rendered facts as strings.
+ */
+function isThreadProjectionRow(value: unknown): value is ThreadProjectionRow {
+  if (typeof value !== 'object' || value === null) return false
+  return typeof Reflect.get(value, 'threadId') === 'string'
+    && typeof Reflect.get(value, 'label') === 'string'
+}
+
+/**
+ * The Thread rows one Project Session published, in durable creation order.
+ *
+ * Read from the Project's own projection block, so a Thread appears only while
+ * its Project durably records it. A cold Project reads the persisted checkpoint
+ * and a connected one reads the live registry; both arrive through the same
+ * generic per-key plumbing, and neither needs a subscription of its own.
+ * @param list - sessions list snapshot carrying the projection blocks.
+ * @param projectId - the Project Session whose Thread rows are read.
+ * @returns the well-formed rows, or none while the key is absent or unreadable.
+ */
+function threadProjectionRows(list: SessionListState, projectId: SessionId): readonly ThreadProjectionRow[] {
+  const values: ProjectionValues | undefined = list.projectionsBySession[projectId]?.values
+  const published: unknown = Reflect.get(values ?? {}, 'threads')
+  return Array.isArray(published) ? published.filter(isThreadProjectionRow) : []
+}
+
+/**
+ * The Thread rows of one Project, resolved against their own Sessions.
+ *
+ * Liveness and recency come from the Thread's own Session exactly as
+ * {@link runningChildCount} reads its direct children, so a Thread row tracks
+ * the same truth the rest of the row presentation does.
+ * @param list - sessions list snapshot.
+ * @param statuses - unified UI status by Session.
+ * @param projectId - the Project Session whose Threads are resolved.
+ * @returns one node per published Thread row, in the projection's order.
+ */
+function threadNodes(
+  list: SessionListState,
+  statuses: SessionStatuses,
+  projectId: SessionId,
+): readonly ThreadNode[] {
+  return threadProjectionRows(list, projectId).map((row): ThreadNode => {
+    const id = SessionId(row.threadId)
+    const summary = list.byId[id]
+    return {
+      id,
+      label: row.label,
+      running: statuses.get(id)?.running ?? summary?.running ?? false,
+      ...summary === undefined ? {} : { updatedAt: summary.updatedAt },
+    }
+  })
+}
+
 function sessionNode(
   s: SessionSummary,
   list: SessionListState,
@@ -413,6 +523,7 @@ function sessionNode(
     pinned: !archived.has(s.id) && pinned.has(s.id),
     archived: archived.has(s.id),
     updatedAt: s.updatedAt,
+    threads: threadNodes(list, statuses, s.id),
     ...(pendingInteraction === undefined ? {} : { pendingInteraction }),
   }
 }

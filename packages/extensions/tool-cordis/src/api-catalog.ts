@@ -1517,6 +1517,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'modelRouting',
+    summary: 'Host-side surface other plugins use; the plugin class implements it.',
+    description: 'Host-side surface other plugins use; the plugin class implements it.',
+    methods: [
+      {
+        signature: 'tierNames(): readonly string[]',
+        description: 'The tier names this deployment configured, in configuration order.',
+        parameters: [],
+        returns: 'every tier name, empty while the route is dormant.',
+      },
+      {
+        signature: 'setThreadTier(project: Session, threadId: string, tier: string): void',
+        description: 'Switch a Thread to a tier from its next model request.',
+        parameters: [{ name: 'project', description: 'the Project Session (the caller), whose log receives `model-routing/tier-override`.' }, { name: 'threadId', description: 'the Thread\'s child SessionId string.' }, { name: 'tier', description: 'a configured tier name.' }],
+        throws: ['Error `model-routing: unknown tier "<tier>"; configured tiers: <a, b>`.'],
+      },
+    ],
+  },
+  {
     key: 'officeToPdf',
     summary: 'A provider lifetime owns all converters, queued calls, and temporary files.',
     description: 'A provider lifetime owns all converters, queued calls, and temporary files.',
@@ -1607,6 +1626,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'set(session: Session, name: string): void',
         description: 'Record a changed preset, then update each changed knob through its own setter. Selecting the effective preset again appends nothing.',
         parameters: [{ name: 'session', description: 'the session the switch belongs to.' }, { name: 'name', description: 'the preset to switch to; unknown names throw.' }],
+      },
+    ],
+  },
+  {
+    key: 'piAiDispatch',
+    summary: '`ctx.piAiDispatch`: streams one request through a configured pi-ai route with per-call options.',
+    description: '`ctx.piAiDispatch`: streams one request through a configured pi-ai route with per-call options.',
+    methods: [
+      {
+        signature: 'stream(options: GenerateOptions, dispatch?: PiAiDispatchOptions): AsyncIterable<StreamChunk>',
+        description: 'Same contract as `PiAiAdapter.stream`. The call does not go through `ctx.llm`: the caller is itself an adapter and has already received runtime-projected messages.',
+        parameters: [{ name: 'options', description: 'a request whose `provider` is a pi-ai route key (for example `openrouter`).' }, { name: 'dispatch', description: 'per-call options.' }],
+        returns: 'the chunk stream of one provider attempt.',
       },
     ],
   },
@@ -1819,7 +1851,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async resolveProject(session: Session): Promise<ProjectId>',
-        description: 'Find the Project a calling Session belongs to.\n\nThe Session itself is the Project when its preset is configured in `projectPresets`; otherwise its `parentSession` chain is followed for at most `maxLineageDepth` hops. Each ancestor is read from its live Session when loaded, otherwise from its persisted header; without a `sessionPersistence` service only live Sessions are consulted.',
+        description: 'Find the Project a calling Session belongs to.\n\nThe Session itself is the Project when its preset is configured in `projectPresets`; otherwise its `parentSession` chain is followed for at most `maxLineageDepth` hops. Each ancestor is read from its live Session when loaded, otherwise from its persisted header; without a `sessionPersistence` service only live Sessions are consulted.\n\nThe preset read is the effective one, never the header alone: a Session created under the default preset and switched to a Project preset before its first turn still names the default in its frozen creation header.',
         parameters: [{ name: 'session', description: 'Calling Session.' }],
         returns: 'The Project id.',
         throws: ['ProjectMemoryError when no Project is found within the bound or an ancestor is neither live nor persisted.'],
@@ -3544,7 +3576,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'web',
     summary: 'The web access service.',
-    description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
+    description: 'The web access service. Registered as `ctx.web` (one instance per context).\n\nSelection is LIVE: the configured ids are Host-owned references committed in place by a settings write, so search and fetch resolve against the value each call, never against a construction-time snapshot.\n\nSelection semantics (resolved at execution time, never order-dependent):\n\n- A configured id that is registered and `available()` → that provider.\n- A configured id not registered → `WEB_PROVIDER_CONFIGURED_MISSING`.\n- A configured id registered but unavailable → `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`.\n- No id configured, exactly one registered usable provider → that provider.\n- No id configured, multiple usable providers → `WEB_PROVIDER_AMBIGUOUS`.\n- No id configured, no usable provider → `WEB_PROVIDER_UNAVAILABLE`.',
     methods: [
       {
         signature: 'registerSearchProvider(provider: WebSearchProvider): () => void',
@@ -3873,6 +3905,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly base: WorktreeBasePolicy',
+        description: 'Base policy a spec falls back to when it names none; see Config.base.',
+        parameters: [],
+      },
+      {
         signature: 'readonly pruneOnStart: boolean',
         description: 'Whether the startup sweep runs on load.',
         parameters: [],
@@ -3904,8 +3941,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>',
-        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second `git worktree add`. An abort is honored at every boundary — before any git process is spawned, and again after the add resolves — and either way the reserved intent is rolled back with `git worktree remove --force`. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots.',
-        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref, and optional branch.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
+        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second `git worktree add`. An abort is honored at every boundary — before any git process is spawned, and again after the add resolves — and either way the reserved intent is rolled back with `git worktree remove --force`. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots. The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured `base` — and `head-with-uncommitted` snapshots the parent\'s tracked uncommitted changes with `git stash create`, which leaves the parent\'s working tree untouched.',
+        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref and policy, and optional branch.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
         returns: 'the `ready` record whose `path` may be used as a session cwd.',
       },
       {
@@ -4740,10 +4777,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovalOutcome',
     declaration: 'export type ApprovalOutcome = \'allowed-once\' | \'rejected\' | \'cancelled\' | \'unavailable\';',
-  },
-  {
-    name: 'ApprovalPolicy',
-    declaration: 'export type ApprovalPolicy = \'ask\' | \'never\';',
   },
   {
     name: 'ApprovalRequest',
@@ -6114,6 +6147,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'OpenRouterRoutingBlock',
+    declaration: 'export type OpenRouterRoutingBlock = NonNullable<OpenAICompletionsCompat[\'openRouterRouting\']>;',
+  },
+  {
     name: 'OptionalSessionSeq',
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
@@ -6144,6 +6181,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n    defaultOptions: PresetOption[];\n    defaultPreset: string;\n}',
+  },
+  {
+    name: 'PiAiDispatchOptions',
+    declaration: 'export interface PiAiDispatchOptions {\n    readonly openRouterRouting?: OpenRouterRoutingBlock;\n}',
   },
   {
     name: 'PlatformSession',
@@ -8434,6 +8475,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'WorktreeBasePolicy',
+    declaration: 'export type WorktreeBasePolicy = \'head\' | \'head-with-uncommitted\';',
+  },
+  {
     name: 'WorktreeChanges',
     declaration: 'export interface WorktreeChanges {\n    readonly baseSha: string;\n    readonly headSha: string;\n    readonly commits: readonly {\n        readonly sha: string;\n        readonly subject: string;\n    }[];\n    readonly commitsTotal: number;\n    readonly files: readonly WorktreeFileChange[];\n    readonly filesTotal: number;\n    readonly uncommitted: number;\n}',
   },
@@ -8455,7 +8500,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorktreeRecord',
-    declaration: 'export interface WorktreeRecord {\n    readonly threadId: string;\n    readonly path: string;\n    readonly branch?: string;\n    readonly baseRef: string;\n    readonly baseSha?: string;\n    readonly createdAt?: number;\n    readonly state: WorktreeState;\n    readonly repoRoot: string;\n}',
+    declaration: 'export interface WorktreeRecord {\n    readonly threadId: string;\n    readonly path: string;\n    readonly branch?: string;\n    readonly baseRef: string;\n    readonly base?: WorktreeBasePolicy;\n    readonly baseSha?: string;\n    readonly createdAt?: number;\n    readonly state: WorktreeState;\n    readonly repoRoot: string;\n}',
   },
   {
     name: 'WorktreeRegistryLocking',
@@ -8467,7 +8512,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorktreeSpec',
-    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly branch?: string;\n}',
+    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly base?: WorktreeBasePolicy;\n    readonly branch?: string;\n}',
   },
   {
     name: 'WorktreeState',

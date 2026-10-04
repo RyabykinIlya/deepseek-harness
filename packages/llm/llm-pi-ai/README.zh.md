@@ -148,6 +148,7 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 | [`src/context.ts`](src/context.ts) | Harness 到 pi-ai 的上下文转换、图片处理、回放恢复 |
 | [`src/stream.ts`](src/stream.ts) | 把 pi-ai 事件转换为 harness `StreamChunk` 值 |
 | [`src/replay.ts`](src/replay.ts) | 带版本的 `ReplayEnvelope` 存储与校验 |
+| [`src/dispatch.ts`](src/dispatch.ts) | `ctx.piAiDispatch`：一次流式调用携带按调用给出的 OpenRouter `provider` 块，以及 `piAiResponseIdentity` |
 | [`src/discovery.ts`](src/discovery.ts) | 面向配置界面的端点询问 |
 
 ### 注册与目录
@@ -157,6 +158,11 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 ### 回放与词汇
 
 成功 assistant 响应会存储带版本的、无损 JSON 回放状态，与产生它们的提供方和模型放在一起——响应级事实加每个流式块一条逐块条目。请求时，`LlmRuntime` 仅当同一适配器实例拥有两条路由时才传递回放状态；适配器校验它并恢复原生响应 id、提供方签名与可选的 `providerThinkingLevel` effort 元数据，缺失的 effort 元数据仍保持缺失。回放会对照 assistant 来源校验请求模型身份，并用它保留同模型签名；提供方报告的响应模型仅作为诊断元数据。回放状态缺失或无法使用时会降级为提供方无关内容，并保留 assistant 来源中必需的提供方和模型。pi-ai 工具调用参数是解析后的对象，因此适配器解析输入并重新字符串化输出，以符合 harness 原始 JSON 约定；pi-ai 流内错误事件映射为终止 `finish` 分片。
+
+
+### 按调用的路由块
+
+某条路由的 `compat.openRouterRouting` 属于模型描述符，因此该路由上的每个请求都共用它。一个适配器若必须把某一次请求钉到某一家上游服务商——并且知道该请求属于哪个会话，从而按会话而非按调用钉住——就走 `ctx.piAiDispatch.stream(request, { openRouterRouting })`。该调用直接穿过与 `stream()` 相同的适配器实例，不经 `ctx.llm`：调用方本身就是适配器，且已经拿到运行时投影后的消息；路由块原样抵达线路，而任何不是 `openai-completions` 的模型都会以 `INVALID_CONFIG` 拒绝它，而不是悄悄丢掉这次钉住。`piAiResponseIdentity(replayState)` 从信封中读回上游的 `responseId`/`responseModel`；信封外来、缺失或畸形时返回 `undefined`。钉住哪一个端点不是本包的职责，那属于 `dsh-experimental-model-routing`。
 
 </details>
 

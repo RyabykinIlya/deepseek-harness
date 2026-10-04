@@ -15,14 +15,17 @@
   en: 1bcd197f64c9fb56
   zh: ebc90fe5692157d0
 /deepseek-ai-dsh-worktree-manager/use-this-package:
-  en: 1ce96aaf5987f342
-  zh: beb0841f4331c57d
+  en: 24b6726fe5510a82
+  zh: bde8bf6fac6447cf
 /deepseek-ai-dsh-worktree-manager/use-this-package/tell-the-service-which-threads-still-have-a-session:
   en: 1a5c96a34cac5848
   zh: 6065eb25535c655f
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation:
-  en: ee4615a04fa6503d
-  zh: eb2b30c2db047b10
+  en: 6ebfc97113269267
+  zh: 20685e359a221cff
+/deepseek-ai-dsh-worktree-manager/understand-the-implementation/the-base-policy:
+  en: 8ae060eae8a9b1bc
+  zh: 9fc4f62cadd23cf6
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/durable-intent-comes-before-the-side-effect:
   en: 2e5c9011d93ea78c
   zh: ff87dd2b6139e777
@@ -36,8 +39,8 @@
   en: cc94c9d912611fb6
   zh: f6e616330eb69c52
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/recorded-base-and-changes:
-  en: ed41962d93ed636b
-  zh: 221e5c26a3d87886
+  en: 4558a467f6722704
+  zh: 1f1e0fd9361994f5
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/several-processes-on-one-root:
   en: eeda8957fbfddacf
   zh: 0590fed901f15c7d
@@ -66,5 +69,5 @@
   en: 292a8072a5982388
   zh: 465dacd18000ec2e
 /deepseek-ai-dsh-worktree-manager/known-limitations-and-deferred-work/dev-note:
-  en: 739726ecd7187290
-  zh: c71d5be3a9d9ef63
+  en: 63bab82932c9329e
+  zh: 424541bc7d331fe5

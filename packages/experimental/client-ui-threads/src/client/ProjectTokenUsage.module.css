@@ -1,0 +1,26 @@
+/* The Project ledger is a reading, not a control: the same skin the Thread
+   header uses in the session-header band — tertiary label, 12px on a 17px
+   line, no border and no padding of its own. */
+.usage {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

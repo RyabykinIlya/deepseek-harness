@@ -8,7 +8,7 @@ import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, NS } from '../src/client/index.ts'
-import type { WebSearchCardFace } from '../src/client/index.ts'
+import type { WebSearchCardFace, WebSearchSelectionFace } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 /** One Host view of a served namespace. */
@@ -62,11 +62,29 @@ describe('ui-settings-web-search apply', () => {
 
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
     const entry = slots.entries('plugins.item')[0]!
-    expect(entry.options).toMatchObject({ id: 'web-search', order: 40 })
-    expect(resolveSlotLabel(entry.options.label)).toBe('网页搜索')
+    // One entry per provider, keyed by the id the Host records in
+    // `web.searchProvider`, and named for the person rather than the id.
+    expect(entry.options).toMatchObject({ id: 'web-search-deepseek-official', order: 40 })
+    expect(resolveSlotLabel(entry.options.label)).toBe('DeepSeek')
     expect(entry.locale).toBe(NS)
     const face = (entry.inject as () => Pick<WebSearchCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks)).toEqual(['webSearchCard'])
+  })
+
+  it('registers one block per served provider, each under its own id', async () => {
+    const { ctx, slots } = await bench(['web-search-brave', 'web-search-tavily'])
+    declareRoot(slots)
+
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(2) })
+    const byId = new Map(slots.entries('plugins.item').map(entry => [
+      String((entry.options as { id: string }).id), resolveSlotLabel(entry.options.label),
+    ]))
+    // A provider the Host does not serve contributes nothing.
+    expect(byId.has('web-search-deepseek-official')).toBe(false)
+    expect(byId.get('web-search-brave')).toBe('Brave Search')
+    expect(byId.get('web-search-tavily')).toBe('Tavily')
   })
 
   it('registers nothing while the namespace is not served', async () => {
@@ -74,6 +92,49 @@ describe('ui-settings-web-search apply', () => {
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
+
+    expect(slots.entries('plugins.item')).toHaveLength(0)
+  })
+
+  it('registers the selector once, on its own, while the Host serves the web seam', async () => {
+    const { ctx, slots } = await bench(['web'])
+    declareRoot(slots)
+
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
+    const entry = slots.entries('plugins.item')[0]!
+    // Its own entry, and sorted above the provider blocks: `web.searchProvider`
+    // is one global value, so one card shows it rather than each block repeating
+    // the same single choice.
+    expect(entry.options).toMatchObject({ id: 'web-search-provider', order: 10 })
+    expect(resolveSlotLabel(entry.options.label)).toBe('搜索提供方')
+    const face = (entry.inject as () => Pick<WebSearchSelectionFace, 'hooks'>)()
+    expect(Object.keys(face.hooks)).toEqual(['webSearchSelection'])
+  })
+
+  it('registers the selector alongside the blocks, without repeating it per provider', async () => {
+    const { ctx, slots } = await bench(['web', 'web-search-brave', 'web-search-tavily'])
+    declareRoot(slots)
+
+    await ctx.plugin({ inject: [...inject], apply }).await()
+
+    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(3) })
+    const ids = slots.entries('plugins.item').map(entry => String((entry.options as { id: string }).id))
+    expect(ids.filter(id => id === 'web-search-provider')).toHaveLength(1)
+    expect(ids.sort()).toEqual(['web-search-brave', 'web-search-provider', 'web-search-tavily'])
+  })
+
+  it('keeps the selector registered when no provider block is served', async () => {
+    // `web` is served but no provider is: the selector still appears, because it
+    // edits the seam's namespace and not any provider's.
+    const { ctx, slots } = await bench(['web'])
+    declareRoot(slots)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
+
+    await fiber.dispose()
 
     expect(slots.entries('plugins.item')).toHaveLength(0)
   })

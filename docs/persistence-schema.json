@@ -10608,6 +10608,417 @@
       }
     },
     {
+      "key": "event:model-routing/decision",
+      "kind": "event",
+      "event": "model-routing/decision",
+      "surface": false,
+      "digest": "a9dfa40309b88aa7bf4f8ea47f97a6ebb46e92d0096ae2d07d72c40fa671c623",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 23,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 26,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "blendedUsdPerToken",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "boundary",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "considered",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "endpoint",
+                "type": 9,
+                "optional": true
+              },
+              {
+                "name": "excludedTags",
+                "type": 11,
+                "optional": false
+              },
+              {
+                "name": "judge",
+                "type": 12,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "relaxedUptime",
+                "type": 23,
+                "optional": true
+              },
+              {
+                "name": "requested",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "runnersUp",
+                "type": 24,
+                "optional": false
+              },
+              {
+                "name": "tier",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "unpinnedReason",
+                "type": 10,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "union",
+            "types": [
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "failure"
+          },
+          {
+            "kind": "literal",
+            "value": "compaction"
+          },
+          {
+            "kind": "literal",
+            "value": "idle"
+          },
+          {
+            "kind": "literal",
+            "value": "selection-change"
+          },
+          {
+            "kind": "literal",
+            "value": "start"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "cacheReadUsd",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "completionUsd",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "contextLength",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "maxCompletionTokens",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "promptUsd",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "providerName",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "quantization",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "tag",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "answeredBy",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "confidence",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "costUsd",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "difficulty",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "error",
+                "type": 10,
+                "optional": true
+              },
+              {
+                "name": "latencyMs",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "model",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "pPro",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "precision",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "rule",
+                "type": 13,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "judge-error"
+          },
+          {
+            "kind": "literal",
+            "value": "judge-off"
+          },
+          {
+            "kind": "literal",
+            "value": "keep"
+          },
+          {
+            "kind": "literal",
+            "value": "low-confidence"
+          },
+          {
+            "kind": "literal",
+            "value": "precision"
+          },
+          {
+            "kind": "literal",
+            "value": "start-flash"
+          },
+          {
+            "kind": "literal",
+            "value": "start-pro"
+          },
+          {
+            "kind": "literal",
+            "value": "to-flash"
+          },
+          {
+            "kind": "literal",
+            "value": "to-pro"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "array",
+            "element": 25
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "blendedUsdPerToken",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "model",
+                "type": 10,
+                "optional": false
+              },
+              {
+                "name": "tag",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": "model-routing/decision"
+          }
+        ]
+      }
+    },
+    {
+      "key": "event:model-routing/tier-override",
+      "kind": "event",
+      "event": "model-routing/tier-override",
+      "surface": false,
+      "digest": "54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "threadId",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "tier",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "model-routing/tier-override"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:model/selection",
       "kind": "event",
       "event": "model/selection",
@@ -22305,6 +22716,16 @@
       "sources": []
     },
     {
+      "digest": "112da3cb0a7e1358446e6ab177f15fac38d9f49606c4c217e5d563629344afe9",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "1138722cea6cb1991111abd27640fceaf700c656aa31cba60b22af7d9fde246e",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "11638dc58a31496fb6706ced3e23e3a2db1f3b2a8845968c810827a72b5fc811",
       "names": [],
       "sources": []
@@ -22709,6 +23130,11 @@
       "sources": []
     },
     {
+      "digest": "277e1be0b63ad69373d0cfe26380695e9591b21ec689353c37833e41c1dbaa4d",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "287211846beea1eccb5f9acee00d20388a38fcb2e95858fa2332d6f58529379a",
       "names": [],
       "sources": [
@@ -22727,6 +23153,11 @@
     },
     {
       "digest": "297fbd8067d7815adae02b89790ec6ff5fb7c2cb0d0eb026e1746c24ec857761",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "2a7f53dabacdd909d7e01569642d29ca0da3865c77041fef5992c56cbdfc3939",
       "names": [],
       "sources": []
     },
@@ -22889,6 +23320,15 @@
       "digest": "36d6a9a871d949ea4f3edd919d81d66aa69218bebef38899d2a1282c39420a1f",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "36f87503cdfb7487bcdcc1b66878db854420f68c230d914e0c21948e7d6c4642",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#JudgeVerdict"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:48"
+      ]
     },
     {
       "digest": "37184378c6439257d105c4e2022d80fc9c3a3f7c7f6ac661b00bc9f18d871006",
@@ -23296,10 +23736,22 @@
       "sources": []
     },
     {
+      "digest": "4f54c4f69aa7156be3a049ee9aff75bf1615326b51646b2f949cd20d7baa84e9",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "4f91f187baeabef5c7950c4780d31bbe39f3345dff591a6cf26ac7e135ac1cf4",
       "names": [],
       "sources": [
         "packages/context/session-reference/src/types.ts:18"
+      ]
+    },
+    {
+      "digest": "4fb35521863051e215a640a764f812b627bf0758bdf152417427724e9a51e8c8",
+      "names": [],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:66"
       ]
     },
     {
@@ -23330,6 +23782,11 @@
       "sources": [
         "packages/experimental/agent-team/src/types.ts:74"
       ]
+    },
+    {
+      "digest": "523a4e6f5764490d10833f149ea8129a333e0c655b33a9d50e90b89215291322",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336",
@@ -23366,6 +23823,16 @@
     },
     {
       "digest": "53cf1704ae0709c7678bcf070c83c619fc48ca1b5c173b74cfa8702f22a8e492",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "54f51bd77ce47fdd0a8c9d99351283d5d45fe202b2c8b8be033e22d234ac0bb6",
       "names": [],
       "sources": []
     },
@@ -23495,6 +23962,11 @@
       "sources": []
     },
     {
+      "digest": "5d1232755d5e7e30429c37dda734e551289913b36bc9193a528887e2fdc2727e",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "5d17f27a1ef9f7026c0232714adf7573961536d75f3303ca97973975f5af170e",
       "names": [],
       "sources": []
@@ -23553,6 +24025,11 @@
       "sources": [
         "packages/subagent/subagent/src/descriptor.ts:61"
       ]
+    },
+    {
+      "digest": "6022451d897c7050f60b564f801210136c9fa4d320a03b6d520d1cf8b3876e41",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6085488d223aeffdef51d7ae17655fc26ab22ee13cbed82a50e62e2b6fb5b918",
@@ -23654,6 +24131,15 @@
       "sources": []
     },
     {
+      "digest": "68e6e4c13101addf50717bd0badadde804d0b03f6d407d591074a8e6de54c908",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#JudgeRule"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:36"
+      ]
+    },
+    {
       "digest": "68f44f59e91c41395076cb77265981a601680ec8a381bbbeb6ab754ffdc94573",
       "names": [],
       "sources": []
@@ -23726,6 +24212,11 @@
       "sources": [
         "packages/core/session/src/types.ts:192"
       ]
+    },
+    {
+      "digest": "6c5d0d004fbcefc1f29b175bde851cc121c610335c1fa2245795ecab2b3633e9",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "6ccb6bc423fb3952458abf9c1b1c3284208b7e660344b612cc55da773d61afe4",
@@ -23829,7 +24320,17 @@
       "sources": []
     },
     {
+      "digest": "7323b652385626ddcc2507d8309bcf7db97854bae245ce5bc6837659dc56dfe2",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "7382c4fc95fe8c5db65ca4d9da572b115d0dbb818b7f32c22ab040318ffbb4bc",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "74a1163b1e933f8a82ab25d363f8f85bfdea004ceae78f830af561aa7de84ee7",
       "names": [],
       "sources": []
     },
@@ -23982,6 +24483,11 @@
     },
     {
       "digest": "8067b0d232c350f189738e60ee3c9939d46ca3b32b45db5525237b077893f649",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "80e1e45c93e99247fe1298bdc70417ccea38d0a97ccaea2632d7007784487e59",
       "names": [],
       "sources": []
     },
@@ -24307,6 +24813,11 @@
       "sources": []
     },
     {
+      "digest": "96b86920af6be76b1f79f9330d25ae44bd2147ff97abd13c2aa4ae83cd795b7b",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "96bfb916a727cd4445a594df264c523fc039749a31bfed924b8cc7bb308a5bb0",
       "names": [],
       "sources": []
@@ -24319,6 +24830,11 @@
       "sources": [
         "packages/core/agent/src/types.ts:39"
       ]
+    },
+    {
+      "digest": "98208e9698291b7337925652ff038b156c1e3771229368cd3f78c8bff03f6c74",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "98877ffa4b1729e89013ecc5ad53d0a930b6c645588c9c483d70b4ed7b7737b4",
@@ -24607,6 +25123,11 @@
       ]
     },
     {
+      "digest": "a9dfa40309b88aa7bf4f8ea47f97a6ebb46e92d0096ae2d07d72c40fa671c623",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8",
       "names": [],
       "sources": []
@@ -24842,6 +25363,11 @@
       "sources": []
     },
     {
+      "digest": "b5da4d78bf8a8906779c6cbfa19d05d02a7b53860b76ab3c1f411879ad846f26",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "b63b089a00b3b9357675b3e0c3d3e9aa4fdbda1fba9c91a6b0c59ffdbb89f505",
       "names": [
         "packages/schedule/schedule/src/types.ts#LegacyAtScheduleRecord"
@@ -24988,6 +25514,13 @@
       "digest": "bf16d2e98a7f13894ded2cffe5ce857bf473954a0e3c0ed9bc7739e2e1c7b78a",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce",
+      "names": [],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:89"
+      ]
     },
     {
       "digest": "c0ea97bc89dfc46fa94eab956f5c3ee6af2f964aa7db6327cb18b451f207bef7",
@@ -25168,6 +25701,13 @@
       "sources": []
     },
     {
+      "digest": "d1880e1d5ed5b72d41bfd095bb62ce1c8a117c5f34a9597aab7e569df7012cbf",
+      "names": [],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:84"
+      ]
+    },
+    {
       "digest": "d28765f87d6b6ab408e0b2f3e7e297791b004b806d8e302c49903ebae815feb2",
       "names": [],
       "sources": []
@@ -25311,6 +25851,11 @@
     },
     {
       "digest": "e0a787e6ec76c7c94fecbc501b489164ab0293db05bc947914077ad01e674f05",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "e238196159cea23646c49d82be9fa532f7618e2d47082286d1c549ce2c451b3a",
       "names": [],
       "sources": []
     },
@@ -25554,6 +26099,15 @@
       ]
     },
     {
+      "digest": "f20f72a63cf970fc44ef7af9ac924efe1c6d0e6f376dc349f0b29d599d49f45a",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingEndpoint"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:24"
+      ]
+    },
+    {
       "digest": "f230c0b583e23b25ee0a61dbe4c05e95c1e2ae44b27939501eb9e03696f0c278",
       "names": [],
       "sources": []
@@ -25624,6 +26178,15 @@
       "digest": "f6cb462f808309e315fea634f1ed86268b8346bbcee6774d9097ca6eed7ac1f8",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingBoundary"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:21"
+      ]
     },
     {
       "digest": "f7283223aacdc39b0adca728c8cbd4c090a20006a6fecec74421c30e943b489c",

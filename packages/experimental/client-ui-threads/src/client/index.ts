@@ -1,6 +1,7 @@
 /**
  * Threads plugin, browser half: contributes the Project Session's background
- * Thread roster to the conversation header, the addressed Thread chat that opens
+ * Thread roster to the conversation header, the aggregated `tokenUsage` of that
+ * Project and its Threads beside it, the addressed Thread chat that opens
  * either as the main conversation or as a right-Sidebar tab, row actions (Stop,
  * Archive, Copy branch), and the New Project sidebar-footer action that starts
  * a Session composed from the Project preset.
@@ -26,9 +27,17 @@ export { isProjectSession, projectAgentPreset } from './project.ts'
 export type {
   NewProjectFailure, NewProjectFooterActionProps, NewProjectInjected, NewProjectResult,
 } from './project/NewProjectFooterAction.tsx'
-export type { MemoryResult, ThreadActionResult } from './actions.ts'
+export type { LibraryResult, MemoryResult, ThreadActionResult } from './actions.ts'
 export type { MemoryInjected, MemoryPanelProps } from './MemoryPanel.tsx'
+export type { LibraryInjected, LibraryPanelProps } from './LibraryPanel.tsx'
 export type { ThreadsHeaderActionProps, ThreadsRosterInjected } from './ThreadsHeaderAction.tsx'
+export type { ProjectTokenUsageProps, ProjectTokensInjected } from './ProjectTokenUsage.tsx'
+export { ProjectTokenUsage } from './ProjectTokenUsage.tsx'
+export {
+  aggregateTokenSpend, formatTokenCount, hasTokenSpend, isTokenBuckets,
+} from './token-usage.ts'
+export type { TokenBuckets, TokenSpend } from './token-usage.ts'
+export { useProjectTokenUsage } from './useProjectTokenUsage.ts'
 export type { ThreadRosterRow } from './roster.ts'
 export type { ThreadLiveness, ThreadOutcome, ThreadOutcomeKey, ThreadStatus } from './ThreadStatus.tsx'
 export { OutcomeGlyph, threadStatus } from './ThreadStatus.tsx'

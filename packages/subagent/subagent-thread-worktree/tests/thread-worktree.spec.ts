@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import WorktreeService from '@deepseek-ai/dsh-worktree-manager'
+import WorktreeService, { WorktreeError } from '@deepseek-ai/dsh-worktree-manager'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContinuableCreateRequest, ResolvedSubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
@@ -113,7 +113,7 @@ function providerFor(
   return new ThreadWorktreeProvider(
     'thread',
     worktrees.service as never,
-    { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', baseRef: 'head', ...config },
+    { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', base: 'head', ...config },
   )
 }
 
@@ -129,21 +129,6 @@ function startRequest(parentCwd: string, signal: AbortSignal): ResolvedSubagentS
     signal,
     descriptor: { version: 1, mode: 'one-shot', provider: 'thread' },
   }
-}
-
-/**
- * Put a `git` first on `PATH` that fails `stash create`, until the returned
- * function restores the original `PATH`.
- */
-function failingGitStash(): () => void {
-  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
-  const dir = temporary('dsh-tw-shim-')
-  const shim = join(dir, 'git')
-  writeFileSync(shim, `#!/bin/sh\ncase "$*" in *"stash create"*) echo 'fatal: not a git repository' >&2; exit 128;; esac\nexec '${realGit}' "$@"\n`, 'utf8')
-  chmodSync(shim, 0o755)
-  const previous = process.env.PATH
-  process.env.PATH = `${dir}:${previous ?? ''}`
-  return () => { process.env.PATH = previous }
 }
 
 describe('thread worktree provider', () => {
@@ -166,8 +151,17 @@ describe('thread worktree provider', () => {
     const spec = await providerFor(worktrees).prepareContinuable(request(worktrees.repoRoot, new AbortController().signal))
 
     expect(spec.cwd).toBe(worktrees.worktreePath)
+    // The policy travels explicitly even at its default: the provider used to
+    // resolve the base itself, so a missing field here would mean it had
+    // started resolving it again.
     expect(worktrees.creates).toEqual([
-      { repoRoot: worktrees.repoRoot, threadId: 'abcdef12-3456', baseRef: 'HEAD', branch: 'dsh/thread-abcdef12-3456' },
+      {
+        repoRoot: worktrees.repoRoot,
+        threadId: 'abcdef12-3456',
+        baseRef: 'HEAD',
+        base: 'head',
+        branch: 'dsh/thread-abcdef12-3456',
+      },
     ])
   })
 
@@ -224,7 +218,7 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
     const provider = new ThreadWorktreeProvider(
       'thread',
       service,
-      { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', baseRef: 'head', childAgentPreset: 'project-thread' },
+      { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', base: 'head', childAgentPreset: 'project-thread' },
     )
     const spec = await provider.prepareContinuable(request(join(repo, 'pkg', 'lib'), new AbortController().signal, 'sub-1'))
     const record = await service.get('sub-1')
@@ -241,19 +235,37 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
     expect(spec).not.toHaveProperty('agentPreset')
   })
 
-  it('fails loud when git cannot capture the parent\'s uncommitted changes', async () => {
+  it('hands the base policy to the service instead of running its own git', async () => {
+    // The `git stash create` that captures the parent's uncommitted state moved
+    // into `worktree-manager`, which also owns the durable `baseSha`. This pins
+    // the delegation that replaced it: the provider names the policy and the
+    // ref it is taken against, and runs no git of its own to resolve either.
     const repo = repository()
     const worktrees = fakeWorktrees()
-    const restore = failingGitStash()
-    try {
-      await expect(providerFor(worktrees, { baseRef: 'head-with-uncommitted' })
-        .prepareContinuable(request(repo, new AbortController().signal, 'stash-fail')))
-        .rejects.toMatchObject({ code: 'WORKTREE_CREATE_FAILED' })
-    } finally {
-      restore()
-    }
-    // Nothing was created: the base ref is resolved before the worktree exists.
-    expect(worktrees.creates).toEqual([])
+
+    await providerFor(worktrees, { base: 'head-with-uncommitted' })
+      .prepareContinuable(request(repo, new AbortController().signal, 'delegated'))
+
+    expect(worktrees.creates).toEqual([
+      {
+        repoRoot: repo,
+        threadId: 'delegated',
+        baseRef: 'HEAD',
+        base: 'head-with-uncommitted',
+        branch: 'dsh/thread-delegated',
+      },
+    ])
+  })
+
+  it('propagates a service failure rather than resolving a base of its own', async () => {
+    const repo = repository()
+    const worktrees = fakeWorktrees({
+      onCreate: () => { throw new WorktreeError('git stash create failed', 'WORKTREE_CREATE_FAILED') },
+    })
+
+    await expect(providerFor(worktrees, { base: 'head-with-uncommitted' })
+      .prepareContinuable(request(repo, new AbortController().signal, 'svc-fail')))
+      .rejects.toMatchObject({ code: 'WORKTREE_CREATE_FAILED' })
   })
 
   it('refuses a parent cwd that resolves to no repository at all', async () => {
@@ -287,7 +299,7 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
     const service = await realService()
 
     const plain = await providerFor({ service } as never).prepareContinuable(request(repo, new AbortController().signal, 'base-head'))
-    const withChanges = await providerFor({ service } as never, { baseRef: 'head-with-uncommitted' })
+    const withChanges = await providerFor({ service } as never, { base: 'head-with-uncommitted' })
       .prepareContinuable(request(repo, new AbortController().signal, 'base-dirty'))
 
     expect(git(['show', 'HEAD:README.md'], plain.cwd as string)).toBe('seed')
@@ -302,7 +314,7 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
   it('head-with-uncommitted falls back to HEAD on a clean checkout', async () => {
     const repo = repository()
     const service = await realService()
-    await providerFor({ service } as never, { baseRef: 'head-with-uncommitted' })
+    await providerFor({ service } as never, { base: 'head-with-uncommitted' })
       .prepareContinuable(request(repo, new AbortController().signal, 'clean'))
     expect((await service.get('clean'))?.baseSha).toBe(git(['rev-parse', 'HEAD'], repo))
   })
@@ -329,7 +341,7 @@ describe('thread worktree provider wiring', { timeout: GIT_TIMEOUT_MS }, () => {
     const persistence = { stat: vi.fn(async (id: string) => (known.has(id) ? {} : undefined)) }
     const { ctx, dispose } = fakeContext(service, persistence)
 
-    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', baseRef: 'head' })
+    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', base: 'head' })
 
     expect(await service.sessionExists?.('alive')).toBe(true)
     expect(await service.sessionExists?.('missing')).toBe(false)
@@ -340,7 +352,7 @@ describe('thread worktree provider wiring', { timeout: GIT_TIMEOUT_MS }, () => {
   it('treats a missing persistence service as unknown and logs once', async () => {
     const service: { sessionExists?: (id: string) => Promise<boolean> | boolean } = {}
     const { ctx, warns } = fakeContext(service, undefined)
-    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', baseRef: 'head' })
+    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', base: 'head' })
 
     expect(await service.sessionExists?.('a')).toBe(true)
     expect(await service.sessionExists?.('b')).toBe(true)
@@ -350,7 +362,7 @@ describe('thread worktree provider wiring', { timeout: GIT_TIMEOUT_MS }, () => {
   it('leaves a probe another owner installed alone on disposal', async () => {
     const service: { sessionExists?: (id: string) => Promise<boolean> | boolean } = {}
     const { ctx, dispose } = fakeContext(service, { stat: async () => ({}) })
-    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', baseRef: 'head' })
+    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'x', base: 'head' })
     const theirs = () => true
     service.sessionExists = theirs
 
@@ -363,7 +375,7 @@ describe('thread worktree provider wiring', { timeout: GIT_TIMEOUT_MS }, () => {
     const repo = repository()
     const service = await realService({ adoptionGraceMs: 0 })
     const { ctx } = fakeContext(service, { stat: async () => undefined })
-    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', baseRef: 'head' })
+    apply(ctx as never, { providerName: 'thread', branchPerThread: true, branchTemplate: 'dsh/thread-{{id}}', base: 'head' })
     await providerFor({ service } as never).prepareContinuable(request(repo, new AbortController().signal, 'lost'))
 
     expect((await service.reconcile()).map(r => r.threadId)).toEqual(['lost'])

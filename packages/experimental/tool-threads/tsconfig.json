@@ -30,6 +30,9 @@
       "path": "../threads"
     },
     {
+      "path": "../model-routing"
+    },
+    {
       "path": "../../subagent/worktree-manager"
     }
   ]

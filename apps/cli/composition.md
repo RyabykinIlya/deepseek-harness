@@ -178,6 +178,12 @@ flowchart LR
   cfg --> plugin_dsh_base_web
   plugin_dsh_base_web_search_deepseek["web-search-deepseek<br/>@deepseek-ai/dsh-web-search-deepseek"]
   cfg --> plugin_dsh_base_web_search_deepseek
+  plugin_dsh_base_web_search_duckduckgo["web-search-duckduckgo<br/>@deepseek-ai/dsh-web-search-duckduckgo"]
+  cfg --> plugin_dsh_base_web_search_duckduckgo
+  plugin_dsh_base_web_search_brave["web-search-brave<br/>@deepseek-ai/dsh-web-search-brave"]
+  cfg --> plugin_dsh_base_web_search_brave
+  plugin_dsh_base_web_search_tavily["web-search-tavily<br/>@deepseek-ai/dsh-web-search-tavily"]
+  cfg --> plugin_dsh_base_web_search_tavily
   plugin_dsh_base_web_fetch_http["web-fetch-http<br/>@deepseek-ai/dsh-web-fetch-http"]
   cfg --> plugin_dsh_base_web_fetch_http
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
@@ -285,6 +291,9 @@ flowchart LR
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
 | `web` | `@deepseek-ai/dsh-web` |
 | `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
+| `web-search-duckduckgo` | `@deepseek-ai/dsh-web-search-duckduckgo` |
+| `web-search-brave` | `@deepseek-ai/dsh-web-search-brave` |
+| `web-search-tavily` | `@deepseek-ai/dsh-web-search-tavily` |
 | `web-fetch-http` | `@deepseek-ai/dsh-web-fetch-http` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `mcp-resources` | `@deepseek-ai/dsh-mcp-resources` |

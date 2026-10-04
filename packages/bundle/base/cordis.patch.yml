@@ -472,7 +472,11 @@
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
-        searchProvider: deepseek-official
+        # Keyless by default: the DeepSeek search route needs a credential that a
+        # self-hosted deployment usually does not have, and the selector pins
+        # whatever is named here — a configured id has no fallback. Point this at
+        # `deepseek-official`, `exa`, or `perplexity` once a key is configured.
+        searchProvider: duckduckgo
         fetchProvider: http
 
     - id: web-search-deepseek
@@ -480,8 +484,33 @@
       config:
         apiKeyEnv: DEEPSEEK_API_KEY
 
+    # Mounted but not selected: a deployment with no credential can switch to it
+    # by naming `searchProvider: duckduckgo`, and a credentialed one keeps the
+    # DeepSeek route above.
+    - id: web-search-duckduckgo
+      name: '@deepseek-ai/dsh-web-search-duckduckgo'
+
+    # Keyed providers. Each reads its own credential reference, which the Web
+    # Search settings page writes for that provider's namespace; neither is
+    # selected until `searchProvider` above names it.
+    - id: web-search-brave
+      name: '@deepseek-ai/dsh-web-search-brave'
+
+    - id: web-search-tavily
+      name: '@deepseek-ai/dsh-web-search-tavily'
+
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
+      config:
+        # Only for a host whose DNS answers proxied domains with a synthetic
+        # fake-IP pool (transparent proxy in `fake-ip` mode). `198.18.0.0/15`
+        # is IANA benchmarking space and hosts no legitimate service, so
+        # trusting it does not reach the LAN: 10/8, 172.16/12, 192.168/16,
+        # 100.64/10, loopback, link-local and unique-local stay blocked.
+        # Preferred remedy: switch the proxy to `redir-host`/`real-ip` and
+        # delete this list, so DNS returns real addresses.
+        trustedProxyAddressRanges:
+          - 198.18.0.0/15
 
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'

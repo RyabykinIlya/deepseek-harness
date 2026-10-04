@@ -43,7 +43,7 @@ import ThreadsPreset, {
   workerContract,
   workerPreset,
 } from '../src/index.ts'
-import type { Config } from '../src/index.ts'
+import type { ThreadsPresetInput } from '../src/index.ts'
 import * as contract from '../src/threads-contract.ts'
 
 /** Identity of the base preset the Web profile extends. */
@@ -110,7 +110,10 @@ interface Harness {
  * @param config - row configuration; `basePreset` defaults to the base preset.
  * @param threadSpec - what the `thread` provider returns from `prepareContinuable`.
  */
-async function harness(config: Partial<Config> = { basePreset: BASE_ID }, threadSpec: ContinuableCreateSpec = {}): Promise<Harness> {
+async function harness(
+  config: Partial<ThreadsPresetInput> = { basePreset: BASE_ID },
+  threadSpec: ContinuableCreateSpec = {},
+): Promise<Harness> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Loader)
@@ -131,7 +134,7 @@ async function harness(config: Partial<Config> = { basePreset: BASE_ID }, thread
   const thread = new RecordingProvider(THREAD_PROVIDER, threadSpec)
   ctx.subagents.registerProvider(spawn)
   ctx.subagents.registerProvider(thread)
-  await ctx.plugin(ThreadsPreset, config as Config)
+  await ctx.plugin(ThreadsPreset, config)
   return { ctx, spawn, thread }
 }
 
@@ -412,7 +415,7 @@ describe('what each role is offered', () => {
 
     const names = await toolNames(ctx, project)
 
-    expect(names).toEqual(expect.arrayContaining(['subagent', 'thread_status', 'thread_diff', 'send_message', 'interrupt_agent', 'todo_write']))
+    expect(names).toEqual(expect.arrayContaining(['subagent', 'thread_status', 'thread_diff', 'library_list', 'send_message', 'interrupt_agent', 'todo_write']))
     expect(names).not.toContain('list_agents')
     await delegate(ctx, project)
     expect(thread.prepared).toBe(1)
@@ -426,11 +429,16 @@ describe('what each role is offered', () => {
 
     expect(ctx.tools.get('thread_status', worker)).toBeUndefined()
     expect(ctx.tools.get('thread_diff', worker)).toBeUndefined()
+    // `library_list` resolves the calling Session as the Project, so a Thread
+    // session could only ever be refused; the coordinator alone owns it.
+    expect(ctx.tools.get('library_list', worker)).toBeUndefined()
+    expect(ctx.tools.get('library_list', project)).toBeDefined()
     expect(ctx.tools.get('thread_status', project)).toBeDefined()
     const names = await toolNames(ctx, worker)
     expect(names).toEqual(expect.arrayContaining(['subagent', 'send_message', 'todo_write']))
     expect(names).not.toContain('thread_status')
     expect(names).not.toContain('thread_diff')
+    expect(names).not.toContain('library_list')
     const unknown = await ctx.tools.execute({
       signal: SIGNAL, callId: ToolCallId('status-1'), name: 'thread_status', arguments: {}, agent: worker,
     })

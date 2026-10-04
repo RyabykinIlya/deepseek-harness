@@ -28,12 +28,14 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*",
     "@deepseek-ai/dsh-experimental-threads": "workspace:*",
     "@deepseek-ai/dsh-worktree-manager": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*"
   },
@@ -46,6 +48,7 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-experimental-model-routing": "workspace:*",
     "@deepseek-ai/dsh-experimental-threads": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",

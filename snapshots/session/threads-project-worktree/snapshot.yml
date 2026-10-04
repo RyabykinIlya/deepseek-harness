@@ -1,0 +1,10 @@
+version: 1
+scenario: threads-project-worktree
+profile: headless
+composition: threads-project-worktree
+recording: authored
+header:
+  class: threads-project-worktree
+  pin: true
+  childSystemPrompts: [1]
+  childToolSchemas: [1]

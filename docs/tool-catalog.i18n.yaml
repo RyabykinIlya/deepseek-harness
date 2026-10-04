@@ -9,8 +9,8 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 4e445577ca9a241d
-  zh: c85011a273fb1453
+  en: 70f46fca6374d77b
+  zh: 9bc1d686f0fec77e
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -287,12 +287,18 @@
 /tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool:
   en: dd110d77ecff6739
   zh: dd110d77ecff6739
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/library-list:
+  en: ab44e208454e5ec1
+  zh: 46691c763b9a1096
 /tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-diff:
   en: 98fdd00cab6261e3
   zh: ef7fdd5bdeebff12
 /tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-status:
-  en: 6a2c9bf223795a6f
+  en: 7deba1bd540e63d2
   zh: 40d1874b04f520f6
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-tier:
+  en: bebec4d7f860bda5
+  zh: 58205fa68263fc4e
 /tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory:
   en: 1077659a1f7e02d7
   zh: 1077659a1f7e02d7

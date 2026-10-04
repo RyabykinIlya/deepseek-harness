@@ -12,9 +12,9 @@ import type { MenuOpenState, SessionRowOwnerProps } from '../src/client/contract
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import {
-  ProjectRowItem, SearchResultItem, SessionNodeItem as SessionNodeItemComponent,
+  ProjectRowItem, SearchResultItem, SessionNodeItem as SessionNodeItemComponent, ThreadNodeItem,
 } from '../src/client/rows/Rows.tsx'
-import type { GroupNode, SearchResultNode, SessionNode } from '../src/client/tree.ts'
+import type { GroupNode, SearchResultNode, SessionNode, ThreadNode } from '../src/client/tree.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -87,6 +87,7 @@ describe('workspace browser rows', () => {
     const idle: SessionNode = {
       id: sid('flat'), title: 'Flat Session', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     const view = render(<SessionNodeItem node={idle} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
     // The cell is the row's first element and holds nothing while the row is
@@ -165,6 +166,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('session'), title: 'Session', blank: false, running: true,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     const onOpen = vi.fn()
     render(
@@ -183,6 +185,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('session'), title: 'Session', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     const onOpen = vi.fn()
     const pluginAction = vi.fn()
@@ -206,6 +209,7 @@ describe('workspace browser rows', () => {
         id: sid('clipped'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
         running: false, runningSubagentCount: 0, completed: false, updatedAt: 0,
         pinned: false, archived: false,
+        threads: [],
       }
       render(
         <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
@@ -273,6 +277,7 @@ describe('workspace browser rows', () => {
         id: sid('reduced-motion'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
         running: false, runningSubagentCount: 0, completed: false, updatedAt: 0,
         pinned: false, archived: false,
+        threads: [],
       }
       render(
         <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
@@ -302,6 +307,7 @@ describe('workspace browser rows', () => {
         id: sid('instant-return'), title: 'A Session Title Long Enough To Be Clipped (1)', blank: false,
         running: false, runningSubagentCount: 0, completed: false, updatedAt: 0,
         pinned: false, archived: false,
+        threads: [],
       }
       render(
         <SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />,
@@ -334,7 +340,7 @@ describe('workspace browser rows', () => {
       <SessionNodeItem
         node={{
           id: sid('s1'), title: 'One', blank: false, running: false,
-          runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false, ...over,
+          runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false, threads: [], ...over,
         }}
         currentId={undefined} now={0} onOpen={vi.fn()} t={t}
       />,
@@ -366,6 +372,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('owner'), title: 'Delegating', blank: false, running: false,
         runningSubagentCount: 2, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -387,6 +394,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('owner'), title: 'Delegating', blank: false, running: true,
         runningSubagentCount: 1, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -407,6 +415,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('owner'), title: 'Needs input', blank: false, pendingInteraction: 'question',
       running: false, runningSubagentCount: 1, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
     const row = screen.getByRole('treeitem')
@@ -610,6 +619,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('s-blank'), title: 'ignored', blank: true, running: false,
         runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       const rendered = vi.fn()
       const renderSlot: RowRenderSlot = (name: RowSlotName) => { rendered(name); return null }
@@ -637,6 +647,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen} t={t} />)
     const trigger = screen.getByRole('button', { name: '会话“One”的操作' })
@@ -679,6 +690,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen} renderSlot={renderSlot} t={t} />)
 
@@ -717,6 +729,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'One', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen} renderSlot={renderSlot} t={t} />)
     const trigger = screen.getByRole('button', { name: '会话“One”的操作' })
@@ -736,6 +749,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('s1'), title: 'Hovered', blank: false, running: true,
         runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={60_000} onOpen={vi.fn()} t={t} />)
       const wrapper = screen.getByRole('treeitem').parentElement as HTMLElement
@@ -766,6 +780,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid(pendingInteraction), title: 'Needs input', blank: false,
         pendingInteraction, running: true, runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       const row = screen.getByRole('treeitem')
@@ -799,6 +814,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid(pendingInteraction), title: 'Needs input', blank: false,
       pendingInteraction, running: false, runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={tEn} />)
     const row = screen.getByRole('treeitem')
@@ -813,6 +829,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('s1'), title: 'Quiet', blank: false, running: false,
         runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -830,6 +847,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('s1'), title: 'Done', blank: false, running: false,
         runningSubagentCount: 0, completed: true, updatedAt: 0, pinned: false, archived: false,
+        threads: [],
       }
       render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -847,6 +865,7 @@ describe('workspace browser rows', () => {
       const node: SessionNode = {
         id: sid('s1'), title: 'Stored', blank: false, running: false,
         runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: true,
+        threads: [],
       }
       const { rerender } = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />)
       fireEvent.pointerEnter(screen.getByRole('treeitem').parentElement as HTMLElement)
@@ -869,6 +888,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'Drag me', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     const inactive = dragProps()
     const { rerender } = render(
@@ -911,6 +931,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'Pinned', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: true, archived: false,
+      threads: [],
     }
     const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
       drag={dragProps()} t={t} />)
@@ -928,6 +949,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'Stored', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: true, archived: true,
+      threads: [],
     }
     render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
       drag={dragProps()} t={t} />)
@@ -947,6 +969,7 @@ describe('workspace browser rows', () => {
     const node: SessionNode = {
       id: sid('s1'), title: 'Named', blank: false, running: false,
       runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      threads: [],
     }
     const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={onOpen}
       onRenameRequest={onRenameRequest} t={t} />)
@@ -991,6 +1014,7 @@ describe('session row schedule seats', () => {
   const idle: SessionNode = {
     id: sid('idle'), title: 'Idle Session', blank: false, running: false,
     runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+    threads: [],
   }
 
   function renderRow(node: SessionNode, renderSlot: RowRenderSlot) {
@@ -1083,7 +1107,7 @@ describe('session row schedule seats', () => {
 
 it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed history as %s', (label, translate) => {
   const node: SessionNode = { id: sid('unnamed'), title: '', blank: false, running: false,
-    runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false }
+    runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false, threads: [] }
   const onRenameRequest = vi.fn()
   render(<SessionNodeItem node={node} currentId={node.id} now={0} onOpen={vi.fn()}
     renderSlot={() => null} onRenameRequest={onRenameRequest} t={translate} />)
@@ -1100,4 +1124,60 @@ it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed search results as
     onUnarchive={vi.fn()} t={translate} />)
   fireEvent.click(screen.getByText(label))
   expect(onOpen).toHaveBeenCalledWith(result.id)
+})
+
+describe('Thread row', () => {
+  const thread = (overrides: Partial<ThreadNode> = {}): ThreadNode => ({
+    id: sid('thread'), label: 'Indexer', running: false, ...overrides,
+  })
+
+  it('opens the Thread session and offers no row verbs of its own', () => {
+    const onOpen = vi.fn()
+    render(<ThreadNodeItem thread={thread()} currentId={undefined} now={0}
+      onOpen={onOpen} renderSlot={renderNoRowEntries} t={t} />)
+
+    const row = screen.getByRole('treeitem')
+    expect(row.getAttribute('data-row-key')).toBe('thread:thread')
+    expect(row.getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByText('Indexer')).toBeTruthy()
+    // A Thread is a child Session: no menu, rename, archive, pin, or reorder.
+    expect(row.hasAttribute('draggable')).toBe(false)
+    expect(screen.queryByRole('button')).toBeNull()
+    fireEvent.click(row)
+    expect(onOpen).toHaveBeenCalledWith(thread().id)
+  })
+
+  it('marks the selected Thread row and renders its own time cell', () => {
+    const node = thread({ updatedAt: Date.now() })
+    render(<ThreadNodeItem thread={node} currentId={node.id} now={Date.now()}
+      onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
+    expect(screen.getByRole('treeitem').getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('刚刚')).toBeTruthy()
+  })
+
+  it('leaves the time cell off until the Thread Session summary lands', () => {
+    render(<ThreadNodeItem thread={thread()} currentId={undefined} now={Date.now()}
+      onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
+    expect(screen.getByRole('treeitem').querySelector('[class*="time"]')).toBeNull()
+  })
+
+  it.each([['未命名', t], ['Untitled', tEn]])('localizes an unnamed Thread as %s', (label, translate) => {
+    render(<ThreadNodeItem thread={thread({ label: '' })} currentId={undefined} now={0}
+      onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={translate} />)
+    expect(screen.getByText(label)).toBeTruthy()
+  })
+
+  it('swaps the leading seat for the running dot while the Thread runs', () => {
+    const renderSlot: RowRenderSlot = vi.fn((key: RowSlotName) => <span key={key} data-seat={key} />)
+    const view = render(<ThreadNodeItem thread={thread()} currentId={undefined} now={0}
+      onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.session.row.leading', { sessionId: 'thread' })
+    expect(screen.getByRole('treeitem').querySelector('[data-state]')).toBeNull()
+
+    view.rerender(<ThreadNodeItem thread={thread({ running: true })} currentId={undefined} now={0}
+      onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
+    expect(renderSlot).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('treeitem').querySelector('[data-state="ongoing"]')).toBeTruthy()
+    expect(screen.getByText('进行中')).toBeTruthy()
+  })
 })

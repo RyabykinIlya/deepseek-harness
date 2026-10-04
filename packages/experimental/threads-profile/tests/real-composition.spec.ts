@@ -256,6 +256,10 @@ describe('Threads bundle on its real rows', { timeout: 120_000 }, () => {
       }
       if (phase === 2) { phase = 3; return toolCallResponse('c-diff', 'thread_diff', { thread_id: threadIdText }) }
       if (phase === 3) { phase = 4; return toolCallResponse('c-memory', 'memory_read', {}) }
+      // The Library read model is served from Session logs and worktrees, not from
+      // the `threads` projection, so it exercises a different service path than the
+      // two tools above.
+      if (phase === 4) { phase = 5; return toolCallResponse('c-library', 'library_list', { section: 'changes' }) }
       finished.value = true
       return textResponse('all done')
     }
@@ -300,6 +304,12 @@ describe('Threads bundle on its real rows', { timeout: 120_000 }, () => {
     expect(results['c-memory']).toContain(MEMORY_TEXT)
     expect(results['c-memory']).toContain('[thread,')
     expect(results['w-memory']).toMatch(/^added /)
+    // `library_list` reached the real Library read model over a live worktree:
+    // this is the path that resolves `sessions` from inside the service, which a
+    // stubbed `threads` projection can never exercise.
+    expect(results['c-library']).toContain(row.threadId)
+    expect(results['c-library']).toContain(`branch ${thread.branch}`)
+    expect(results['c-library']).toContain('greeting.txt')
 
     // Archive: worktree gone, branch kept, row removed.
     await ctx.threads.archive(project, ThreadId(row.threadId))

@@ -13,3 +13,6 @@
  */
 
 export type { ThreadStatusRow, ThreadStopReason, ThreadId } from './types.ts'
+export type {
+  ThreadsLibrary, LibraryList, LibraryAttachment, LibraryPresentedFile, LibraryThreadChanges, LibraryChangedFile,
+} from './types.ts'

@@ -18,6 +18,7 @@ import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import lockfile from 'proper-lockfile'
 import { WorktreeError } from './error.ts'
+import { isWorktreeBasePolicy } from './states.ts'
 import type { WorktreeRecord, WorktreeRegistryLocking, WorktreeState } from './types.ts'
 
 /** File name of the sidecar inside the configured `worktreeRoot`. */
@@ -87,8 +88,9 @@ function parseTransition(line: string): WorktreeRecord {
   if (typeof baseRef !== 'string' || baseRef === '') throw new Error('baseRef')
   if (typeof repoRoot !== 'string' || repoRoot === '') throw new Error('repoRoot')
   if (typeof state !== 'string' || !isWorktreeState(state)) throw new Error('state')
-  const { branch, baseSha, createdAt } = candidate
+  const { branch, baseSha, base, createdAt } = candidate
   if (branch !== undefined && typeof branch !== 'string') throw new Error('branch')
+  if (base !== undefined && !isWorktreeBasePolicy(base)) throw new Error('base')
   if (baseSha !== undefined && typeof baseSha !== 'string') throw new Error('baseSha')
   if (createdAt !== undefined && (typeof createdAt !== 'number' || !Number.isFinite(createdAt))) throw new Error('createdAt')
   return {
@@ -99,6 +101,7 @@ function parseTransition(line: string): WorktreeRecord {
     state,
     // `exactOptionalPropertyTypes`: absent facts stay absent, not `undefined`.
     ...branch === undefined ? {} : { branch },
+    ...base === undefined ? {} : { base },
     ...baseSha === undefined ? {} : { baseSha },
     ...createdAt === undefined ? {} : { createdAt },
   }
@@ -294,7 +297,7 @@ export class WorktreeRegistry {
    * prune converge instead of writing a second worktree.
    * @param threadId - the Thread key.
    * @param next - the state being entered.
-   * @param fields - the immutable facts of the worktree (`path`, `repoRoot`, `baseRef`, `branch`, `baseSha`).
+   * @param fields - the immutable facts of the worktree (`path`, `repoRoot`, `baseRef`, `base`, `branch`, `baseSha`).
    *   `createdAt` is stamped by the `reserved` transition and carried by later ones.
    * @returns the folded record after the transition.
    */
@@ -345,6 +348,7 @@ export class WorktreeRegistry {
       state: next,
       // `exactOptionalPropertyTypes`: an absent fact must stay absent, not `undefined`.
       ...fields.branch === undefined ? {} : { branch: fields.branch },
+      ...fields.base === undefined ? {} : { base: fields.base },
       ...fields.baseSha === undefined ? {} : { baseSha: fields.baseSha },
       ...createdAt === undefined ? {} : { createdAt },
     }

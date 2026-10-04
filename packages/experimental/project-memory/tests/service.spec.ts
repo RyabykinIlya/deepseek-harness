@@ -4,7 +4,7 @@ import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { ProjectMemoryError } from '../src/index.ts'
 import type { MemoryEntryId, ProjectId } from '../src/index.ts'
-import { agentFor, harness } from './harness.ts'
+import { agentFor, harness, selectPreset } from './harness.ts'
 
 const P = 'proj' as ProjectId
 const contexts: Context[] = []
@@ -121,6 +121,56 @@ describe('ProjectMemoryService project resolution', () => {
     expect(await ctx.projectMemory.resolveProject(project.session)).toBe('p')
     expect(await ctx.projectMemory.resolveProject(thread.session)).toBe('p')
     expect(await ctx.projectMemory.resolveProject(helper.session)).toBe('p')
+  })
+
+  it('resolves a Project switched to its preset after creation', async () => {
+    // How the New Project button composes a Session: created under the deployment
+    // default, then recomposed before the first turn. The creation header stays frozen
+    // on the default, so reading it alone refuses a real Project.
+    const { ctx } = await mount({ projections: true })
+    const project = agentFor(ctx, 'p', { agentPreset: 'standard' })
+    selectPreset(project, 'project')
+    expect(project.session.header.agentPreset).toBe('standard')
+    expect(await ctx.projectMemory.resolveProject(project.session)).toBe('p')
+  })
+
+  it('resolves a Thread whose live Project was switched after creation', async () => {
+    const { ctx } = await mount({ projections: true })
+    const project = agentFor(ctx, 'p', { agentPreset: 'standard' })
+    selectPreset(project, 'project')
+    const thread = agentFor(ctx, 't', { agentPreset: 'project-thread', parentSession: 'p' })
+    expect(await ctx.projectMemory.resolveProject(thread.session)).toBe('p')
+  })
+
+  it('stops resolving a Project switched away from its preset', async () => {
+    const { ctx } = await mount({ projections: true })
+    const project = agentFor(ctx, 'p', { agentPreset: 'project' })
+    selectPreset(project, 'standard')
+    await expect(ctx.projectMemory.resolveProject(project.session)).rejects.toMatchObject({ code: 'not-in-project' })
+  })
+
+  it('honours a switched preset that the configuration does not name', async () => {
+    const { ctx } = await mount({ projections: true, config: { projectPresets: ['lead'] } })
+    const lead = agentFor(ctx, 'l', { agentPreset: 'standard' })
+    selectPreset(lead, 'lead')
+    const old = agentFor(ctx, 'o', { agentPreset: 'standard' })
+    selectPreset(old, 'project')
+    expect(await ctx.projectMemory.resolveProject(lead.session)).toBe('l')
+    await expect(ctx.projectMemory.resolveProject(old.session)).rejects.toMatchObject({ code: 'not-in-project' })
+  })
+
+  it('falls back to the header when the projection registry is absent', async () => {
+    const { ctx } = await mount()
+    expect(ctx.get('sessionProjections')).toBeUndefined()
+    const project = agentFor(ctx, 'p', { agentPreset: 'project' })
+    expect(await ctx.projectMemory.resolveProject(project.session)).toBe('p')
+  })
+
+  it('falls back to the header when no preset unit is registered', async () => {
+    const { ctx } = await mount({ projections: true })
+    ctx.sessionProjections.stateOf(agentFor(ctx, 'x', { agentPreset: 'standard' }).session, 'agentPreset')
+    const project = agentFor(ctx, 'p', { agentPreset: 'project' })
+    expect(await ctx.projectMemory.resolveProject(project.session)).toBe('p')
   })
 
   it('honours configured project presets', async () => {

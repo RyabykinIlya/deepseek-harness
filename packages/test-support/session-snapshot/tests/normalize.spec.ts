@@ -9,10 +9,12 @@ import {
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
   normalizeStdout,
+  roleFixtureCwd,
   scrubModelRequestBulk,
   scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
+  sessionRoleCwds,
   tokenizeSessionFixtureCwd,
 } from '../src/normalize.ts'
 
@@ -1272,5 +1274,289 @@ describe('scrubToolSchemas', () => {
     expect(out).toContain('full prompt')
     expect(out.split('\n')[3]).toBe(toolless)
     expect(scrubToolSchemas(out)).toBe(out)
+  })
+})
+
+describe('sessionRoleCwds', () => {
+  const parentCwd = '/tmp/acp-snap-cwd-abc123'
+  const parentId = '11111111-1111-4111-8111-111111111111'
+  const childId = '22222222-2222-4222-8222-222222222222'
+
+  /** One header-only log, so a test states the role cwds it is about. */
+  const headerLog = (id: string, cwd: string, parentSession?: string): string => JSON.stringify({
+    type: 'session',
+    id,
+    createdAt: 1,
+    cwd,
+    ...(parentSession === undefined ? {} : { parentSession }),
+  })
+
+  /** One text tool result a test asserts against. */
+  const resultLog = (text: string): string => JSON.stringify({
+    type: 'tool/result',
+    data: { content: [{ type: 'text', text }] },
+  })
+
+  it('collects a child cwd outside the generated workspace under its fixture ordinal', () => {
+    const worktree = '/var/dsh-threads-worktrees/91640393766a4794/22222222-2222-4222-8222-222222222222'
+    expect(sessionRoleCwds([headerLog(parentId, parentCwd), headerLog(childId, worktree, parentId)], parentCwd))
+      .toEqual([{ cwd: worktree, token: '{{cwd:1}}' }])
+  })
+
+  it('leaves a child cwd inside the generated workspace on the existing token', () => {
+    const logs = [headerLog(parentId, parentCwd), headerLog(childId, `${parentCwd}/workspace`, parentId)]
+    expect(sessionRoleCwds(logs, parentCwd)).toEqual([])
+    const [parent, child] = normalizeSessionSnapshots(logs, { sessionIds: [], cwd: parentCwd })
+    expect(parent).toContain('"cwd":"{{cwd}}"')
+    expect(child).toContain('"cwd":"{{cwd}}/workspace"')
+  })
+
+  it('skips the primary role and orders relocated roles longest cwd first', () => {
+    const outer = '/wt/bucket/child-one'
+    const inner = '/wt/bucket/child-one/nested'
+    const logs = [
+      headerLog(parentId, parentCwd),
+      headerLog(childId, outer, parentId),
+      headerLog('33333333-3333-4333-8333-333333333333', inner, parentId),
+    ]
+    expect(sessionRoleCwds(logs, parentCwd)).toEqual([
+      { cwd: inner, token: '{{cwd:2}}' },
+      { cwd: outer, token: '{{cwd:1}}' },
+    ])
+  })
+
+  it('recognizes a child cwd whose spelling carries the macOS realpath prefix', () => {
+    const worktree = '/private/var/folders/2g/snapshot/T/dsh-threads/abcd1234/child-one'
+    const logs = [
+      headerLog(parentId, '/var/folders/2g/snapshot/T/acp-snap-cwd-abc123'),
+      headerLog(childId, worktree, parentId),
+    ]
+    expect(sessionRoleCwds(logs, '/var/folders/2g/snapshot/T/acp-snap-cwd-abc123'))
+      .toEqual([{ cwd: worktree, token: '{{cwd:1}}' }])
+  })
+
+  it('ignores a log whose header declares no cwd', () => {
+    const logs = [
+      headerLog(parentId, parentCwd),
+      JSON.stringify({ type: 'session', id: childId, createdAt: 1 }),
+    ]
+    expect(sessionRoleCwds(logs, parentCwd)).toEqual([])
+  })
+
+  it('tokenizes a relocated worktree in both the parent record and the child header', () => {
+    const worktree = '/var/dsh-threads-worktrees/91640393766a4794/22222222-2222-4222-8222-222222222222'
+    const parent = [
+      headerLog(parentId, parentCwd),
+      JSON.stringify({
+        type: 'thread/created',
+        data: {
+          threadId: childId,
+          label: 'greeting',
+          worktree,
+          branch: 'dsh/thread/22222222-2222-4222-8222-222222222222',
+        },
+      }),
+    ].join('\n')
+    const child = [headerLog(childId, worktree, parentId)].join('\n')
+
+    const normalized = normalizeSessionSnapshots([parent, child], { sessionIds: [], cwd: parentCwd })
+
+    expect(normalized[0]).toContain('"worktree":"{{cwd:1}}"')
+    expect(normalized[0]).toContain('"branch":"dsh/thread/{{session:2}}"')
+    expect(normalized[0]).not.toContain('91640393766a4794')
+    expect(normalized[1]).toContain('"cwd":"{{cwd:1}}"')
+    expect(normalized[1]).not.toContain('91640393766a4794')
+    // A relocated role is a fixed point: the stored token is recognized and maps to itself.
+    expect(normalizeSessionSnapshots(normalized, { sessionIds: [], cwd: '{{cwd}}' })).toEqual(normalized)
+  })
+
+  it('keeps the generated-workspace token from absorbing a role token or a sibling segment', () => {
+    const worktree = '/var/dsh-threads-worktrees/91640393766a4794/child-one'
+    const parent = [
+      headerLog(parentId, parentCwd),
+      resultLog([
+        `wrote ${parentCwd}/notes.md`,
+        `wrote ${worktree}/greeting.txt`,
+        `wrote ${parentCwd}-backup/notes.md`,
+        'kept {{cwd}}/workspace and {{cwd:1}}',
+      ].join('. ')),
+    ].join('\n')
+    const child = headerLog(childId, worktree, parentId)
+
+    const [normalized] = normalizeSessionSnapshots([parent, child], { sessionIds: [], cwd: parentCwd })
+
+    expect(normalized).toContain('wrote {{cwd}}/notes.md')
+    expect(normalized).toContain('wrote {{cwd:1}}/greeting.txt')
+    expect(normalized).toContain(`${parentCwd}-backup/notes.md`)
+    expect(normalized).toContain('kept {{cwd}}/workspace and {{cwd:1}}')
+    expect(normalized).not.toContain(worktree)
+  })
+
+  it('normalizes a macOS /private spelling of a relocated cwd reported without the prefix', () => {
+    const worktree = '/var/folders/2g/snapshot/T/dsh-threads/abcd1234/child-one'
+    const primary = '/var/folders/2g/snapshot/T/acp-snap-cwd-abc123'
+    const logs = [
+      [headerLog(parentId, primary), resultLog(`read ${worktree}/greeting.txt and /private${worktree}/greeting.txt`)].join('\n'),
+      headerLog(childId, worktree, parentId),
+    ]
+
+    const [normalized] = normalizeSessionSnapshots(logs, { sessionIds: [], cwd: primary })
+
+    expect(normalized).toContain('read {{cwd:1}}/greeting.txt and {{cwd:1}}/greeting.txt')
+  })
+
+  it('canonicalizes separators only under a role token', () => {
+    const primary = String.raw`C:\snap\cwd-abc123`
+    const worktree = String.raw`C:\dsh-threads\abcd1234\child-one`
+    const text = String.raw`${worktree}\greeting.txt and C:\kept\regex\w`
+    const logs = [
+      [headerLog(parentId, primary), resultLog(text)].join('\n'),
+      headerLog(childId, worktree, parentId),
+    ]
+
+    const [normalized] = normalizeSessionSnapshots(logs, { sessionIds: [], cwd: primary })
+
+    expect(normalized).toContain(String.raw`{{cwd:1}}/greeting.txt`)
+    expect(normalized).toContain(String.raw`C:\\kept\\regex\\w`)
+  })
+
+  it('honors a caller-supplied role list when the logs declare no such role', () => {
+    const worktree = '/var/dsh-threads-worktrees/91640393766a4794/child-one'
+    const log = [headerLog(parentId, parentCwd), resultLog(worktree)].join('\n')
+    const supplied = { sessionIds: [], cwd: parentCwd, roleCwds: [{ cwd: worktree, token: '{{cwd:7}}' }] }
+
+    expect(normalizeSessionSnapshots([log], supplied)[0]).toContain('"text":"{{cwd:7}}"')
+    expect(normalizeSessionLog(log, supplied)).toContain('"text":"{{cwd:7}}"')
+  })
+})
+
+describe('tokenizeSessionFixtureCwd with relocated roles', () => {
+  const parentCwd = '/tmp/acp-snap-cwd-abc123'
+  const worktree = '/var/dsh-threads-worktrees/91640393766a4794/child-one'
+
+  it('stores the child role cwd under its own token and the parent record under the same one', () => {
+    const parent = [
+      JSON.stringify({ type: 'session', id: 'p', createdAt: 1, cwd: parentCwd }),
+      JSON.stringify({ type: 'thread/created', data: { worktree, branch: 'dsh/thread/child-one' } }),
+    ].join('\n')
+    const child = [
+      JSON.stringify({ type: 'session', id: 'c', createdAt: 1, cwd: worktree, parentSession: 'p' }),
+      JSON.stringify({ type: 'tool/result', data: { content: [{ type: 'text', text: `wrote ${worktree}/greeting.txt` }] } }),
+    ].join('\n')
+    const roles = [{ cwd: worktree, token: '{{cwd:1}}' }]
+
+    const writtenParent = tokenizeSessionFixtureCwd(parent, { roleCwds: roles })
+    const writtenChild = tokenizeSessionFixtureCwd(child, { roleCwds: roles })
+
+    expect(writtenParent).toContain('"cwd":"{{cwd}}"')
+    expect(writtenParent).toContain('"worktree":"{{cwd:1}}"')
+    expect(writtenChild).toContain(`"cwd":"${roleFixtureCwd('{{cwd:1}}')}"`)
+    expect(writtenChild).toContain('wrote {{cwd:1}}/greeting.txt')
+    expect(writtenParent).not.toContain('91640393766a4794')
+    expect(tokenizeSessionFixtureCwd(writtenParent, { roleCwds: roles })).toBe(writtenParent)
+    expect(tokenizeSessionFixtureCwd(writtenChild, { roleCwds: roles })).toBe(writtenChild)
+  })
+
+  it('stores a relocated header cwd as the absolute placeholder a released format accepts', () => {
+    const parentId = '11111111-1111-4111-8111-111111111111'
+    const childId = '22222222-2222-4222-8222-222222222222'
+    const child = JSON.stringify({ type: 'session', id: childId, createdAt: 1, cwd: worktree })
+    const roles = [{ cwd: worktree, token: '{{cwd:1}}' }]
+
+    const written = tokenizeSessionFixtureCwd(child, { roleCwds: roles })
+
+    expect(written).toContain(`"cwd":"${roleFixtureCwd('{{cwd:1}}')}"`)
+    expect(roleFixtureCwd('{{cwd:1}}')).toMatch(/^\//u)
+    expect(roleFixtureCwd('{{cwd:7}}')).not.toBe(roleFixtureCwd('{{cwd:1}}'))
+    // Reading the stored header back classifies it as the same role, so the
+    // placeholder and the live worktree path normalize to one token.
+    const [primary, stored] = normalizeSessionSnapshots(
+      [JSON.stringify({ type: 'session', id: parentId, createdAt: 1, cwd: parentCwd }), written],
+      { sessionIds: [], cwd: parentCwd },
+    )
+    expect(primary).toContain('"cwd":"{{cwd}}"')
+    expect(stored).toContain('"cwd":"{{cwd:1}}"')
+  })
+
+  it('rejects a token that is not a relocated-role token', () => {
+    expect(() => roleFixtureCwd('{{cwd}}')).toThrow('is not a relocated-role token')
+    expect(() => roleFixtureCwd('{{cwd:0}}')).toThrow('is not a relocated-role token')
+  })
+
+  it('keeps one generated-workspace token when no role list is supplied', () => {
+    const log = [
+      JSON.stringify({ type: 'session', id: 'c', createdAt: 1, cwd: worktree }),
+      JSON.stringify({ type: 'tool/result', data: { content: [{ type: 'text', text: worktree }] } }),
+    ].join('\n')
+
+    expect(tokenizeSessionFixtureCwd(log)).toContain('"cwd":"{{cwd}}"')
+    expect(tokenizeSessionFixtureCwd(log)).toContain('"text":"{{cwd}}"')
+  })
+
+  it('keeps an already-stored role token when no role list is supplied', () => {
+    const log = [
+      JSON.stringify({ type: 'session', id: 'c', createdAt: 1, cwd: '{{cwd:1}}' }),
+      JSON.stringify({ type: 'tool/result', data: { content: [{ type: 'text', text: '{{cwd:1}}/greeting.txt' }] } }),
+    ].join('\n')
+
+    expect(tokenizeSessionFixtureCwd(log)).toBe(log)
+  })
+})
+
+describe('relocated role edge cases', () => {
+  const parentId = '11111111-1111-4111-8111-111111111111'
+  const childId = '22222222-2222-4222-8222-222222222222'
+  const headerLog = (id: string, cwd: string, parentSession?: string): string => JSON.stringify({
+    type: 'session',
+    id,
+    createdAt: 1,
+    cwd,
+    ...(parentSession === undefined ? {} : { parentSession }),
+  })
+
+  it.each([
+    { name: 'the same cwd', parent: '/tmp/ws', child: '/tmp/ws' },
+    { name: 'a cwd below the workspace', parent: '/tmp/ws', child: '/tmp/ws/workspace' },
+    { name: 'a workspace spelled with a trailing separator', parent: '/tmp/ws/', child: '/tmp/ws/nested' },
+    { name: 'a workspace spelled with Windows separators', parent: String.raw`C:\ws`, child: String.raw`C:\ws\nested` },
+  ])('keeps a child cwd under $name on the generated-workspace token', ({ parent, child }) => {
+    expect(sessionRoleCwds([headerLog(parentId, parent), headerLog(childId, child, parentId)], parent)).toEqual([])
+  })
+
+  it('replaces two relocated roles in one log, most specific first', () => {
+    const outer = '/wt/bucket/child-one'
+    const inner = '/wt/bucket/child-one/nested'
+    const log = [
+      headerLog(parentId, '/tmp/ws'),
+      JSON.stringify({
+        type: 'tool/result',
+        data: { content: [{ type: 'text', text: `${outer} and ${inner}/file.txt` }] },
+      }),
+    ].join('\n')
+    const logs = [
+      log,
+      headerLog(childId, outer, parentId),
+      headerLog('33333333-3333-4333-8333-333333333333', inner, parentId),
+    ]
+
+    const [normalized] = normalizeSessionSnapshots(logs, { sessionIds: [], cwd: '/tmp/ws' })
+
+    expect(normalized).toContain('{{cwd:1}} and {{cwd:2}}/file.txt')
+  })
+
+  it('keeps one entry when the caller and collection describe the same role', () => {
+    const worktree = '/wt/bucket/child-one'
+    const logs = [headerLog(parentId, '/tmp/ws'), headerLog(childId, worktree, parentId)]
+    const supplied = { sessionIds: [], cwd: '/tmp/ws', roleCwds: [{ cwd: worktree, token: '{{cwd:1}}' }] }
+
+    expect(normalizeSessionSnapshots(logs, supplied)[1]).toContain('"cwd":"{{cwd:1}}"')
+  })
+
+  it('ignores a header that is not an object with a cwd', () => {
+    expect(sessionRoleCwds([
+      headerLog(parentId, '/tmp/ws'),
+      'null',
+    ], '/tmp/ws')).toEqual([])
+    expect(sessionRoleCwds([headerLog(parentId, '/tmp/ws'), ''], '/tmp/ws')).toEqual([])
   })
 })

@@ -38,14 +38,43 @@ export type WorktreeState =
   | 'removed'
   | 'orphaned'
 
+/**
+ * What a new Thread's worktree is created from.
+ *
+ * - `head` — the repository's committed state: `spec.baseRef` resolved with
+ *   `git rev-parse --verify <baseRef>^{commit}`, and nothing else.
+ * - `head-with-uncommitted` — that same commit *plus the parent's tracked uncommitted changes*,
+ *   captured as a commit object with `git stash create`. A Thread started while its coordinator is
+ *   mid-edit therefore sees the work in progress instead of the last commit, and a later merge
+ *   cannot collide on lines the parent never committed.
+ *
+ * Untracked files are NOT part of the snapshot: git cannot represent them in a stash without `-u`,
+ * which is deliberately not used (see the README). A clean working tree is not a failure — git
+ * answers with empty output and the committed base is the whole story.
+ */
+export type WorktreeBasePolicy = 'head' | 'head-with-uncommitted'
+
 /** Input for {@link WorktreeService.create}: one Thread asking for its own working tree. */
 export interface WorktreeSpec {
   /** Absolute path inside the project checkout; resolved to the enclosing repository's top level. */
   readonly repoRoot: string
   /** Deterministic Thread key. Its {@link threadSlug} is the worktree directory name and the default branch suffix. */
   readonly threadId: string
-  /** Branch, tag, or commit the new worktree is created from (`git worktree add … <baseRef>`). */
+  /**
+   * Ref the new worktree is created from (`git worktree add … <baseRef>`); always resolved and
+   * validated, so an unusable base is refused under either policy.
+   *
+   * Under `base: 'head-with-uncommitted'` this names the ref the snapshot is *taken against* and
+   * the fallback when the working tree is clean — the commit the Thread actually starts from is
+   * then {@link WorktreeRecord.baseSha}, not this string.
+   */
   readonly baseRef: string
+  /**
+   * Which base {@link WorktreeService.create} resolves. Defaults to the service's configured
+   * `base`, which itself defaults to `'head'` — a spec that omits this field gets exactly the
+   * behaviour that package shipped before the policy existed.
+   */
+  readonly base?: WorktreeBasePolicy
   /**
    * Branch to create alongside the worktree. Defaults to `dsh/thread-<threadSlug(threadId)>`.
    * The branch is a convenience handle, never the identity: removal is keyed on `(threadId, path)`.
@@ -61,10 +90,20 @@ export interface WorktreeRecord {
   readonly path: string
   /** Created branch, or `undefined` for a detached worktree. */
   readonly branch?: string
-  /** The ref this worktree was created from. */
+  /**
+   * The ref this worktree was created from — the ref the REQUEST named. Under
+   * {@link WorktreeBasePolicy `'head-with-uncommitted'`} it is not the commit the Thread started
+   * at; {@link WorktreeRecord.baseSha} is.
+   */
   readonly baseRef: string
   /**
-   * Commit the worktree was created at, resolved from `baseRef` when the add succeeded.
+   * The policy that produced {@link WorktreeRecord.baseSha}. Absent only on records written before
+   * the field existed, which are read as plain `head` behaviour.
+   */
+  readonly base?: WorktreeBasePolicy
+  /**
+   * Commit the worktree was created at, resolved from `baseRef` (or, under
+   * `base: 'head-with-uncommitted'`, the working-state snapshot) when the add succeeded.
    * Absent on records written before the field existed and on `reserved` records.
    */
   readonly baseSha?: string

@@ -379,6 +379,13 @@
   margin-top: 2px;
 }
 
+/* A Project's Thread rows ride inside their owner's slot, so they take the
+   inter-row rhythm from the group section instead of adding a second gap of
+   their own. */
+.threadNest > * + * {
+  margin-top: 2px;
+}
+
 .searchStatus {
   padding: 10px 12px;
   font-size: 12px;

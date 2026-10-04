@@ -1,5 +1,5 @@
 ---
-description: "The bounded thread_status and thread_diff tools that let a Project model see what its background Threads are doing and inspect what each committed, for compositions that mount the Threads domain."
+description: "The bounded thread_status, thread_diff, and library_list tools that let a Project model see what its background Threads are doing, inspect what each committed, and list its Library, for compositions that mount the Threads domain."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package adds two model tools. `thread_status` lists the calling Project's background Threads with state, branch, counts, and a short closing note. `thread_diff` shows what one Thread committed on its branch. Both read only the calling Project session's own `threads` projection, take liveness from the runtime, and bound the complete rendered result in bytes, stating what was omitted. There is no unbounded mode; that bound is the reason these tools exist rather than reusing `list_agents`. The package is published under its experimental name and provides no stability guarantee.
+This package adds four model tools for a Project coordinator, three of which are always present. `thread_status` lists the Project's background Threads with state, branch, and counts. `thread_diff` shows what one Thread committed on its own branch. `library_list` lists the Project's Library: chat attachments, presented files, and the files each Thread changed. `thread_tier` moves one Thread to another model tier and registers only while `@deepseek-ai/dsh-experimental-model-routing` is mounted, because without it there are no tiers to name. All four read only the calling Project session's own data, take liveness from the runtime where it applies, and bound the complete rendered result in bytes, stating what was omitted. There is no unbounded mode. Published under its experimental name, with no stability guarantee.
 
 ## Table of Contents
 

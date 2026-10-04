@@ -21,6 +21,9 @@
       "path": "../../preset/agent-preset-registry"
     },
     {
+      "path": "../model-routing"
+    },
+    {
       "path": "../../../vendor/cordis"
     },
     {

@@ -1,0 +1,7 @@
+# OpenRouter model routing: the `tiers` LLM route, its settings page and composer chip.
+# Dormant until the `model-routing` settings list at least one tier.
+- insert:
+    - id: model-routing
+      name: '@deepseek-ai/dsh-experimental-model-routing'
+    - id: ui-model-routing
+      name: '@deepseek-ai/dsh-experimental-client-ui-model-routing'

@@ -36,7 +36,7 @@ function omitFixtureEnvelope(record: Record<string, unknown>): void {
 }
 
 /** A cwd-rooted path after volatile cwd replacement, through its last separator-delimited segment. */
-const CWD_ROOTED_PATH_RE = /\{\{cwd\}\}(?:[\\/][^\s<>"'`]+)+/g
+const CWD_ROOTED_PATH_RE = /\{\{cwd(?::[1-9]\d*)?\}\}(?:[\\/][^\s<>"'`]+)+/g
 const PATH_TAG_RE = /(<path>)([^<]*)(<\/path>)/g
 const ADDITIONAL_INSTRUCTIONS_PATH_RE = /(Additional instructions from: )([^\r\n]+)/g
 const EMBEDDED_EVENT_TIME_RE = /^(  "time": )\d+(?=,\r?$)/gm
@@ -86,6 +86,39 @@ function canonicalizeEmbeddedPaths(value: string): string {
       `${prefix}${path.replaceAll('\\', '/')}`)
 }
 
+/** One Session role whose cwd is not rooted at the generated workspace. */
+export interface SessionRoleCwd {
+  /** Absolute live cwd of the relocated role, as its own header spelled it. */
+  readonly cwd: string
+  /** Stable fixture token: `{{cwd:N}}` for the role at fixture ordinal N. */
+  readonly token: string
+}
+
+/** The `{{cwd:N}}` tokens {@link sessionRoleCwds} mints, one per fixture ordinal. */
+const ROLE_TOKEN_RE = /^\{\{cwd:([1-9]\d*)\}\}$/u
+
+/**
+ * The absolute spelling a relocated role's cwd is STORED as in a committed
+ * fixture.
+ *
+ * `{{cwd:N}}` is a comparison token, not a path, and a Session header's `cwd`
+ * is validated as an absolute path by every released physical format before a
+ * fixture is read — for replay input and for expected-output comparison alike.
+ * The placeholder is therefore a path, derived from the role's ordinal, and it
+ * carries no run-specific bytes: reading it back, {@link sessionRoleCwds}
+ * classifies it exactly as it classifies the live worktree path, so both
+ * normalize to the same `{{cwd:N}}`.
+ *
+ * @param token - the role's `{{cwd:N}}` token.
+ * @returns the fixture's absolute placeholder for that role.
+ */
+export function roleFixtureCwd(token: string): string {
+  const ordinal = ROLE_TOKEN_RE.exec(token)?.[1]
+  /* v8 ignore next -- only sessionRoleCwds mints role tokens, and it mints {{cwd:N}}. */
+  if (ordinal === undefined) throw new Error(`session-snapshot: ${token} is not a relocated-role token`)
+  return `/dsh-snapshot-role-cwd/${ordinal}`
+}
+
 /** Inputs the normalizers need to recognize a run's volatile values. */
 export interface NormalizeContext {
   /** The session id(s) the run issued — replaced with `{{sessionId}}`. */
@@ -94,6 +127,12 @@ export interface NormalizeContext {
   cwd: string
   /** Other filesystem spellings of the same cwd (for example Windows short and long paths). */
   cwdAliases?: readonly string[]
+  /**
+   * Cwds of roles that are not rooted at the generated cwd — a Thread's git
+   * worktree, for example — replaced with their own `{{cwd:N}}` tokens. See
+   * {@link sessionRoleCwds}.
+   */
+  roleCwds?: readonly SessionRoleCwd[]
 }
 
 /** How cwd-rooted path separators are represented after the cwd is tokenized. */
@@ -113,15 +152,81 @@ export interface SessionSnapshotComparisonOptions extends Omit<NormalizeOptions,
   nativeWriterOutput?: true
 }
 
-/** Return every known spelling of the generated cwd, most specific first. */
-function cwdSpellings(ctx: NormalizeContext): string[] {
-  const spellings = [...new Set([ctx.cwd, ...ctx.cwdAliases ?? []])]
+/** Every known spelling of one absolute path: itself plus the macOS realpath alias. */
+function pathSpellings(path: string, aliases: readonly string[] = []): string[] {
+  const spellings = [...new Set([path, ...aliases])]
     .filter(spelling => spelling.length > 0)
   const macAliases = spellings
     .filter(spelling => spelling.startsWith('/') && !spelling.startsWith('/private/'))
     .map(spelling => `/private${spelling}`)
   return [...new Set([...spellings, ...macAliases])]
     .sort((left, right) => right.length - left.length)
+}
+
+/** Return every known spelling of the generated cwd, most specific first. */
+function cwdSpellings(ctx: NormalizeContext): string[] {
+  return pathSpellings(ctx.cwd, ctx.cwdAliases ?? [])
+}
+
+/** Whether `child` is `parent` itself or a path below it. */
+function isUnderPath(child: string, parent: string): boolean {
+  if (child === parent) return true
+  const separator = parent.includes('/') || !parent.includes('\\') ? '/' : '\\'
+  const prefix = parent.endsWith(separator) ? parent : `${parent}${separator}`
+  return child.startsWith(prefix)
+}
+
+/** Read the cwd one Session header declares, or `undefined` when it declares none. */
+function headerCwdOf(log: string): string | undefined {
+  const line = log.split(/\r?\n/u).find(candidate => candidate.trim().length > 0)
+  if (line === undefined) return undefined
+  const header: unknown = JSON.parse(line)
+  if (header === null || typeof header !== 'object' || Array.isArray(header)) return undefined
+  const { cwd } = header as { cwd?: unknown }
+  return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
+}
+
+/**
+ * Collect the role cwds a primary-first log set carries outside the generated workspace.
+ *
+ * A Thread child runs in its own git worktree, whose path embeds a per-run
+ * repository hash, so neither the generated-workspace token nor typed identity
+ * redaction can make it stable. Each such role keeps its own `{{cwd:N}}` token,
+ * where N is the fixture ordinal the harness already uses for that role. A role
+ * rooted INSIDE the generated workspace keeps the existing `{{cwd}}/…` spelling,
+ * so every scenario that already replays is untouched.
+ *
+ * @param logs - primary-first Session JSONL logs.
+ * @param primaryCwd - the generated workspace cwd, in any one of its spellings.
+ * @param aliases - other spellings of the generated workspace.
+ * @returns relocated roles ordered longest cwd first, so nested paths resolve correctly.
+ */
+export function sessionRoleCwds(
+  logs: readonly string[],
+  primaryCwd: string,
+  aliases: readonly string[] = [],
+): SessionRoleCwd[] {
+  const roots = pathSpellings(primaryCwd, aliases)
+  const roles: SessionRoleCwd[] = []
+  for (const [index, log] of logs.entries()) {
+    if (index === 0) continue
+    const cwd = headerCwdOf(log)
+    if (cwd === undefined) continue
+    if (roots.some(root => isUnderPath(cwd, root))) continue
+    roles.push({ cwd, token: `{{cwd:${index}}}` })
+  }
+  return roles.sort((left, right) => right.cwd.length - left.cwd.length)
+}
+
+/** Replace every relocated role cwd with its own stable token, most specific cwd first. */
+function replaceRoleCwds(value: string, roles: readonly SessionRoleCwd[]): string {
+  let out = value
+  const ordered = roles.length < 2 ? roles : [...roles].sort((left, right) => right.cwd.length - left.cwd.length)
+  for (const role of ordered) {
+    for (const spelling of pathSpellings(role.cwd)) out = replaceCwdSpelling(out, spelling, role.token)
+    out = out.split(`/private${role.token}`).join(role.token)
+  }
+  return out
 }
 
 /** Whether an embedded cwd match starts and ends at a path/text boundary. */
@@ -174,6 +279,10 @@ function scrubString(
   identityMode: 'legacy' | 'preserve',
 ): string {
   let out = replaceCwd(value, ctx, CWD)
+  // A relocated role (a Thread worktree) is tokenized on its own ordinal, so the
+  // generated-workspace token can never absorb it and the per-run repository hash
+  // it carries never reaches a fixture.
+  if (ctx.roleCwds !== undefined && ctx.roleCwds.length > 0) out = replaceRoleCwds(out, ctx.roleCwds)
   // Filesystem APIs can report one directory with several spellings. Replace
   // every known spelling longest-first so a shorter alias cannot corrupt a
   // longer one before it is tokenized. macOS additionally symlinks
@@ -239,14 +348,21 @@ function escapeRegExp(value: string): string {
 }
 
 /** Replace any absolute spelling whose final segment is the generated cwd basename. */
-function tokenizeFixtureString(value: string, ctx: NormalizeContext, basename: string): string {
-  const exact = replaceCwd(value, ctx, CWD)
+function tokenizeFixtureString(
+  value: string,
+  ctx: NormalizeContext,
+  basename: string,
+  rootToken: string,
+  roles: readonly SessionRoleCwd[],
+): string {
+  const exact = replaceCwd(value, ctx, rootToken)
   const absoluteCwd = new RegExp(
     String.raw`(?:[A-Za-z]:)?[\\/](?:[^\\/\s<>"]+[\\/])*${escapeRegExp(basename)}`
     + String.raw`(?=$|[\\/\s<>'"()\[\]{},;:!?=])`,
     'g',
   )
-  return exact.replace(absoluteCwd, CWD).split(`/private${CWD}`).join(CWD)
+  const rooted = exact.replace(absoluteCwd, rootToken).split(`/private${rootToken}`).join(rootToken)
+  return roles.length === 0 ? rooted : replaceRoleCwds(rooted, roles)
 }
 
 /** Recursively replace generated-cwd spellings while preserving every other JSON value. */
@@ -254,41 +370,71 @@ function tokenizeFixtureValue(
   value: unknown,
   ctx: NormalizeContext,
   basename: string,
+  rootToken: string,
+  roles: readonly SessionRoleCwd[],
 ): unknown {
-  if (typeof value === 'string') return tokenizeFixtureString(value, ctx, basename)
-  if (Array.isArray(value)) return value.map(item => tokenizeFixtureValue(item, ctx, basename))
+  if (typeof value === 'string') return tokenizeFixtureString(value, ctx, basename, rootToken, roles)
+  if (Array.isArray(value)) return value.map(item => tokenizeFixtureValue(item, ctx, basename, rootToken, roles))
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [
       key,
-      tokenizeFixtureValue(item, ctx, basename),
+      tokenizeFixtureValue(item, ctx, basename, rootToken, roles),
     ]))
   }
   return value
+}
+
+/** Optional relocated roles whose cwds share one generated-workspace token. */
+export interface TokenizeFixtureOptions {
+  /** Roles outside the generated workspace, from {@link sessionRoleCwds}. */
+  readonly roleCwds?: readonly SessionRoleCwd[]
 }
 
 /**
  * Store one generated workspace as `{{cwd}}` while retaining every other
  * session value. The caller opts in only for workspaces created under a
  * platform temporary root; explicitly relocated workspaces keep their real
- * path.
+ * path. A log whose own cwd belongs to a relocated role stores that role's
+ * `{{cwd:N}}` token in every body value and its absolute
+ * {@link roleFixtureCwd} placeholder in the header, and every log tokenizes
+ * every relocated role cwd, so a parent's record of a child's worktree matches
+ * the child's own header.
  *
  * @param rawLog The raw or refresh-stabilized session JSONL fixture.
- * @returns Compact JSONL whose known cwd spellings become `{{cwd}}`.
+ * @param options Relocated role cwds shared by the scenario's primary-first logs.
+ * @returns Compact JSONL whose known cwd spellings become `{{cwd}}` or `{{cwd:N}}`.
  * @throws If a non-empty line is invalid JSON or the session cwd has no basename.
  */
-export function tokenizeSessionFixtureCwd(rawLog: string): string {
+export function tokenizeSessionFixtureCwd(rawLog: string, options: TokenizeFixtureOptions = {}): string {
   const lines = rawLog.split('\n')
-  const firstLine = lines.find(line => line.trim().length > 0)
-  const header = firstLine === undefined ? undefined : JSON.parse(firstLine) as { cwd?: unknown }
+  const headerIndex = lines.findIndex(line => line.trim().length > 0)
+  const header = headerIndex < 0 ? undefined : JSON.parse(lines[headerIndex] as string) as { cwd?: unknown }
   const cwd = typeof header?.cwd === 'string' ? header.cwd : ''
   const basename = cwd.split(/[\\/]/).at(-1)
   if (basename === undefined || basename.length === 0) {
     throw new Error('acp-snapshot: cannot tokenize a cwd without a basename')
   }
+  const roles = options.roleCwds ?? []
+  const own = roles.find(role => pathSpellings(role.cwd).includes(cwd))
+    // A committed fixture already stores this role as its placeholder, so
+    // write-back recognizes its own output and stays a fixed point.
+    ?? roles.find(role => roleFixtureCwd(role.token) === cwd)
+  // An already-stored log keeps the token it was written with, so write-back is a
+  // fixed point and a relocated role never collapses into `{{cwd}}`.
+  const stored = /^\{\{cwd(?::[1-9]\d*)?\}\}$/u.exec(cwd)?.[0]
+  const rootToken = own?.token ?? stored ?? CWD
+  // The header's own `cwd` is the one value a released format re-validates as an
+  // absolute path, so a relocated role stores its placeholder there and its
+  // comparison token everywhere else.
+  const storedCwd = own === undefined ? rootToken : roleFixtureCwd(own.token)
   const ctx: NormalizeContext = { sessionIds: [], cwd }
-  return lines.map((line) => {
+  return lines.map((line, index) => {
     if (line.trim().length === 0) return line
-    return JSON.stringify(tokenizeFixtureValue(JSON.parse(line), ctx, basename))
+    const value = tokenizeFixtureValue(JSON.parse(line), ctx, basename, rootToken, roles)
+    if (index === headerIndex && value !== null && typeof value === 'object') {
+      ;(value as { cwd?: unknown }).cwd = storedCwd
+    }
+    return JSON.stringify(value)
   }).join('\n')
 }
 
@@ -458,13 +604,44 @@ export function normalizeSessionSnapshots(
     return normalizeSessionFormatMetadata(currentLog, nativeWriterOutput
       ? sessionHeaderVersion(log, 'source Session snapshot') : undefined)
   })
-  return redactSessionSnapshotIds(comparableLogs).map(log => projectSessionSnapshot(
+  // Roles are collected from the redacted logs, so a relocated cwd whose final
+  // segment is a typed identity token is still recognized as one path.
+  const redacted = redactSessionSnapshotIds(comparableLogs)
+  const roleCtx: NormalizeContext = {
+    ...ctx,
+    roleCwds: mergeRoleCwds(ctx.roleCwds, sessionRoleCwds(redacted, ctx.cwd, ctx.cwdAliases ?? [])),
+  }
+  return redacted.map(log => projectSessionSnapshot(
     scrubSessionSnapshot(normalizeSessionLog(
       log,
-      { ...ctx, sessionIds: [] },
+      { ...roleCtx, sessionIds: [] },
       { ...normalizeOptions, identityMode: 'preserve' },
     )),
   ))
+}
+
+/**
+ * Union caller-supplied and freshly collected role cwds.
+ *
+ * One role can be described by two spellings: the caller's context carries the
+ * cwd as the run spelled it, while collection reads it back after identity
+ * redaction replaced a typed token inside the path. Both must survive, because
+ * each matches a different rendering of the same text; the longest cwd is
+ * applied first, and a spelling that no longer occurs replaces nothing.
+ */
+function mergeRoleCwds(
+  supplied: readonly SessionRoleCwd[] | undefined,
+  collected: readonly SessionRoleCwd[],
+): SessionRoleCwd[] {
+  const seen = new Set<string>()
+  const merged: SessionRoleCwd[] = []
+  for (const role of [...supplied ?? [], ...collected]) {
+    const key = `${role.token}\u0000${role.cwd}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(role)
+  }
+  return merged
 }
 
 /**

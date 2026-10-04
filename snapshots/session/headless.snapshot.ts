@@ -35,6 +35,7 @@ import {
   scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
+  sessionRoleCwds,
   sessionFixtureName,
   systemPromptPrecedesRequests,
   sessionFixtureNames,
@@ -177,9 +178,14 @@ function headerOf(log: string): JsonObject {
 
 function contextOf(logs: readonly string[]): NormalizeContext {
   const headers = logs.map(headerOf)
+  const cwd = typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0missing-cwd\0'
   return {
     sessionIds: headers.flatMap(header => typeof header.id === 'string' ? [header.id] : []),
-    cwd: typeof headers[0]?.cwd === 'string' ? headers[0].cwd : '\0missing-cwd\0',
+    cwd,
+    // A Thread child runs in its own git worktree, so its cwd is not rooted at the
+    // generated workspace and carries a per-run repository hash. Each such role keeps
+    // its own `{{cwd:N}}` token; every other role stays on `{{cwd}}`.
+    roleCwds: sessionRoleCwds(logs, cwd),
   }
 }
 
@@ -244,7 +250,7 @@ async function writeSessionFixtures(
   const fresh = actualLogs.map((log, index) => {
     const stable = tokenizeSessionFixtureCwd(mode === 'refresh'
       ? stabilizeRefreshLog(log.content, prior[index] as string, replacements, ctx)
-      : log.content)
+      : log.content, { roleCwds: ctx.roleCwds })
     return scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(stable))
   })
   const output = redactSessionSnapshotIds(stabilizeFixtureMessageIds(fresh, prior))

@@ -1,0 +1,4 @@
+{
+  "status": 400,
+  "response": "{\"error\":{\"message\":\"[\\n  {\\n    \\\"expected\\\": \\\"record\\\",\\n    \\\"code\\\": \\\"invalid_type\\\",\\n    \\\"path\\\": [\\n      \\\"questions\\\",\\n      \\\"bad\\\",\\n      \\\"criteria\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid input: expected record, received undefined\\\"\\n  }\\n]\",\"code\":400},\"user_id\":\"user_3FH7CQ06kjz7xiiXNUAM3jfA16w\"}"
+}

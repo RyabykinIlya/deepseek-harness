@@ -35,7 +35,7 @@ export interface PiAiReplayResponse {
 }
 
 /** The validated halves of one pi-ai replay envelope. */
-interface PiAiReplayState {
+export interface PiAiReplayState {
   response: PiAiReplayResponse
   blocks: PiAiReplayBlock[]
 }
@@ -112,8 +112,17 @@ function invalidReplay(message: string): never {
   throw new LlmError(`invalid pi-ai replay state: ${message}`, 'INVALID_REPLAY_STATE')
 }
 
-/** Validate the durable adapter-private envelope before it reaches pi-ai. */
-function readReplayState(value: unknown): PiAiReplayState {
+/**
+ * Validate the durable adapter-private envelope before it reaches pi-ai.
+ *
+ * Exported so `piAiResponseIdentity` can read the upstream identity out of an
+ * envelope without duplicating the validation this one owns; the parsed state is
+ * still treated as adapter-private everywhere else.
+ * @param value - a candidate replay envelope of unknown shape.
+ * @returns the validated response and block halves.
+ * @throws LlmError `INVALID_REPLAY_STATE` naming the first field that does not check out.
+ */
+export function readReplayState(value: unknown): PiAiReplayState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalidReplay('expected a replay envelope')
   const envelope = value as Record<string, unknown>
   const rawResponse = envelope['response']

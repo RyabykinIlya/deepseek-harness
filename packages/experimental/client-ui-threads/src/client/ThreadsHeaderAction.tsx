@@ -18,6 +18,7 @@ import {
   useEffect, useRef, useState,
   type CSSProperties, type KeyboardEvent, type MouseEvent,
 } from 'react'
+import { useMemo } from 'react'
 import { createPortal } from 'react-dom'
 // Type-only: the `agentPreset` Session projection's key and value types.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -25,7 +26,7 @@ import type { ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/clie
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCopyOutlineRegular, IconDatabaseOutlineRegular,
-  IconPlusOutlineRegular, IconRefreshOutlineRegular, StateDot, Tooltip,
+  IconFolderOpenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -35,14 +36,16 @@ import {
   type RowActions, type ThreadActionsInjected,
 } from './ThreadActions.tsx'
 import { MemoryPanel, type MemoryInjected } from './MemoryPanel.tsx'
+import { LibraryPanel, type LibraryInjected } from './LibraryPanel.tsx'
 import { isProjectSession } from './project.ts'
 import { type ThreadRosterRow } from './roster.ts'
+import { readThreadModel, threadModelLabel } from './thread-model.ts'
 import { useThreadRoster, type ThreadsSnapshot } from './useThreadRoster.ts'
 import { NS } from './locales.ts'
 import css from './ThreadsHeaderAction.module.css'
 
 /** Business actions supplied by the slot registration. */
-export interface ThreadsRosterInjected extends ThreadActionsInjected, MemoryInjected {
+export interface ThreadsRosterInjected extends ThreadActionsInjected, MemoryInjected, LibraryInjected {
   /** Open the Thread as the main workspace conversation. */
   openThread: (threadId: ThreadStatusRow['threadId']) => void
   /** Open the Thread as a chat tab in the right Sidebar. */
@@ -89,8 +92,10 @@ function rosterMenuPosition(trigger: HTMLButtonElement): CSSProperties {
 }
 
 /** One Thread row: its two status axes, its durable work facts, then its actions. */
-function ThreadRow({ row, openThread, openThreadAside, actions, close, t }: {
+function ThreadRow({ row, model, openThread, openThreadAside, actions, close, t }: {
   row: ThreadRosterRow
+  /** This Thread's routing decision, when the Host publishes one. */
+  model: string | undefined
   openThread: ThreadsRosterInjected['openThread']
   openThreadAside: ThreadsRosterInjected['openThreadAside']
   actions: RowActions
@@ -103,6 +108,7 @@ function ThreadRow({ row, openThread, openThreadAside, actions, close, t }: {
   // merged into one word, so a running Thread reads as running and a settled
   // one still says how it ended.
   const meta = [
+    model,
     row.branch,
     row.commitsAhead === undefined || row.commitsAhead === 0
       ? undefined
@@ -199,10 +205,12 @@ function ThreadRow({ row, openThread, openThreadAside, actions, close, t }: {
 
 /** One trigger-plus-roster dropdown over the Threads owned by `rootSessionId`. */
 function ThreadsRoster({
-  rootSessionId, roster, project, startThread, openThread, openThreadAside, refreshProjection, actions, memory, t,
+  rootSessionId, roster, threadModels, project, startThread, openThread, openThreadAside, refreshProjection, actions, memory, library, t,
 }: {
   rootSessionId: SessionId
   roster: ThreadsSnapshot
+  /** Each Thread's `tier model` label, absent for a Host without the routing plugin. */
+  threadModels: Readonly<Record<string, string | undefined>>
   /** Whether this Session is a Project: the roster then exists to start Threads, not only to list them. */
   project: boolean
   /** Stage the prepared start-a-Thread instruction in this Session's composer. */
@@ -211,11 +219,13 @@ function ThreadsRoster({
   actions: RowActions
   /** Project memory requests behind the Memory view. */
   memory: MemoryInjected
+  /** Project Library requests behind the Library view. */
+  library: LibraryInjected
 } & Pick<ThreadsRosterInjected, 'openThread' | 'openThreadAside' | 'refreshProjection'>
 & { t: TranslateNS<typeof NS> }) {
   const [open, setOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState<CSSProperties>()
-  const [view, setView] = useState<'threads' | 'memory'>('threads')
+  const [view, setView] = useState<'threads' | 'memory' | 'library'>('threads')
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -407,8 +417,12 @@ function ThreadsRoster({
           onMouseEnter={cancelHoverClose}
           onMouseLeave={scheduleHoverClose}
         >
-          {view === 'memory'
-            ? <MemoryPanel projectId={rootSessionId} {...memory} onBack={() => { setView('threads') }} t={t} />
+          {view === 'memory' || view === 'library'
+            ? (
+              view === 'memory'
+                ? <MemoryPanel projectId={rootSessionId} {...memory} onBack={() => { setView('threads') }} t={t} />
+                : <LibraryPanel projectId={rootSessionId} {...library} onBack={() => { setView('threads') }} t={t} />
+            )
             : (
               <>
                 <div className={css.menuBody} role="listbox" aria-label={t('list.aria')}>
@@ -429,6 +443,7 @@ function ThreadsRoster({
                     <ThreadRow
                       key={row.threadId}
                       row={row}
+                      model={threadModels[String(row.threadId)]}
                       openThread={openThread}
                       openThreadAside={openThreadAside}
                       actions={actions}
@@ -470,6 +485,19 @@ function ThreadsRoster({
                       <IconDatabaseOutlineRegular size={14} />
                       {t('memory.open')}
                     </button>
+                    <button
+                      type="button"
+                      data-roster-action=""
+                      className={css.start}
+                      onClick={() => {
+                        // Leaving the Thread list must not let a hover-out close the view.
+                        pinnedRef.current = true
+                        setView('library')
+                      }}
+                    >
+                      <IconFolderOpenOutlineRegular size={14} />
+                      {t('library.open')}
+                    </button>
                   </div>
                 )}
               </>
@@ -491,7 +519,7 @@ function ThreadsRoster({
  */
 export function ThreadsHeaderAction({
   sessionId, useSessions, projectAgentPresets, openThread, openThreadAside, refreshProjection,
-  stopThread, archiveThread, listMemory, addMemory, updateMemory, removeMemory, inputActions, t,
+  stopThread, archiveThread, listMemory, addMemory, updateMemory, removeMemory, listLibrary, inputActions, t,
 }: ThreadsHeaderActionProps) {
   const { snapshot, roster } = useThreadRoster(useSessions, sessionId)
   // The composition a Session runs is its identity, so it is read from the list
@@ -500,6 +528,14 @@ export function ThreadsHeaderAction({
   // exist at all in a session that has no Threads yet.
   const agentPreset = useSessions(state => state.byId[sessionId]?.projectionValues?.agentPreset)
   const project = isProjectSession(agentPreset, projectAgentPresets)
+  // Each Thread's tier and model, read from the same projection map the roster
+  // already depends on. Absent for a Host without the routing plugin, which is
+  // why the metadata line is assembled per row rather than once here.
+  const projectionsBySession = useSessions(state => state.projectionsBySession)
+  const threadModels = useMemo(() => Object.fromEntries(roster.entries.map((row) => {
+    const view = readThreadModel(projectionsBySession, String(row.threadId))
+    return [String(row.threadId), view === undefined ? undefined : threadModelLabel(view)]
+  })), [projectionsBySession, roster.entries])
   // Feedback and the confirmation are rendered here, not in the roster menu: the
   // menu closes and the roster hides when its last Thread is archived, and the
   // notice for that archive must outlive both.
@@ -518,6 +554,7 @@ export function ThreadsHeaderAction({
     <>
       <ThreadsRoster
         key={sessionId}
+        threadModels={threadModels}
         rootSessionId={sessionId}
         roster={roster}
         project={project}
@@ -527,6 +564,7 @@ export function ThreadsHeaderAction({
         refreshProjection={refreshProjection}
         actions={actions}
         memory={{ listMemory, addMemory, updateMemory, removeMemory }}
+        library={{ listLibrary }}
         t={t}
       />
       {overlays}

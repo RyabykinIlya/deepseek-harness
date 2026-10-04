@@ -15,9 +15,10 @@ import { NewProjectFooterAction, type NewProjectInjected } from '../src/client/p
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { ThreadHeaderAction } from '../src/client/ThreadChatHeader.tsx'
+import { ProjectTokenUsage } from '../src/client/ProjectTokenUsage.tsx'
 import { Config } from '../src/client/config.ts'
 type IResources = { register: () => () => void }
-import { fake, newProjectInjected, rosterInjectedFor, threadActionsInjected } from './support.client.ts'
+import { fake, newProjectInjected, rosterInjectedFor, threadActionsInjected, tokensInjected } from './support.client.ts'
 import { inject, mountThreads } from '../src/client/mount.ts'
 
 const sid = (id: string) => id as SessionId
@@ -80,6 +81,7 @@ interface BenchRemotes {
   archive?: () => Promise<RemoteResultOf>
   interrupt?: () => Promise<RemoteResultOf>
   memory?: () => Promise<RemoteResultOf>
+  library?: () => Promise<RemoteResultOf>
 }
 
 /** Boot the plugin over fake sessions, scripted Remotes, and slot faces. */
@@ -121,6 +123,17 @@ async function fullBench(
       archive: (...args: unknown[]) => {
         face.actionCalls.push({ method: 'archive', args })
         return (remotes.archive ?? (() => Promise.resolve({ ok: true })))()
+      },
+      library: (...args: unknown[]) => {
+        face.actionCalls.push({ method: 'library', args })
+        return (remotes.library ?? (() => Promise.resolve({
+          ok: true,
+          value: {
+            attachments: { items: [], total: 0, truncated: false },
+            presented: { items: [], total: 0, truncated: false },
+            changes: { items: [], total: 0, truncated: false },
+          },
+        })))()
       },
     },
     projectMemory: {
@@ -359,6 +372,32 @@ describe('Project memory Remote actions', () => {
   })
 })
 
+describe('Project Library Remote actions', () => {
+  it('keys the request by the Session id directly, unlike the branded projectMemory calls', async () => {
+    const { ctx, face } = await fullBench(PROJECT)
+    const actions = actionsOf(ctx)
+    await expect(actions.listLibrary(sid('project'))).resolves.toEqual({
+      ok: true,
+      value: {
+        attachments: { items: [], total: 0, truncated: false },
+        presented: { items: [], total: 0, truncated: false },
+        changes: { items: [], total: 0, truncated: false },
+      },
+    })
+    expect(face.actionCalls).toEqual([
+      { method: 'library', args: [{ projectId: 'project' }] },
+    ])
+  })
+
+  it('folds a refusal into its code and message', async () => {
+    const { ctx } = await fullBench(PROJECT, undefined, {
+      library: () => Promise.resolve({ ok: false, error: { code: 'threads/project-not-found', message: 'Unknown project: project' } }),
+    })
+    await expect(actionsOf(ctx).listLibrary(sid('project')))
+      .resolves.toEqual({ ok: false, code: 'threads/project-not-found', message: 'Unknown project: project' })
+  })
+})
+
 describe('Thread chat tab', () => {
   it('registers the Thread chat type once the resource and Sidebar services exist', async () => {
     const { tabDefinitions } = await fullBench(PROJECT)
@@ -377,6 +416,30 @@ describe('Thread header', () => {
     expect(face.actionCalls).toEqual([
       { method: 'interruptByParent', args: ['thread-1', 'project', 'continuable'] },
     ])
+  })
+})
+
+describe('Project token ledger', () => {
+  /** The ledger entry as the slot registry holds it. */
+  function ledgerEntry(ctx: Context) {
+    return ctx.slots.entries('conversation.session.header.actions')
+      .find(candidate => candidate.component === ProjectTokenUsage)!
+  }
+
+  it('registers beside the roster, in the same header band, in its own locale', async () => {
+    const { ctx } = await fullBench(PROJECT)
+    const entry = ledgerEntry(ctx)
+    expect(entry.options.id).toBe('project-tokens')
+    expect(entry.locale).toBe('threads')
+    // Directly after the roster (-25) and ahead of Team navigation (-20): the
+    // ledger counts exactly the Threads the roster beside it lists.
+    expect(entry.options.order).toBe(-24)
+  })
+
+  it('is handed the same configured Project presets the roster recognizes with', async () => {
+    const { ctx } = await fullBench(PROJECT, ['team', 'project'])
+    const injected = tokensInjected(ledgerEntry(ctx).inject)
+    expect(injected.projectAgentPresets).toEqual(['team', 'project'])
   })
 })
 

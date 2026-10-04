@@ -70,6 +70,7 @@ import { catalogProviderIds } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
+import type { PiAiDispatch } from './dispatch.ts'
 import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
 
@@ -89,6 +90,28 @@ export type {
 } from './config.ts'
 export { recordKeyFor } from './auth.ts'
 export { supportedProtocols } from './provider.ts'
+export {
+  ENDPOINTS_HTTP_ERROR_CODE,
+  ENDPOINTS_UNREACHABLE_CODE,
+  INVALID_MODEL_ID_CODE,
+  MALFORMED_ENDPOINTS_CODE,
+  OPENROUTER_DEFAULT_BASE_URL,
+  OPENROUTER_ENDPOINTS_MAX_BYTES,
+  OPENROUTER_ENDPOINTS_TIMEOUT_MS,
+  fetchOpenRouterEndpoints,
+  parseOpenRouterEndpoints,
+} from './openrouter-endpoints.ts'
+export type {
+  OpenRouterEndpoint,
+  OpenRouterEndpointRequest,
+} from './openrouter-endpoints.ts'
+export { piAiResponseIdentity } from './dispatch.ts'
+export type {
+  OpenRouterRoutingBlock,
+  PiAiDispatch,
+  PiAiDispatchOptions,
+  PiAiResponseIdentity,
+} from './dispatch.ts'
 
 export const name = 'llm-pi-ai'
 export const inject = ['llm']
@@ -226,6 +249,12 @@ export function apply(ctx: Context, config: Config): void {
       )
     },
   })
+  // The per-call escape hatch an adapter of our own uses to pin one request to
+  // one upstream provider. It is the same adapter instance, so a dispatch sees
+  // exactly the snapshot, credential, and watchdog `stream()` would, and it is
+  // withdrawn together with this fiber.
+  const dispatcher: PiAiDispatch = { stream: (options, dispatch = {}) => adapter.dispatch(options, dispatch) }
+  ctx.effect(() => ctx.reflect.provide('piAiDispatch', dispatcher), 'llm-pi-ai: piAiDispatch')
   // Independent of the route set: signing in is what makes a route worth
   // adding, so the flows are offered before any profile names their provider.
   // Scoped to the authorization seam rather than injected outright, because a

@@ -885,3 +885,90 @@ it('leaves unnamed history titles empty for locale-owned row labels', () => {
   const sessions = list(item)
   expect(deriveFlat(sessions, [item.id], noRows, noAttention)[0]?.title).toBe('')
 })
+
+describe('Thread rows nested under their Project', () => {
+  /** The Threads projection's durable row shape, owned by that domain package. */
+  type ThreadRow = { readonly threadId: string; readonly label: string }
+
+  /** The projection blocks a sessions list carries, with the Project's raw `threads` value. */
+  const projecting = (projectId: SessionId, published: unknown): SessionListState['projectionsBySession'] => ({
+    [projectId]: { values: { threads: published }, state: 'idle', error: null },
+  } as SessionListState['projectionsBySession'])
+
+  it('sources rows from the Project projection and resolves each Thread against its own Session', () => {
+    const project = summary('project', 1, '/projects/app')
+    const idle = { ...summary('thread-idle', 20), parentId: project.id, origin: 'subagent' as const }
+    const running = { ...summary('thread-running', 40), parentId: project.id, origin: 'subagent' as const, running: true }
+    const sessions: SessionListState = {
+      ...list(project, idle, running),
+      projectionsBySession: projecting(project.id, [
+        { threadId: 'thread-idle', label: 'Indexer' },
+        { threadId: 'thread-running', label: 'Reviewer' },
+      ] satisfies ThreadRow[]),
+    }
+    const groups = deriveGroups(sessions, [workspace('first', ['project'])], noRows, noAttention, view(['first']))
+
+    // Only the Project is a top-level row: the Thread Sessions stay hidden by
+    // the subagent-origin filter and reach the browser as their owner's children.
+    expect(groups[0]!.sessions.map(node => node.id)).toEqual([project.id])
+    expect(groups[0]!.sessions[0]!.threads).toEqual([
+      { id: idle.id, label: 'Indexer', running: false, updatedAt: 20 },
+      { id: running.id, label: 'Reviewer', running: true, updatedAt: 40 },
+    ])
+    expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive, 'default'), noRows, noAttention)
+      .map(node => [node.id, node.threads.length])).toEqual([[project.id, 2]])
+  })
+
+  it('prefers the unified UI status over the Thread summary and omits an unknown Thread time', () => {
+    const project = summary('project', 1, '/projects/app')
+    const child = { ...summary('thread', 7), parentId: project.id, origin: 'subagent' as const }
+    const orphan = 'thread-unlisted'
+    const sessions: SessionListState = {
+      ...list(project, child),
+      projectionsBySession: projecting(project.id, [
+        { threadId: 'thread', label: 'One' },
+        { threadId: orphan, label: 'Two' },
+      ] satisfies ThreadRow[]),
+    }
+    const statuses = new Map<SessionId, SessionStatus>([[child.id, status(undefined, { running: false })]])
+    const groups = deriveGroups(sessions, [workspace('first', ['project'])], noRows, statuses, view(['first']))
+
+    expect(groups[0]!.sessions[0]!.threads).toEqual([
+      { id: child.id, label: 'One', running: false, updatedAt: 7 },
+      { id: sid(orphan), label: 'Two', running: false },
+    ])
+  })
+
+  it.each([
+    ['a deployment without the Threads domain', undefined],
+    ['a non-array published value', 'nope'],
+  ])('reads no Thread row from %s', (_case, published) => {
+    const project = summary('project', 1, '/projects/app')
+    const sessions: SessionListState = {
+      ...list(project),
+      projectionsBySession: projecting(project.id, published),
+    }
+    const groups = deriveGroups(sessions, [workspace('first', ['project'])], noRows, noAttention, view(['first']))
+    expect(groups[0]!.sessions[0]!.threads).toEqual([])
+    expect(deriveFlat(sessions, [project.id], noRows, noAttention)[0]!.threads).toEqual([])
+  })
+
+  it('drops published rows that do not carry both rendered facts', () => {
+    const project = summary('project', 1, '/projects/app')
+    const sessions: SessionListState = {
+      ...list(project),
+      projectionsBySession: projecting(project.id, [
+        null,
+        'thread',
+        { threadId: 'no-label' },
+        { label: 'no-id' },
+        { threadId: 7, label: 'wrong-type' },
+        { threadId: 'thread', label: 'Kept' },
+      ]),
+    }
+    const groups = deriveGroups(sessions, [workspace('first', ['project'])], noRows, noAttention, view(['first']))
+    expect(groups[0]!.sessions[0]!.threads).toEqual([
+      { id: sid('thread'), label: 'Kept', running: false },
+    ])
+  })
+})

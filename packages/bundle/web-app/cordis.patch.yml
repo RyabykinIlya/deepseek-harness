@@ -414,6 +414,9 @@
     - id: ui-settings-subagent
       name: '@deepseek-ai/dsh-client-ui-settings-subagent'
 
+    - id: ui-settings-threads
+      name: '@deepseek-ai/dsh-client-ui-settings-threads'
+
     - id: ui-settings-web-search
       name: '@deepseek-ai/dsh-client-ui-settings-web-search'
 

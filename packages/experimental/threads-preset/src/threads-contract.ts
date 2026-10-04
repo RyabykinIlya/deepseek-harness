@@ -59,6 +59,16 @@ export type SpawnPolicy = 'ask' | 'auto'
 /** Whether the coordinator needs user approval before merging a Thread. */
 export type MergePolicy = 'ask' | 'auto'
 
+/**
+ * Whether the role statements about model tiers are part of the contract.
+ *
+ * `none` is the shipped posture: a deployment without a model-routing plugin has
+ * no tiers to name, and a coordinator told to pick `tiers/flash` it cannot
+ * choose would make up the call. `tiers` adds the two sentences below, and the
+ * preset row refuses to select it unless the delegation row really offers both.
+ */
+export type TierContract = 'none' | 'tiers'
+
 /** Contract row configuration; every field selects one fixed sentence. */
 export interface Config {
   /** Role whose contract is stated (default `coordinator`). */
@@ -69,6 +79,8 @@ export interface Config {
   readonly spawn?: SpawnPolicy
   /** Approval before merging a Thread branch (default `ask`). */
   readonly mergePolicy?: MergePolicy
+  /** Whether the tier sentences are part of the contract (default `none`). */
+  readonly tierContract?: TierContract
 }
 
 /** Loader schema for the contract row. */
@@ -77,6 +89,7 @@ export const Config: z<Config> = z.object({
   checkIn: z.union(['milestones', 'each-thread', 'quiet'] as const).default('milestones'),
   spawn: z.union(['ask', 'auto'] as const).default('ask'),
   mergePolicy: z.union(['ask', 'auto'] as const).default('ask'),
+  tierContract: z.union(['none', 'tiers'] as const).default('none'),
 })
 
 /** Spawn sentences, one per {@link SpawnPolicy}. */
@@ -92,6 +105,26 @@ export const CHECK_IN_SENTENCES: Record<CheckInPolicy, string> = {
   quiet: 'Do not narrate progress between Threads; report once when every Thread has finished, or earlier only when you need a decision from the user.',
 }
 
+/**
+ * The tier sentences, one per {@link TierContract}; `none` contributes nothing.
+ *
+ * The coordinator sentence goes in right after the spawn rule, because that is
+ * the point where it is choosing a Thread; the worker sentence goes last, because
+ * it only matters once a Thread has run into something it cannot settle.
+ */
+export const TIER_SENTENCES: Record<TierContract, string> = {
+  none: '',
+  tiers: 'When you start a Thread with `subagent`, choose its model: `provider: "tiers", model: "flash"` for implementation against a written spec with acceptance criteria, tests, and mechanical edits; `provider: "tiers", model: "pro"` for architecture, ADRs, ambiguous requirements, and debugging with an unknown cause. Do not start a pro Thread for work a spec already settles. If a flash Thread reports a design question it cannot settle, or keeps failing its acceptance criteria, switch it with `thread_tier` instead of starting it over.',
+}
+
+/**
+ * The worker's closing sentence, which exists only under {@link TierContract}
+ * `tiers`. A worker that settles a design question on its own produces a branch
+ * the coordinator cannot review, because the reason behind it is not in the diff.
+ */
+export const WORKER_TIER_PARAGRAPH =
+  'If the task needs a design decision the spec does not settle, report it to the coordinator with `send_message` and stop instead of deciding it.'
+
 /** Merge sentences, one per {@link MergePolicy}. */
 export const MERGE_SENTENCES: Record<MergePolicy, string> = {
   ask: 'Ask the user before you merge each Thread.',
@@ -104,12 +137,14 @@ export const MERGE_SENTENCES: Record<MergePolicy, string> = {
  * @returns the runtime-context text for a Project session.
  */
 export function coordinatorContract(config: Config = {}): string {
+  const tier = TIER_SENTENCES[config.tierContract ?? 'none']
   return '## Threads\n'
     + '\n'
     + 'You coordinate this Project. A Thread is a background agent that works in its own git worktree on its own branch, so its edits do not appear in the Project checkout until you merge its branch.\n'
     + '\n'
     + 'Restate the goal in your own words, propose a split into independent Threads (tasks that do not need each other\'s results and, where possible, touch different files), and start each Thread with the `subagent` tool. '
     + `${SPAWN_SENTENCES[config.spawn ?? 'ask']}\n`
+    + (tier === '' ? '' : `\n${tier}\n`)
     + '\n'
     + 'A Thread starts with no history of this conversation. Write each task to be self-contained: the goal, the relevant paths, the constraints, and how to verify the result.\n'
     + '\n'
@@ -130,9 +165,11 @@ export function coordinatorContract(config: Config = {}): string {
 
 /**
  * Build the worker contract text.
+ * @param config - the row's sentence variants; only the tier contract matters here.
  * @returns the runtime-context text for a Thread session.
  */
-export function workerContract(): string {
+export function workerContract(config: Config = {}): string {
+  const tier = config.tierContract === 'tiers' ? `\n\n${WORKER_TIER_PARAGRAPH}` : ''
   return '## Thread\n'
     + '\n'
     + 'You are a Thread of a Project: a background agent working on one task given by the coordinator that started you. Your checkout and your git branch are your own. Your edits reach the Project checkout only when the coordinator merges your branch.\n'
@@ -142,6 +179,7 @@ export function workerContract(): string {
     + 'Read the Project memory with memory_read before you start, and record a decision other Threads need with memory_write; do not store file contents or logs there.\n'
     + '\n'
     + 'When you are done, send your parent a self-contained summary with `send_message`: what changed, how you verified it, the remaining risks, and your branch name from `git branch --show-current`. Your parent cannot read your transcript or your files; the summary and your branch are all it gets.'
+    + tier
 }
 
 /** The coordinator contract with every default variant. */
@@ -161,7 +199,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     () => ctx.systemPrompt.context({
       name: worker ? THREAD_WORKER_CONTEXT_NAME : THREADS_CONTEXT_NAME,
       order: THREADS_CONTEXT_ORDER,
-      text: worker ? workerContract() : coordinatorContract(config),
+      text: worker ? workerContract(config) : coordinatorContract(config),
     }),
     'threads-contract.context()',
   )

@@ -1,0 +1,73 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/web/web-search-duckduckgo/README.md
+/:
+  en: 881e79aafc74146d
+  zh: 6703753843484f5d
+/deepseek-ai-dsh-web-search-duckduckgo:
+  en: 3d2fe83bc9c479f1
+  zh: b1785928e5e38b3e
+/deepseek-ai-dsh-web-search-duckduckgo/summary:
+  en: dc2960a9c35675c9
+  zh: b2f653013cebd8af
+/deepseek-ai-dsh-web-search-duckduckgo/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-web-search-duckduckgo/use-this-package:
+  en: 0c9f593af5753644
+  zh: 1333e7c55018ebcb
+/deepseek-ai-dsh-web-search-duckduckgo/use-this-package/when-to-choose-it:
+  en: 6b4e64239adaa343
+  zh: 3de286d7ce6fea6d
+/deepseek-ai-dsh-web-search-duckduckgo/use-this-package/minimal-configuration:
+  en: 2df4689f702780d4
+  zh: 6d9cb5e8d7b3e045
+/deepseek-ai-dsh-web-search-duckduckgo/use-this-package/what-a-search-returns:
+  en: 26eb0cb20089633f
+  zh: 2a531f8c106813bf
+/deepseek-ai-dsh-web-search-duckduckgo/use-this-package/failures-and-recovery:
+  en: 5d9d5f5f75b77b6a
+  zh: 71626ade03b39e7d
+/deepseek-ai-dsh-web-search-duckduckgo/understand-the-implementation:
+  en: 9842c69ad3636bb3
+  zh: 3cdc3f816cbdd0cb
+/deepseek-ai-dsh-web-search-duckduckgo/understand-the-implementation/design-philosophy:
+  en: 67f69cd878c9e15d
+  zh: 4f0c4f242de00bba
+/deepseek-ai-dsh-web-search-duckduckgo/understand-the-implementation/source-map:
+  en: b9f5f352f1d14b35
+  zh: 5f49618e686270d5
+/deepseek-ai-dsh-web-search-duckduckgo/understand-the-implementation/request-and-mapping-flow:
+  en: 6b045ebae0e82c55
+  zh: 846c5b8736c6d7b5
+/deepseek-ai-dsh-web-search-duckduckgo/further-exploration:
+  en: 74eed286dd392235
+  zh: 06b6cb197450c6c3
+/deepseek-ai-dsh-web-search-duckduckgo/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-web-search-duckduckgo/model-experience/conversation-tool-result-indirectly:
+  en: 666f5753c99783ab
+  zh: c3e53adc67ec34dc
+/deepseek-ai-dsh-web-search-duckduckgo/model-experience/conversation-tool-result-indirectly/what-the-model-sees:
+  en: de8ea2b6408c9537
+  zh: dd6ec071fb66fd0f
+/deepseek-ai-dsh-web-search-duckduckgo/model-experience/conversation-tool-result-indirectly/token-effect:
+  en: 7d10f485181ccbd7
+  zh: dac647a07747b062
+/deepseek-ai-dsh-web-search-duckduckgo/model-experience/conversation-tool-result-indirectly/kv-cache-effect:
+  en: 4628bfdbb1b09aef
+  zh: fa78157d028de1af
+/deepseek-ai-dsh-web-search-duckduckgo/known-limitations-and-deferred-work:
+  en: 8c81148822bea7e8
+  zh: 796d7182f6779eea
+/deepseek-ai-dsh-web-search-duckduckgo/known-limitations-and-deferred-work/dev-note:
+  en: 7f775cc79dbce94b
+  zh: 12b8f68f9e7c48ca
+/deepseek-ai-dsh-web-search-duckduckgo/known-limitations-and-deferred-work/dev-note/future-a-fallback-across-keyless-endpoints:
+  en: a091071178100e77
+  zh: 1708145c10100ecf
+/deepseek-ai-dsh-web-search-duckduckgo/known-limitations-and-deferred-work/dev-note/future-telling-a-throttled-search-from-an-empty-one:
+  en: 95c107b561ba0672
+  zh: bf900e5efbf732c0

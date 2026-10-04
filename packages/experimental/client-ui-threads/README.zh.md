@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在一个头部控件里展示项目会话的后台线程，并把其中任意一个作为对话打开——可以打开到主工作区，也可以作为侧边栏页签。每一行并列显示读自会话存储的活跃度与上一轮已结束回合的 `stopReason`，并自带「停止」「归档」与「复制分支名」。归档在移除带未提交修改的工作区之前会先询问。在项目里，该集合是一个控件而不只是一份报表：它在第一个线程存在之前就已经在列，并能打开项目的共享记忆供编辑。边栏底部的「新建项目」操作会开启一个这样的会话。
+在一个头部控件里展示项目会话的后台线程，并把其中任意一个作为对话打开——可以打开到主工作区，也可以作为侧边栏页签。每一行并列显示读自会话存储的活跃度与上一轮已结束回合的 `stopReason`，并自带「停止」「归档」与「复制分支名」。归档在移除带未提交修改的工作区之前会先询问。在项目里，该集合是一个控件而不只是一份报表：它在第一个线程存在之前就已经在列，并能打开项目的共享记忆供编辑，旁边则是项目的 token 消耗。边栏底部的「新建项目」操作会开启一个这样的会话。
 
 ## 目录
 
@@ -123,6 +123,29 @@ kind: "package-reference"
 
 在项目里，集合底部在「新建线程」旁多了一行「记忆」。它在同一个弹层里取代线程列表，显示该项目的条目，按时间从新到旧，每条带作者（协调者、线程或你）和时间。底部的表单用于添加条目；每条都可以编辑和删除。每次改动之后都会重新读取。文本为空或过长等拒绝会连同宿主给出的消息就地显示，列表保持原样。没有条目时视图会如实说明。离开线程列表会固定弹层，悬停移出不会关闭该视图；Escape 关闭它，下次打开从线程列表开始。
 
+<a id="library"></a>
+### 资料库
+
+集合底部「记忆」之后跟着一行「资料库」。它用三个只读区块取代线程列表，数据来自 `ctx.remote.threads.library`：项目聊天中发送的附件、项目及其线程用 `present` 声明的文件，以及其最新若干线程的改动文件，均按时间从新到旧排列。每个区块各自说明自己的空状态；当某个区块达到宿主侧的数量上限时会显示还有多少条未展示。读取失败会在重试按钮旁显示宿主的消息，与线程列表自身读取失败时的样式一致。这里没有添加、编辑或删除——每个值都是读取时从会话日志与存活工作区派生出来的。
+
+<a id="project-token-spend"></a>
+### token 消耗
+
+项目头部在集合旁边显示该项目聚合后的 token 消耗：项目会话及其拥有的每个线程的 `tokenUsage` 投影（`llm/token-meter`）之和。该数字是四个互不相交的桶相加——未命中缓存的输入、缓存读、缓存写与输出——与单会话用量气泡所用的口径完全一致，因此两者对「token 总量是什么」不会有分歧。悬停提示会分别列出这四个桶，只要有投影值落地，读数就会更新。
+
+归属规则就是集合的规则，而不是另立一套：项目会话加上合并后的集合已经列出的那些线程（`subagentCatalog` 中的可继续子会话覆盖 `threads` 投影行）。正是这个选择让这份账本读起来成立：
+
+| 线程状态 | 是否计入 | 原因 |
+|---|---|---|
+| 运行中 | 计入目前已上报的部分 | `tokenUsage` 由日志折叠而来，因此该数字随其回合结算落地而增长 |
+| 已结束或已退出 | 计入其最终持久总量 | 退出是运行时状态，用量不是 |
+| 已归档 | 计入其最终持久总量 | 归档记录 `thread/removed`，去掉的是持久*行*与工作区，但项目那份只增不减的目录仍把该子会话记为可继续线程，且线程会话被保留——已经花掉的 token 不会因为工作被收起来就不再计数 |
+| 嵌套在某个线程下的线程 | 不计入 | 这是项目自身加上其直接线程的花费，不是递归汇总 |
+
+这里不做任何估算。投影块尚未下发的线程不计入，该数字会随投影块落地而上升；宿主无法折叠出来的值会被跳过，而不是被部分求和。在还没有任何记录之前，头部会说明尚未记录，而不是显示 `0`：用量只有在提供者上报之后才存在，因此显示 0 等于断言项目没有花钱，而事实只是还没有读到任何数字。
+
+在项目之外该条目什么都不渲染，与集合的空项目情形一致：没有线程的会话没有项目账本。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -142,9 +165,13 @@ kind: "package-reference"
 | [`src/client/ThreadsHeaderAction.tsx`](src/client/ThreadsHeaderAction.tsx) | 头部控件、线程集合、行操作、反馈界面，以及照搬的下拉交互 |
 | [`src/client/ThreadActions.tsx`](src/client/ThreadActions.tsx) | 「停止」「归档」「复制分支名」及其提示条与未提交归档确认，由集合和线程头部共用 |
 | [`src/client/ThreadChatHeader.tsx`](src/client/ThreadChatHeader.tsx) | 侧边栏对话上方和会话头部区域里的线程头部 |
+| [`src/client/ProjectTokenUsage.tsx`](src/client/ProjectTokenUsage.tsx) | 会话头部区域里的项目聚合 token 消耗 |
 | [`src/client/MemoryPanel.tsx`](src/client/MemoryPanel.tsx) | 记忆视图：列表、添加、编辑、删除、就地显示拒绝 |
 | [`src/client/memory-types.ts`](src/client/memory-types.ts) | 从 `projectMemory` Remote 读取的记忆条目与标识类型 |
+| [`src/client/LibraryPanel.tsx`](src/client/LibraryPanel.tsx) | 只读的资料库视图：附件、展示的文件，以及各线程的改动 |
 | [`src/client/useThreadRoster.ts`](src/client/useThreadRoster.ts) | 一个项目合并后的线程行与加载状态，供两处界面使用 |
+| [`src/client/token-usage.ts`](src/client/token-usage.ts) | 项目及其线程上的 `tokenUsage` 求和、空读数，以及紧凑数字 |
+| [`src/client/useProjectTokenUsage.ts`](src/client/useProjectTokenUsage.ts) | 从会话列表的投影块实时读取上述求和 |
 | [`src/client/mount.ts`](src/client/mount.ts) | 挂载 `threads` 与 `projectMemory` Remote 命名空间，然后注册全部贡献 |
 | [`src/client/roster.ts`](src/client/roster.ts) | 目录行与 `threads` 行合并后再附加活跃度 |
 | [`src/client/actions.ts`](src/client/actions.ts) | Remote 调用与行之间共享的操作结果类型 |
@@ -201,7 +228,8 @@ kind: "package-reference"
 - **除创建顺序外无其他排序。** 行沿用投影的持久创建顺序，没有按最近活跃度或活动量排序。
 - **一个部署只有一个项目预设。** `projectAgentPresets` 可以识别多个预设，但「新建项目」操作始终组合第一个。
 - **新建项目需要已有会话来选定工作区。** 完全没有工作区时，该按钮会如实上报，而不是弹出目录选择；创建工作是工作区浏览器的职责。
-- **仅有记忆。** 资料库视图尚未纳入本包；记忆视图以用户身份编辑条目，宿主会把作者标记为 `user`。
+- **资料库只读。** 它没有添加、编辑或删除；记忆视图是这里唯一可修改的界面，宿主会把它的条目作者标记为 `user`。
+- **token 账本只统计已下发的读数。** 它是若干投影值之和，因此某个线程的投影块尚未到达客户端时，在到达之前它都不在数字里。这里不会按需读取线程日志来补齐这个缺口。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -212,6 +240,6 @@ kind: "package-reference"
 pnpm vitest run packages/client/ui-threads
 ```
 
-`tests/threads-header-action.client.spec.tsx` 覆盖由投影驱动的行、每种 `stopReason` 各自的图标与文案、读自会话存储的活跃度、键盘遍历与关闭规则、打开线程、行操作（停止、含脏工作区确认与其强制重试的归档、复制分支名，以及每种失败对应的提示条），以及项目身份带来的全部行为——始终可见、空列表文案，以及「新建线程」一行准备出的指令；`tests/roster.client.spec.ts` 覆盖目录投影、合并与活跃度附加；`tests/project-identity.client.spec.ts` 覆盖身份规则、其配置与工作区选择；`tests/new-project-footer-action.client.spec.tsx` 覆盖该按钮的工作区解析、激活、失败文案与防重复进入；`tests/thread-chat.client.spec.tsx` 覆盖地址往返、资源提供者的生命周期与内嵌对话；`tests/browser-plugin.client.spec.ts` 覆盖插槽注册、其绑定的导航行为，以及各操作所发出 Remote 调用的确切形态。 `tests/thread-chat-header.client.spec.tsx` 覆盖线程头部及其共用的操作；`tests/memory-panel.client.spec.tsx` 覆盖记忆视图；`tests/index.client.spec.ts` 覆盖包入口。
+`tests/threads-header-action.client.spec.tsx` 覆盖由投影驱动的行、每种 `stopReason` 各自的图标与文案、读自会话存储的活跃度、键盘遍历与关闭规则、打开线程、行操作（停止、含脏工作区确认与其强制重试的归档、复制分支名，以及每种失败对应的提示条），以及项目身份带来的全部行为——始终可见、空列表文案，以及「新建线程」一行准备出的指令；`tests/roster.client.spec.ts` 覆盖目录投影、合并与活跃度附加；`tests/project-identity.client.spec.ts` 覆盖身份规则、其配置与工作区选择；`tests/new-project-footer-action.client.spec.tsx` 覆盖该按钮的工作区解析、激活、失败文案与防重复进入；`tests/thread-chat.client.spec.tsx` 覆盖地址往返、资源提供者的生命周期与内嵌对话；`tests/browser-plugin.client.spec.ts` 覆盖插槽注册、其绑定的导航行为，以及各操作所发出 Remote 调用的确切形态。 `tests/thread-chat-header.client.spec.tsx` 覆盖线程头部及其共用的操作；`tests/memory-panel.client.spec.tsx` 覆盖记忆视图；`tests/library-panel.client.spec.tsx` 覆盖资料库视图、各区块及其空状态与截断提示；`tests/token-usage.client.spec.ts` 覆盖 `tokenUsage` 的求和、它拒绝接受的读数、空读数以及紧凑数字；`tests/project-token-usage.client.spec.tsx` 覆盖头部条目——仅在项目内可见、已归档线程的归属、占位文案、四个桶的明细、两种字典，以及已挂载组件所跟随的一次存储更新；`tests/index.client.spec.ts` 覆盖包入口。
 
 **运行时不变式：** 不发布伴生入口。本包展示的每个值都投影自 Host 持有的状态——`threads` 行、读自 Session 存储的存活性标志，以及 `projectMemory` Remote 背后的条目——因此它在运行期持有的只是一组随插件卸载而解绑的 slot 注册与 Remote 命名空间注册。

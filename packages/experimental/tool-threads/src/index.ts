@@ -1,9 +1,12 @@
 /**
- * The Thread tools: `thread_status` lists a Project's background Threads and
- * `thread_diff` shows what one Thread committed.
+ * The Thread tools: `thread_status` lists a Project's background Threads,
+ * `thread_diff` shows what one Thread committed, and `library_list` lists the
+ * Project's Library.
  *
- * Both read only the calling Project Session's own `threads` projection, report
- * liveness from the runtime, and bound the complete rendered result in bytes.
+ * `thread_status` and `thread_diff` read only the calling Project Session's own
+ * `threads` projection, report liveness from the runtime, and bound the complete
+ * rendered result in bytes. `library_list` reads the calling Project Session's
+ * own Library read model instead and bounds its result the same way.
  * @module @deepseek-ai/dsh-experimental-threads-tool
  */
 
@@ -16,12 +19,18 @@ import type {} from '@deepseek-ai/dsh-worktree-manager'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { fitPatch, fitSummary, renderDiff } from './diff.ts'
 import type { ThreadDiffResult } from './diff.ts'
+import { fitLibrary, LIBRARY_SECTIONS, renderLibrary, toLibraryListResult } from './library.ts'
+import type { LibraryListResult, LibrarySection } from './library.ts'
 import { collectOverview, fitOverview, renderOverview } from './overview.ts'
 import type { ThreadOverviewResult } from './overview.ts'
+import { registerThreadTier } from './tier.ts'
 import { fitStatus, renderStatus, THREAD_STATES, toEntry } from './status.ts'
 import type { ThreadState, ThreadStatusEntry, ThreadStatusResult } from './status.ts'
 
-export type { ThreadDiffResult, ThreadOverviewResult, ThreadState, ThreadStatusEntry, ThreadStatusResult }
+export type {
+  LibraryListResult, LibrarySection, ThreadDiffResult, ThreadOverviewResult,
+  ThreadState, ThreadStatusEntry, ThreadStatusResult,
+}
 
 /** Cordis plugin name. */
 export const name = 'tool-threads'
@@ -44,6 +53,7 @@ const LIMITS = {
   patchBytes: { min: 256, max: 65536 },
   overviewThreads: { max: 100 },
   pairChecks: { max: 200 },
+  libraryLimit: { max: 100 },
 } as const
 
 /** Configuration: what one call may spend. */
@@ -64,6 +74,10 @@ export interface Config {
   readonly maxOverviewThreads?: number
   /** Overlapping Thread pairs the overview runs a merge check on (default 50, ceiling 200). */
   readonly maxPairChecks?: number
+  /** `library_list` entries per shown section when the model omits `limit` (default 20). */
+  readonly libraryDefaultLimit?: number
+  /** Largest per-section `limit` the model may request from `library_list` (default 100, ceiling 100). */
+  readonly libraryMaxLimit?: number
 }
 
 /** Loader schema for the Threads tools plugin. */
@@ -76,6 +90,8 @@ export const Config: z<Config> = z.object({
   maxPatchBytes: z.natural().min(LIMITS.patchBytes.min).max(LIMITS.patchBytes.max).default(16384),
   maxOverviewThreads: z.natural().max(LIMITS.overviewThreads.max).default(20),
   maxPairChecks: z.natural().max(LIMITS.pairChecks.max).default(50),
+  libraryDefaultLimit: z.natural().max(LIMITS.libraryLimit.max).default(20),
+  libraryMaxLimit: z.natural().max(LIMITS.libraryLimit.max).default(LIMITS.libraryLimit.max),
 })
 
 /** Configuration with defaults applied and ceilings enforced. */
@@ -88,6 +104,8 @@ interface Bounds {
   readonly maxPatchBytes: number
   readonly maxOverviewThreads: number
   readonly maxPairChecks: number
+  readonly libraryDefaultLimit: number
+  readonly libraryMaxLimit: number
 }
 
 /** Clamp a possibly-missing configured value into its range. */
@@ -110,6 +128,8 @@ function resolveBounds(config: Config): Bounds {
     maxPatchBytes: clamp(config.maxPatchBytes, 16384, LIMITS.patchBytes.min, LIMITS.patchBytes.max),
     maxOverviewThreads: clamp(config.maxOverviewThreads, 20, 1, LIMITS.overviewThreads.max),
     maxPairChecks: clamp(config.maxPairChecks, 50, 1, LIMITS.pairChecks.max),
+    libraryDefaultLimit: clamp(config.libraryDefaultLimit, 20, 1, LIMITS.libraryLimit.max),
+    libraryMaxLimit: clamp(config.libraryMaxLimit, LIMITS.libraryLimit.max, 1, LIMITS.libraryLimit.max),
   }
 }
 
@@ -137,6 +157,24 @@ function readCallerThreads(
       + '(it requires @deepseek-ai/dsh-session-projection)')
   }
   return { rows: threads.viewOf(session), service: threads }
+}
+
+/**
+ * Resolve the Threads service for `library_list`.
+ *
+ * Unlike {@link readCallerThreads}, the Library read model derives directly
+ * from Session logs and worktrees rather than the `threads` projection, so its
+ * availability is never checked here.
+ * @param ctx - context whose `threads` service is read.
+ * @param tool - tool name for the message.
+ * @returns the Threads service.
+ */
+function requireThreadsForLibrary(ctx: Context, tool: string): Context['threads'] {
+  const threads = ctx.get('threads')
+  if (threads === undefined) {
+    throw new Error(`${tool} cannot read the Library: @deepseek-ai/dsh-experimental-threads is not loaded`)
+  }
+  return threads
 }
 
 /** Reject a path the worktree could resolve outside the repository. */
@@ -422,4 +460,140 @@ export function apply(ctx: Context, config: Config = {}): void {
       return result
     },
   }))
+
+  ctx.tools.register(defineTool({
+    name: 'library_list',
+    description:
+      'List what is already in this Project\'s Library: attachments sent in the chat, files the Project or its '
+      + 'Threads presented, and the files each Thread changed, newest first within each section. This only reports '
+      + 'what the Library already holds; it does not fetch new files or read a path you supply. For a Thread\'s '
+      + 'current running state use thread_status, and for its committed diffs or a merge overview use thread_diff. '
+      + 'Filter to one section with section, or omit it for all three. Output is bounded and says how many entries '
+      + 'were omitted per section; narrow with section or raise limit to see more.',
+    parameters: {
+      section: {
+        type: 'string',
+        enum: [...LIBRARY_SECTIONS],
+        description: 'Optional: list only this section of the Library. Omit to list all three.',
+      },
+      limit: {
+        type: 'integer',
+        description: `Entries to list per shown section, 1 through ${bounds.libraryMaxLimit}. `
+          + `Defaults to ${Math.min(bounds.libraryDefaultLimit, bounds.libraryMaxLimit)}.`,
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          attachments: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              items: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    kind: { type: 'string', required: true, enum: ['image', 'file'] },
+                    attachmentId: { type: 'string', required: true },
+                    name: { type: 'string' },
+                    mediaType: { type: 'string' },
+                    bytes: { type: 'integer', required: true },
+                    time: { type: 'integer', required: true },
+                  },
+                },
+              },
+              total: { type: 'integer', required: true },
+              truncated: { type: 'boolean', required: true },
+              omitted: { type: 'integer', required: true },
+            },
+          },
+          presented: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              items: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    path: { type: 'string', required: true },
+                    description: { type: 'string' },
+                    sessionId: { type: 'string', required: true },
+                    threadId: { type: 'string' },
+                    time: { type: 'integer', required: true },
+                  },
+                },
+              },
+              total: { type: 'integer', required: true },
+              truncated: { type: 'boolean', required: true },
+              omitted: { type: 'integer', required: true },
+            },
+          },
+          changes: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              items: {
+                type: 'array',
+                required: true,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    threadId: { type: 'string', required: true },
+                    label: { type: 'string', required: true },
+                    source: { type: 'string', required: true, enum: ['live', 'archived'] },
+                    branch: { type: 'string' },
+                    worktree: { type: 'string' },
+                    files: {
+                      type: 'array',
+                      required: true,
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          path: { type: 'string', required: true },
+                          added: { type: 'integer' },
+                          removed: { type: 'integer' },
+                          binary: { type: 'boolean' },
+                        },
+                      },
+                    },
+                    filesTotal: { type: 'integer', required: true },
+                    commitsTotal: { type: 'integer' },
+                    uncommitted: { type: 'integer' },
+                  },
+                },
+              },
+              total: { type: 'integer', required: true },
+              truncated: { type: 'boolean', required: true },
+              omitted: { type: 'integer', required: true },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: renderLibrary(value, bounds.maxResultBytes) }],
+    },
+    async execute(args, exec) {
+      const caller = exec.agent
+      if (!caller) throw new Error('library_list requires a calling agent (exec.agent was undefined)')
+      const requested = args.limit ?? bounds.libraryDefaultLimit
+      if (!Number.isSafeInteger(requested) || requested < 1 || requested > LIMITS.libraryLimit.max) {
+        throw new Error(`limit must be an integer from 1 through ${LIMITS.libraryLimit.max}`)
+      }
+      const threads = requireThreadsForLibrary(ctx, 'library_list')
+      const library = await threads.library({ projectId: caller.session.id })
+      const full = toLibraryListResult(library, args.section, Math.min(requested, bounds.libraryMaxLimit))
+      return fitLibrary(full, bounds.maxResultBytes)
+    },
+  }))
+
+  registerThreadTier(ctx)
 }

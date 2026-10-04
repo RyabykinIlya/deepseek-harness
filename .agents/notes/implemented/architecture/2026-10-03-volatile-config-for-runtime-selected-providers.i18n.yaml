@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-03-volatile-config-for-runtime-selected-providers.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-03-volatile-config-for-runtime-selected-providers.md
+/agent-note-volatile-config-for-a-runtime-selected-plugin-value:
+  en: aafd25c68037d78b
+  zh: 9dfc6e134074be2e
+/agent-note-volatile-config-for-a-runtime-selected-plugin-value/problem:
+  en: b00d7e46a1ad40ae
+  zh: 28e9f77b05ba9dd7
+/agent-note-volatile-config-for-a-runtime-selected-plugin-value/decision:
+  en: 1c946c2dcdcdabc6
+  zh: c6e612f979ae7e2b
+/agent-note-volatile-config-for-a-runtime-selected-plugin-value/alternatives-considered:
+  en: 158835f4c03f4b01
+  zh: d31702957c9c048a
+/agent-note-volatile-config-for-a-runtime-selected-plugin-value/consequences:
+  en: bc36d052eefa89bd
+  zh: 1e3ad43a47f191db

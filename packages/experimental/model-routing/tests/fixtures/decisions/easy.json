@@ -1,0 +1,52 @@
+{
+  "status": 200,
+  "request": {
+    "state": {
+      "latest_user_message": "Rename the variable `cnt` to `count` in src/util.ts"
+    }
+  },
+  "response": {
+    "model": "typesafe/jev-1.13-20260917",
+    "answers": {
+      "tier": {
+        "type": "choice",
+        "choice": "flash",
+        "probabilities": {
+          "pro": 0,
+          "flash": 1
+        },
+        "confidence": 1
+      },
+      "difficulty": {
+        "type": "score",
+        "score": 0.09,
+        "legend": {
+          "0": "Trivial",
+          "1": "Routine",
+          "2": "Moderate",
+          "3": "Hard",
+          "4": "Very hard"
+        },
+        "probabilities": {
+          "0": 0.91,
+          "1": 0.09,
+          "2": 0,
+          "3": 0,
+          "4": 0
+        },
+        "confidence": 0.92
+      },
+      "precision": {
+        "type": "noul",
+        "noul": 0.07
+      }
+    },
+    "usage": {
+      "input_tokens": 523,
+      "output_tokens": 61,
+      "cost": 2.1966e-05
+    },
+    "id": "gen-dec-1791059789-wvH20C3owQLo7wrpP8z4",
+    "provider": "TypeSafe"
+  }
+}

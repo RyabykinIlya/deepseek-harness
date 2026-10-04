@@ -4,11 +4,15 @@
 
 pre-commit:
   jobs:
-    - name: translation pairing (staged records)
-      glob: '*.i18n.yaml'
-      exclude:
-        - '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
+    # Translation pairing is disabled here at the owner's request (2026-10-03): it
+    # fired on every commit that touched an `.i18n.yaml`, which is every doc
+    # update in this repo, and the full corpus check still runs in CI and is
+    # still run by hand before landing. Restore by uncommenting.
+    # - name: translation pairing (staged records)
+    #   glob: '*.i18n.yaml'
+    #   exclude:
+    #     - '.agents/notes/archived/**'
+    #   run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
 
     - name: archived agent notes
       glob: '.agents/notes/archived/**'
@@ -39,11 +43,12 @@ pre-commit:
 
 pre-merge-commit:
   jobs:
-    - name: translation pairing (staged records)
-      glob: '*.i18n.yaml'
-      exclude:
-        - '.agents/notes/archived/**'
-      run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
+    # Disabled alongside its pre-commit twin; see the note there.
+    # - name: translation pairing (staged records)
+    #   glob: '*.i18n.yaml'
+    #   exclude:
+    #     - '.agents/notes/archived/**'
+    #   run: node_modules/.bin/tsx scripts/verify-translation-pairing.ts --cached {staged_files}
 
     - name: archived agent notes
       glob: '.agents/notes/archived/**'

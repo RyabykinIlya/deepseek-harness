@@ -71,6 +71,8 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 | `mergePolicy` | `ask` | 协调者契约：`ask` 或 `auto` |
 | `tools` | `{ defaultLimit: 20, maxLimit: 100 }` | `thread_status` / `thread_diff` 行的配置；由该插件校验每个键 |
 | `threadProvider`、`threadModel`、`threadReasoningEffort`、`threadMaxTokens` | 未设置 | 每个 Thread 的模型选项；四项必须同时设置 |
+| `threadModels` | `[]` | 协调者为每个 Thread 可选的精确路由；非空列表正是 `subagent` 获得 `provider`/`model` 参数的原因 |
+| `tierContract` | `none` | 把层级相关句子加入两份契约；`tiers` 要求 `threadModels` 同时提供 `flash` 与 `pro` |
 
 `basePreset` 的存在是因为 Web 的 agent 平面在 host 组合中禁用了自己的工具行，改为按预设挂载。若部署的工具是全局行，则省略它，此时每个 Threads 预设只贡献自己的配置行。
 

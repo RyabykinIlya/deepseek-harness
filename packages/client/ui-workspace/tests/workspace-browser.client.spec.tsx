@@ -38,6 +38,14 @@ const t: WorkspaceBrowserProps['t'] = makeTranslate(zh, commonZh)
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
+/**
+ * One row of a Project's `threads` projection. The Thread id brand belongs to the
+ * Threads domain, which this package deliberately carries no dependency on, so the
+ * fixture applies it through the projected row type — the same idiom as {@link wid}.
+ */
+type ThreadsProjectionRow = NonNullable<SessionListState['projectionsBySession'][SessionId]['values']['threads']>[number]
+const threadRow = (threadId: string, label: string): ThreadsProjectionRow =>
+  ({ threadId: threadId as ThreadsProjectionRow['threadId'], label })
 const summary = (id: string, updatedAt: number, overrides: Partial<SessionSummary> = {}): SessionSummary => ({
   id: sid(id), title: overrides.displayTitle ?? id, displayTitle: id, running: false, blank: false, updatedAt, ...overrides,
   retainedBy: overrides.retainedBy ?? {},
@@ -857,6 +865,97 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.queryByText('child')).toBeNull()
     expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+  })
+
+  it('nests a Project Thread under its own row and opens the Thread session', () => {
+    const project = summary('project', 20)
+    const idle = summary('thread-idle', 10, { origin: 'subagent', parentId: project.id })
+    const running = summary('thread-running', 30, { origin: 'subagent', parentId: project.id, running: true })
+    const ordinaryChild = summary('plain-child', 5, { origin: 'subagent', parentId: project.id })
+    const open = vi.fn()
+    mount({
+      open,
+      useSessions: hook(sessionState([project, idle, running, ordinaryChild], {
+        projectionsBySession: {
+          [project.id]: {
+            state: 'idle', error: null,
+            values: { threads: [
+              threadRow(idle.id, 'Indexer'),
+              threadRow(running.id, 'Reviewer'),
+            ] },
+          },
+        },
+      })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+
+    // The row's own HoverCard wrapper is its sibling in the group section.
+    const projectRow = screen.getByText('project').closest('[role="treeitem"]') as HTMLElement
+    const nest = projectRow.parentElement?.nextElementSibling as HTMLElement
+    expect(nest.getAttribute('role')).toBe('group')
+    const rows = within(nest).getAllByRole('treeitem')
+    expect(rows.map(row => row.getAttribute('data-row-key'))).toEqual(['thread:thread-idle', 'thread:thread-running'])
+    // The ordinary subagent child has no Thread row, and neither Thread Session
+    // claims a slot of its own in the group.
+    expect(screen.getAllByRole('treeitem').map(row => row.getAttribute('data-row-key')))
+      .toEqual(['workspace:alpha', 'session:project', 'thread:thread-idle', 'thread:thread-running'])
+    expect(within(rows[1]!).getByText('进行中')).toBeTruthy()
+
+    fireEvent.click(within(rows[0]!).getByText('Indexer'))
+    expect(open).toHaveBeenCalledWith(idle.id)
+  })
+
+  it('renders a Project without Threads exactly as before', () => {
+    const project = summary('project', 20)
+    const child = summary('child', 10, { origin: 'subagent', parentId: project.id })
+    /** Expand the group if this mount did not restore it as expanded already. */
+    const expand = (): void => {
+      const group = screen.getByText('alpha').closest('[role="treeitem"]') as HTMLElement
+      if (group.getAttribute('aria-expanded') === 'false') fireEvent.click(group)
+    }
+    const rowKeys = (): (string | null)[] => screen.getAllByRole('treeitem')
+      .map(row => row.getAttribute('data-row-key'))
+    const b = mount({
+      useSessions: hook(sessionState([project, child])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
+    })
+    expand()
+    const before = rowKeys()
+    b.view.unmount()
+
+    mount({
+      useSessions: hook(sessionState([project, child], {
+        projectionsBySession: {
+          [project.id]: { state: 'idle', error: null, values: { threads: [] } },
+        } as SessionListState['projectionsBySession'],
+      })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
+    })
+    expand()
+    expect(rowKeys()).toEqual(before)
+    expect(screen.queryByRole('group')).toBeNull()
+  })
+
+  it('folds a Project Thread away with its Workspace group', () => {
+    const project = summary('project', 20)
+    const thread = summary('thread', 10, { origin: 'subagent', parentId: project.id })
+    mount({
+      useSessions: hook(sessionState([project, thread], {
+        projectionsBySession: {
+          [project.id]: {
+            state: 'idle', error: null,
+            values: { threads: [threadRow(thread.id, 'Indexer')] },
+          },
+        },
+      })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
+    })
+    expect(screen.queryByText('Indexer')).toBeNull()
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.getByText('Indexer')).toBeTruthy()
+    fireEvent.click(screen.getByText('alpha'))
+    expect(screen.queryByText('Indexer')).toBeNull()
   })
 
   it.each([false, true])('expands 17 ordinary sessions five at a time and resets after the final partial batch (blank: %s)', (withBlank) => {

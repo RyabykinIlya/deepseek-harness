@@ -26,13 +26,15 @@ import {
 import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import {
+  AllowedModelRouteSchema,
+  assertAllowedModelRoutes,
   assertAllowedModelSelection,
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
   preflightChildLlmRoute,
   requestedAgentOptions,
 } from './model-selection.ts'
-import type { DelegationModelRequest, ModelSelectionPolicy } from './model-selection.ts'
+import type { AllowedModelRoute, DelegationModelRequest, ModelSelectionPolicy } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import type {} from './model-selection-settings.ts'
 import {
@@ -58,6 +60,15 @@ export interface Config {
    * Session and inherit that decision in its child Sessions.
    */
   modelSelectionSettings?: boolean
+  /**
+   * Fixed child LLM routes this tool instance offers, independent of the Host
+   * `subagent-model-selection` setting. Non-empty: every Session gets these exact
+   * routes as its selection policy — the tool exposes `provider`, `model` and
+   * `reasoning_effort`, mounts `list_subagent_models`, and records no
+   * `subagent/model-selection-policy`. Absent or empty: no effect.
+   * Requires provider `agentOptions` support; mutually exclusive with `modelSelectionSettings`.
+   */
+  allowedModels?: AllowedModelRoute[]
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -107,6 +118,9 @@ export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
   modelSelectionSettings: z.boolean().default(false),
+  // No default: Schemastery materializes an absent array as `[]`, and an empty
+  // list must read as "no effect" rather than as a policy nobody configured.
+  allowedModels: z.array(AllowedModelRouteSchema),
   enableRunInBackground: z.boolean().default(true),
   backgroundMode: z.union(['one-shot', 'continuable'] as const).default('one-shot'),
   // Prevent Schemastery from materializing omitted agentOptions as `{}`.
@@ -323,6 +337,17 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   const toolName = config.toolName ?? 'subagent'
 
   const modelSelectionCapable = config.modelSelectionSettings === true
+  // A deployment-owned route list is the same capability the user setting
+  // provides, decided in configuration instead of sampled per Session — so the
+  // two together would leave two sources of truth for one tool. Refused at load,
+  // not at the first call, because the conflict is a configuration fault.
+  const fixedRoutes = config.allowedModels !== undefined && config.allowedModels.length > 0
+    ? config.allowedModels
+    : undefined
+  if (fixedRoutes !== undefined && modelSelectionCapable) {
+    throw new Error('tool-subagent: `allowedModels` and `modelSelectionSettings` are mutually exclusive')
+  }
+  if (fixedRoutes !== undefined) assertAllowedModelRoutes(fixedRoutes)
   ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
@@ -337,7 +362,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
         `tool-subagent: provider "${subagentProvider.name}" does not support child agentOptions`,
       )
     }
-    if (modelSelectionCapable && !subagentProvider.capabilities.agentOptions) {
+    if ((modelSelectionCapable || fixedRoutes !== undefined) && !subagentProvider.capabilities.agentOptions) {
       throw new Error(
         `tool-subagent: provider "${subagentProvider.name}" does not support child model selection`,
       )
@@ -606,7 +631,9 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   }
 
   if (config.modelSelectionSettings !== true) {
-    install(ctx, undefined)
+    // A configured route list needs no per-Session sampling, so the same single
+    // install serves every Session and records no selection policy event.
+    install(ctx, fixedRoutes === undefined ? undefined : { routes: fixedRoutes })
     return
   }
 

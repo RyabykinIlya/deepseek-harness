@@ -838,6 +838,7 @@ describe('configuration guards', { timeout: GIT_TIMEOUT_MS }, () => {
     const { service } = await mount({ worktreeRoot })
     expect(service.worktreeRoot).toBe(worktreeRoot)
     expect(service.repoRootResolution).toBe('explicit')
+    expect(service.base).toBe('head')
     expect(service.maxWorktreesPerRepo).toBe(32)
     expect(service.adoptionGraceMs).toBe(600_000)
     expect(service.pruneOnStart).toBe(false)
@@ -856,6 +857,7 @@ describe('configuration guards', { timeout: GIT_TIMEOUT_MS }, () => {
     const service = new WorktreeService(ctx, { worktreeRoot })
 
     expect(service.repoRootResolution).toBe('explicit')
+    expect(service.base).toBe('head')
     expect(service.pruneOnStart).toBe(true)
     expect(service.maxWorktreesPerRepo).toBe(32)
     expect(service.adoptionGraceMs).toBe(600_000)

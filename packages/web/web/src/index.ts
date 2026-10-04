@@ -8,6 +8,7 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { Volatile } from '@deepseek-ai/cosmokit'
 import type {
   WebFetchProvider,
   WebFetchRequest,
@@ -32,6 +33,36 @@ export type {
   WebSearchSource,
 } from './types.ts'
 
+/**
+ * Search provider ids this Harness ships, for a settings surface to render as a
+ * choice. The list is the KNOWN ids, not the accepted ones: `WebRuntime`
+ * registers any plugin's id, so a configuration naming an id that is absent from
+ * this list must still load and fail at selection time with
+ * `WEB_PROVIDER_CONFIGURED_MISSING` rather than be refused by the schema. Adding
+ * a provider package means adding its id here.
+ */
+export const WEB_SEARCH_PROVIDER_IDS = [
+  'brave',
+  'deepseek-official',
+  'duckduckgo',
+  'exa',
+  'perplexity',
+  'tavily',
+] as const
+
+/**
+ * One shipped search provider id. Widened with `string` so a configuration, a
+ * third-party provider, or a newer id still typechecks; the seam rejects an
+ * unregistered id at selection with its own diagnostic.
+ */
+export type WebSearchProviderId = typeof WEB_SEARCH_PROVIDER_IDS[number] | (string & {})
+
+/** Fetch provider ids this Harness ships. See {@link WEB_SEARCH_PROVIDER_IDS}. */
+export const WEB_FETCH_PROVIDER_IDS = ['http'] as const
+
+/** One shipped fetch provider id. Widened as {@link WebSearchProviderId} is. */
+export type WebFetchProviderId = typeof WEB_FETCH_PROVIDER_IDS[number] | (string & {})
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     web: WebRuntime
@@ -47,20 +78,34 @@ interface Selection<P> {
 }
 
 /**
- * Config for the web seam. `searchProvider` / `fetchProvider` pin which provider
- * wins for each capability; both are optional (a single registered usable
- * provider auto-selects). Operational overrides such as environment variables
- * must feed these same fields rather than introduce a hidden priority chain.
+ * Selection config for the web seam. `searchProvider` / `fetchProvider` pin
+ * which provider wins for each capability; both are optional (a single
+ * registered usable provider auto-selects). Operational overrides such as
+ * environment variables must feed these same fields rather than introduce a
+ * hidden priority chain.
+ *
+ * This is the shape a profile patch, a settings write, or a direct
+ * `ctx.plugin(WebRuntime, ...)` supplies. Both fields are declared volatile in
+ * {@link WebRuntime.Config}, so the Host actually resolves them to live
+ * references it later rewrites in place — see {@link selectedId}, which accepts
+ * either form.
  */
 export interface WebRuntimeConfig {
   /** Explicit search provider id. Omitted = auto-select when exactly one usable. */
-  readonly searchProvider?: string
+  readonly searchProvider?: WebSearchProviderId
   /** Explicit fetch provider id. Omitted = auto-select when exactly one usable. */
-  readonly fetchProvider?: string
+  readonly fetchProvider?: WebFetchProviderId
 }
+
+/** One selection field as it can arrive: a plain id, or the Host's live reference to one. */
+type WebSelection = WebRuntimeConfig['searchProvider'] | Volatile<string | undefined>
 
 /**
  * The web access service. Registered as `ctx.web` (one instance per context).
+ *
+ * Selection is LIVE: the configured ids are Host-owned references committed in
+ * place by a settings write, so {@link search} and {@link fetch} resolve against
+ * the value each call, never against a construction-time snapshot.
  *
  * Selection semantics (resolved at execution time, never order-dependent):
  * - A configured id that is registered and `available()` → that provider.
@@ -73,24 +118,33 @@ export interface WebRuntimeConfig {
  */
 export class WebRuntime extends Service {
   /**
-   * Provider selection config. Operational env overrides feed the SAME fields:
-   * `$DSH_WEB_SEARCH_PROVIDER` / `$DSH_WEB_FETCH_PROVIDER` are equivalent to
-   * `searchProvider` / `fetchProvider` and are NOT a hidden priority chain.
+   * Selection config, live-editable. Operational env overrides feed the SAME
+   * fields: `$DSH_WEB_SEARCH_PROVIDER` / `$DSH_WEB_FETCH_PROVIDER` are
+   * equivalent to `searchProvider` / `fetchProvider` and are NOT a hidden
+   * priority chain. Both fields stay open strings so an id this build does not
+   * know still reaches {@link resolveProvider} and reports itself there.
+   *
+   * The schema is deliberately NOT annotated `z<WebRuntimeConfig>`: Schemastery
+   * types a volatile field as its storage type, so such a pin would claim plain
+   * strings where the Host actually supplies live references. Every other
+   * volatile plugin here (brave, tavily, deepseek) carries the same split.
    */
-  static Config: z<WebRuntimeConfig> = z.object({
-    searchProvider: z.string(),
-    fetchProvider: z.string(),
+  static Config = z.object({
+    searchProvider: z.string().volatile(),
+    fetchProvider: z.string().volatile(),
   })
 
   private searchProviders = new Map<string, WebSearchProvider>()
   private fetchProviders = new Map<string, WebFetchProvider>()
-  private readonly searchProviderId: string | undefined
-  private readonly fetchProviderId: string | undefined
+  private readonly searchProviderId: WebSelection
+  private readonly fetchProviderId: WebSelection
 
   constructor(ctx: Context, config: WebRuntimeConfig = {}) {
     super(ctx, 'web')
-    this.searchProviderId = config.searchProvider ?? process.env.DSH_WEB_SEARCH_PROVIDER
-    this.fetchProviderId = config.fetchProvider ?? process.env.DSH_WEB_FETCH_PROVIDER
+    // Keep the references, never their current values: the Host writes a new
+    // value into these exact objects when the setting changes.
+    this.searchProviderId = config.searchProvider
+    this.fetchProviderId = config.fetchProvider
   }
 
   /**
@@ -138,9 +192,10 @@ export class WebRuntime extends Service {
    * @returns the provider's results, capped to `request.maxResults`.
    */
   async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
+    const configuredId = selectedId(this.searchProviderId, 'DSH_WEB_SEARCH_PROVIDER')
     const provider = resolveProvider({
       providers: this.searchProviders,
-      ...this.searchProviderId !== undefined ? { configuredId: this.searchProviderId } : {},
+      ...configuredId !== undefined ? { configuredId } : {},
     })
     const result = await provider.search(request, signal)
     return capSources(result, request.maxResults)
@@ -155,12 +210,28 @@ export class WebRuntime extends Service {
    * @returns the retrieval outcome; non-2xx responses resolve descriptively.
    */
   async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchResult> {
+    const configuredId = selectedId(this.fetchProviderId, 'DSH_WEB_FETCH_PROVIDER')
     const provider = resolveProvider({
       providers: this.fetchProviders,
-      ...this.fetchProviderId !== undefined ? { configuredId: this.fetchProviderId } : {},
+      ...configuredId !== undefined ? { configuredId } : {},
     })
     return provider.fetch(request, signal)
   }
+}
+
+/**
+ * The id configured for one capability at this instant. Read at use time because
+ * the Host commits a settings write into the same reference this runtime holds,
+ * and because `$DSH_WEB_*` stays an equivalent override for an absent value
+ * rather than a hidden priority chain.
+ * @param field The configured id, or the live reference holding it.
+ * @param envName The equivalent environment variable name.
+ * @returns The id to configure selection with, or undefined to auto-select.
+ */
+function selectedId(field: WebSelection, envName: string): string | undefined {
+  if (field === undefined) return process.env[envName]
+  const configured = typeof field === 'string' ? field : field.get()
+  return configured ?? process.env[envName]
 }
 
 interface ResolvableProvider {

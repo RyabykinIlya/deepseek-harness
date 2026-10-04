@@ -11,8 +11,8 @@ import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } 
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { Response } from 'undici'
 import { proxyRouteFor } from '@deepseek-ai/dsh-http-proxy'
-import { isNonPublicIpLiteral, publicHttpNetwork } from './network.ts'
-import type { PublicAddress } from './network.ts'
+import { isNonPublicIpLiteral, publicHttpNetwork, systemAddressResolver } from './network.ts'
+import type { PublicAddress, TrustedAddressRange } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
@@ -27,6 +27,8 @@ export interface HttpFetchLimits {
   maxRedirects: number
   /** `User-Agent` header sent on every request. */
   userAgent: string
+  /** Compiled operator-declared proxy address blocks; absent or empty accepts none. */
+  trustedProxyAddressRanges?: readonly TrustedAddressRange[]
 }
 
 /** Resolve one hostname to an already policy-validated address set. */
@@ -39,14 +41,25 @@ export const LOCAL_FETCH_PROVIDER_ID = 'http'
 export class HttpFetchProvider implements WebFetchProvider {
   readonly id = LOCAL_FETCH_PROVIDER_ID
 
+  private readonly resolveAddresses: HttpFetchResolver
+  private readonly trustedProxyAddressRanges: readonly TrustedAddressRange[]
+
   /**
-   * @param limits - resolved transport and response limits.
+   * @param limits - resolved transport and response limits, optionally carrying the operator's
+   *   compiled {@link TrustedAddressRange}s.
    * @param resolveAddresses - resolver that rejects non-public destinations before returning.
    */
   constructor(
     private readonly limits: HttpFetchLimits,
-    private readonly resolveAddresses: HttpFetchResolver = publicHttpNetwork.resolve,
-  ) {}
+    resolveAddresses?: HttpFetchResolver,
+  ) {
+    this.trustedProxyAddressRanges = limits.trustedProxyAddressRanges ?? []
+    // Default resolution still goes through the swappable production object so focused tests can
+    // replace resolution alone, while the operator's declared blocks ride along on every call.
+    this.resolveAddresses = resolveAddresses
+      ?? ((hostname, signal) =>
+        publicHttpNetwork.resolve(hostname, signal, systemAddressResolver, this.trustedProxyAddressRanges))
+  }
 
   /** No credentials to check — an anonymous public fetcher is always usable. */
   available(): boolean {
@@ -131,8 +144,9 @@ export class HttpFetchProvider implements WebFetchProvider {
       // An IP literal the address checks would refuse never takes it. The proxy would resolve
       // nothing — the address is already stated — so the shortcut would spend the checks for
       // nothing and let a proxy on this machine reach the very service they keep out of reach.
+      // An address the operator declared is not such a service, so it is judged as accepted.
       const route = proxyRouteFor(url)
-      if (route.proxied && !isNonPublicIpLiteral(url.hostname)) {
+      if (route.proxied && !isNonPublicIpLiteral(url.hostname, this.trustedProxyAddressRanges)) {
         return await publicHttpNetwork.requestVia(route.dispatcher, url, headers, signal)
       }
       const addresses = await this.resolveAddresses(url.hostname, signal)
