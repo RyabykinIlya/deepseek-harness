@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Understand the implementation](#understand-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -33,6 +34,18 @@ Choose it when a tier's models must be ranked by what the *next agent turn* cost
 ### Tiers
 
 A tier is a named group of interchangeable models plus the filters every endpoint serving one of them must pass: `minQuantization`, `unknownQuantization`, `free`, and the `contextWindow` the tier advertises. `validateSettings` refuses a settings value the route cannot act on — a tier name that is not a route model id, a model id without an `author/`, a default effort outside the effort list, an inverted pair of judge thresholds — with one message naming the first field that cannot be served.
+
+<a id="snapshots"></a>
+### Snapshots
+
+An unversioned model id is not a rolling alias. `deepseek/deepseek-v4-pro` names the **0423** release of that family, and `deepseek/deepseek-v4-pro-0813` names the same family in August, so a tier that lists the former stays on it for as long as nobody edits the configuration. `snapshotPolicy` is the switch between the two positions:
+
+- `pinned` (the default) decides under the ids the configuration names, which is what makes a deployment's cost and behavior reproducible from that configuration alone.
+- `latest` moves each id forward to the newest snapshot of its family before deciding, reading the family from OpenRouter's catalog rather than from the model's display name: OpenRouter states for every entry which dated release that id is, and the entries sharing that dated identity are the family. A tier that lists `deepseek/deepseek-v4-pro` then follows new releases on its own.
+
+Under `latest` a request that named one of those ids itself is resolved the same way, because the model picker offers the ids a tier lists and picking `deepseek/deepseek-v4-pro` there means the pro model rather than one release of it. Two configured ids of one tier may resolve to the same release, and only the release is ranked. The resolution is reported in the log once per move — `"deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813"` — and every `model-routing/decision` event records the release that actually answered. A catalog that cannot be read is not a routing failure: the tier decides under its configured ids and the log says the catalog was unavailable.
+
+OpenRouter's own `~author/slug-latest` aliases are not a substitute for this. They redirect on the chat-completions path, but `/endpoints` answers them with an empty list, so a tier naming one has nothing to rank.
 
 <a id="ranking"></a>
 ### Ranking
@@ -55,6 +68,8 @@ The observable behavior is fully covered in [Use this package](#use-this-package
 |---|---|
 | `src/index.ts` | Re-exports of the pure modules; W4 replaces it with the plugin |
 | `src/config.ts` | Tier schema, `readSettings`, `validateSettings`, the W0 trust list |
+| `src/family.ts` | Which snapshot of a family a configured id names, from `canonical_slug` |
+| `src/family-cache.ts` | The whole-catalog cache, with the stale reading that survives a failed read |
 | `src/types.ts` | Session events, projection state and view, `ctx.modelRouting`, quote types |
 | `src/quantization.ts` | Precision ranks and the `quantizations` filter list |
 | `src/select.ts` | Endpoint rejection reasons, the blended price, ranking, uptime relaxation |
@@ -88,10 +103,10 @@ None; this package dispatches nothing itself. The route that consumes its rankin
 - The default `trustedUnknownProviders` list comes from a 30-model survey of official-author models (the W0 report). A provider that only serves third-party models was never measured, so `unknown` on such a model is admitted only when its host is already trusted for another reason.
 - Ranking reads a live endpoint list. Between the read and the request the cheapest provider can fail; the adapter handles that by re-deciding at the `failure` boundary, not by re-reading here.
 - `minQuantization` is a floor, not a proof: a provider declaring `unknown` on a trusted host states no format at all, and this package accepts the host's word for it (§3.2 of the plan).
-
------
+- Under `snapshotPolicy: 'latest'` a tier follows its families, so a new release changes the model and the price behind a configuration nobody edited. The catalog is read at most every `catalogTtlMs`, and the move is reported once in the log and recorded in every decision, but nothing asks first. A deployment that has to approve a release change belongs on `pinned`.
+- The family comes from the catalog's `canonical_slug`, so a model published only as an undated id — including every OpenRouter `~alias` — has no family and never moves.
 
 <a id="dev-note"></a>
-## Dev Note
+### Dev Note
 
 None.

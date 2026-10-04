@@ -12,8 +12,8 @@
   en: 7d1069afec132e21
   zh: 0c5efe8676346fd6
 /deepseek-ai-dsh-experimental-model-routing/table-of-contents:
-  en: 3460b3e585e0c020
-  zh: bb83d3d282b286d8
+  en: 76368b6b1da79c80
+  zh: 52384aee991ac542
 /deepseek-ai-dsh-experimental-model-routing/use-this-package:
   en: 432d5ba274d825e0
   zh: 66cb205b4b9746b1
@@ -21,8 +21,11 @@
   en: 9775893df3cf6dd9
   zh: 5b9de68f6815072e
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/tiers:
-  en: 1d4f49b132dce783
-  zh: 89a10b6b337285e5
+  en: ab4bdfce7fd7a63f
+  zh: 8f1eda7d50d60190
+/deepseek-ai-dsh-experimental-model-routing/use-this-package/snapshots:
+  en: b368bfcb0280b7c1
+  zh: 6db4f51cb5efb7bf
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/ranking:
   en: 237d5d31b8cc16da
   zh: 31d9e35dff4fd6ef
@@ -30,8 +33,8 @@
   en: 12e50a47625c8dff
   zh: 5ef95b092be65341
 /deepseek-ai-dsh-experimental-model-routing/understand-the-implementation/source-map:
-  en: c52a4413aab0a662
-  zh: 5d588a1c60f85e3c
+  en: 34fdca1c309d8b30
+  zh: b71b068a76a19f7b
 /deepseek-ai-dsh-experimental-model-routing/understand-the-implementation/fold-identity:
   en: e4404b282a75d7e8
   zh: b9cacb95823b3eb4
@@ -45,8 +48,8 @@
   en: 97484a3f4ac7c83b
   zh: 78b040a2128b9ddd
 /deepseek-ai-dsh-experimental-model-routing/known-limitations-and-deferred-work:
-  en: 866bee266f3c559c
-  zh: a3e59b1ac43f9201
-/deepseek-ai-dsh-experimental-model-routing/dev-note:
-  en: b75c8458928b72b9
-  zh: 003ba4e17b4b5269
+  en: 5537b3be71f7e0a2
+  zh: 9c5a7b16f88e5d37
+/deepseek-ai-dsh-experimental-model-routing/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

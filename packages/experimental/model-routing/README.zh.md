@@ -17,6 +17,7 @@ kind: "package-reference"
 - [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
@@ -33,6 +34,18 @@ kind: "package-reference"
 ### tier
 
 tier 是一组命名的可互换模型，外加每个服务于其中某个模型的 endpoint 都必须通过的过滤器：`minQuantization`、`unknownQuantization`、`free`，以及该 tier 公布的 `contextWindow`。`validateSettings` 会拒绝该路由无法据以行动的 settings 值，包括不是路由模型 id 的 tier 名称、缺少 `author/` 的模型 id、落在 effort 列表之外的默认 effort、以及一对次序颠倒的 judge 阈值；它用一条消息指出第一个无法服务的字段。
+
+<a id="snapshots"></a>
+### 快照
+
+不带版本的模型 id 不是滚动别名。`deepseek/deepseek-v4-pro` 指的是该家族的 **0423** 版本，而 `deepseek/deepseek-v4-pro-0813` 指的是同一家族的八月版本，因此一个列出前者的 tier 会一直停留在它上面，直到有人去改配置。`snapshotPolicy` 就是这两种立场之间的开关：
+
+- `pinned`（默认）按配置中书写的 id 决策，这正是让一个部署的成本与行为可由该配置本身复现的东西。
+- `latest` 在决策前把每个 id 前移到它所属家族的最新快照，并且是从 OpenRouter 的目录而非模型的显示名读取家族归属的：OpenRouter 为每个条目声明该 id 究竟是哪个带日期的版本，而共享这个带日期身份的条目就是该家族。于是一个列出 `deepseek/deepseek-v4-pro` 的 tier 会自行跟随新版本。
+
+在 `latest` 下，一个指名这些 id 本身的请求同样会被解析，因为模型选择器提供的正是各 tier 列出的 id，在那里选择 `deepseek/deepseek-v4-pro` 指的是 pro 这个模型，而不是它的某一个版本。同一个 tier 的两个配置 id 可能解析到同一个版本，而只有该版本参与排序。每次移动在日志中报告一次——`"deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813"`——而每个 `model-routing/decision` 事件都记录真正作答的版本。目录读不出来不算路由失败：该 tier 按其配置 id 决策，并由日志说明目录不可用。
+
+OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们在 chat-completions 路径上会重定向，但 `/endpoints` 对它们返回空列表，因此指名它们的 tier 没有任何可排序的东西。
 
 <a id="ranking"></a>
 ### 排序
@@ -56,6 +69,8 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 | `src/index.ts` | 纯模块的再导出；W4 用插件替换它 |
 | `src/config.ts` | tier schema、`readSettings`、`validateSettings`、W0 信任列表 |
 | `src/types.ts` | Session 事件、投影状态与视图、`ctx.modelRouting`、报价类型 |
+| `src/family.ts` | 依据 `canonical_slug`，一个配置 id 指的是家族中的哪个版本 |
+| `src/family-cache.ts` | 整个目录的缓存，以及在读取失败后仍然存在的过期读数 |
 | `src/quantization.ts` | 精度等级与 `quantizations` 过滤列表 |
 | `src/select.ts` | endpoint 拒绝原因、混合价格、排序、在线率放宽 |
 | `src/projection.ts` | `modelRouting` 投影及其协议视图 |
@@ -88,10 +103,10 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 - 默认的 `trustedUnknownProviders` 列表来自一次对官方作者模型的 30 模型调研（W0 报告）。只提供第三方模型的提供方从未被测量过，因此这类模型上的 `unknown` 只有在其 Host 已经因为别的原因被信任时才会被接纳。
 - 排序读取的是实时的 endpoint 列表。从读取到发起请求之间，最便宜的提供方可能失败；适配器的处理方式是在 `failure` 边界重新决策，而不是在这里重新读取。
 - `minQuantization` 是下限而不是证明：一个在受信 Host 上声明 `unknown` 的提供方根本没有声明任何格式，而本包采信该 Host 的说法（计划 §3.2）。
-
------
+- 在 `snapshotPolicy: 'latest'` 下 tier 会跟随自己的家族，因此一次新发布会改变没有人编辑过的配置背后的模型与价格。目录最多每 `catalogTtlMs` 读取一次，移动会在日志中报告一次并记录进每一次决策，但没有任何东西事先征求同意。必须先批准版本变化的部署应当使用 `pinned`。
+- 家族来自目录的 `canonical_slug`，因此只以不带日期的 id 发布的模型——包括所有 OpenRouter 的 `~别名`——没有家族，也永远不会移动。
 
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
 
 无。

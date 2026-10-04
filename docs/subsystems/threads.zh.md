@@ -17,10 +17,20 @@ interface WorktreeRecord {
   readonly path: string
   /** Created branch, or `undefined` for a detached worktree. */
   readonly branch?: string
-  /** The ref this worktree was created from. */
+  /**
+   * The ref this worktree was created from — the ref the REQUEST named. Under
+   * {@link WorktreeBasePolicy `'head-with-uncommitted'`} it is not the commit the Thread started
+   * at; {@link WorktreeRecord.baseSha} is.
+   */
   readonly baseRef: string
   /**
-   * Commit the worktree was created at, resolved from `baseRef` when the add succeeded.
+   * The policy that produced {@link WorktreeRecord.baseSha}. Absent only on records written before
+   * the field existed, which are read as plain `head` behaviour.
+   */
+  readonly base?: WorktreeBasePolicy
+  /**
+   * Commit the worktree was created at, resolved from `baseRef` (or, under
+   * `base: 'head-with-uncommitted'`, the working-state snapshot) when the add succeeded.
    * Absent on records written before the field existed and on `reserved` records.
    */
   readonly baseSha?: string

@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Understand the implementation](#understand-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -89,9 +90,7 @@ None; this package neither assembles nor sends a provider request.
 - `contextWindow` and `maxTokens` are shown read-only. They bound what compaction believes the model can hold, and a wrong value fails later and further away than this page.
 - The page prices through one live read per tier per draft. A tier with many models therefore costs one endpoint read per model on every edit; a debounced, shared price cache would be the next step.
 
------
-
 <a id="dev-note"></a>
-## Dev Note
+### Dev Note
 
 None.

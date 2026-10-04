@@ -3,44 +3,44 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/tool-threads/README.md
 /:
-  en: a0881db85fade99a
-  zh: 71f6ec06f882e2de
+  en: 24026ab8eadeca12
+  zh: 3c34c850d9c221e2
 /deepseek-ai-dsh-experimental-threads-tool:
   en: 61414abc799aa4bc
   zh: 9913c7e07a502be0
 /deepseek-ai-dsh-experimental-threads-tool/summary:
-  en: b93783fbd7b2eedb
-  zh: 92ce88b93b539356
+  en: cd70465d57bedfd0
+  zh: 6d069acf99afd16b
 /deepseek-ai-dsh-experimental-threads-tool/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-experimental-threads-tool/use-this-package:
-  en: fecc13a8a027fe6b
-  zh: 5c694eee0359f32e
+  en: f1c1d5e4ed9930e4
+  zh: f1af96797d7cfa4c
 /deepseek-ai-dsh-experimental-threads-tool/use-this-package/when-to-choose-it:
   en: 092c78e053856e70
   zh: aeb3ed4695a1520a
 /deepseek-ai-dsh-experimental-threads-tool/use-this-package/what-the-model-sees:
-  en: c45e27e980bbaed7
-  zh: 98781738affad0b4
+  en: e76c34dc481f4c3f
+  zh: fe5a6490a9e6fbef
 /deepseek-ai-dsh-experimental-threads-tool/use-this-package/state-and-liveness:
   en: 5c1b97090d1684f1
   zh: fb595c4adc214d3a
 /deepseek-ai-dsh-experimental-threads-tool/use-this-package/what-success-and-failure-look-like:
-  en: d8313250b0617ab1
-  zh: 177718a93e53f01f
+  en: daa3c8e5d6c06235
+  zh: 77d26a2206a2fe28
 /deepseek-ai-dsh-experimental-threads-tool/understand-the-implementation:
   en: bc85e673d417b75c
   zh: b8822841b744d058
 /deepseek-ai-dsh-experimental-threads-tool/understand-the-implementation/design-philosophy:
-  en: cbfdf7d7796c694e
-  zh: 77e7e0197cb521fb
+  en: 01f3b349706497d2
+  zh: fa2db7600595a5e1
 /deepseek-ai-dsh-experimental-threads-tool/understand-the-implementation/registration-shape:
-  en: 688d3debe9ecbcbc
-  zh: 9371762430445db3
+  en: 3dc08194bde13f5a
+  zh: 03148df0cabe58ef
 /deepseek-ai-dsh-experimental-threads-tool/understand-the-implementation/source-map:
-  en: 82c73e388e92edd7
-  zh: 67185a6c62817e35
+  en: d517ac7fe9fc1e91
+  zh: 4df814c936d5ff97
 /deepseek-ai-dsh-experimental-threads-tool/further-exploration:
   en: de43c6fda150eb4f
   zh: 74533f0d91fef125
@@ -51,14 +51,14 @@
   en: 3039bc5e7a796b21
   zh: 6b7a9eaf69c9ea53
 /deepseek-ai-dsh-experimental-threads-tool/model-experience/tool-schemas/what-the-model-sees:
-  en: 281f9fbc0c50fea3
-  zh: 925f00be92762459
+  en: 575339412d13b0f6
+  zh: 6163bcf13e22c992
 /deepseek-ai-dsh-experimental-threads-tool/model-experience/tool-schemas/token-effect:
-  en: 1be3853ecd816640
-  zh: 80d4bef8730e4f0d
+  en: 4e45eae70aac2ff5
+  zh: 2f24d917d4a3754d
 /deepseek-ai-dsh-experimental-threads-tool/model-experience/tool-schemas/kv-cache-effect:
-  en: c3a43c68419ff32f
-  zh: 880f313669d25ae6
+  en: c9fc1e7d1a4d3658
+  zh: 602e69b077d26e2c
 /deepseek-ai-dsh-experimental-threads-tool/model-experience/status-result:
   en: 8a36bec4f4e65537
   zh: e3391d82a24a62f5
@@ -83,6 +83,30 @@
 /deepseek-ai-dsh-experimental-threads-tool/model-experience/diff-result/kv-cache-effect:
   en: cd0c07af1fe06592
   zh: 0f90fbd59305c2a4
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/library-result:
+  en: 1ece8350b95c40c3
+  zh: bc8b4623a1327a3c
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/library-result/what-the-model-sees:
+  en: d2dd8d01cc1b0625
+  zh: 8e285b1fd77db12f
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/library-result/token-effect:
+  en: 1685365523918d07
+  zh: 20c7c1e76cf6336f
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/library-result/kv-cache-effect:
+  en: cd0c07af1fe06592
+  zh: 0f90fbd59305c2a4
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/tier-result:
+  en: e9a862715fe1886f
+  zh: e02054a3e28cd957
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/tier-result/what-the-model-sees:
+  en: aa1e2e41b79ace79
+  zh: 0029cc10878a875f
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/tier-result/token-effect:
+  en: 2bbc47f34e886a61
+  zh: 18e1ada365b3134f
+/deepseek-ai-dsh-experimental-threads-tool/model-experience/tier-result/kv-cache-effect:
+  en: 5dd6698b393d5404
+  zh: 31b0b71f3f42bfcf
 /deepseek-ai-dsh-experimental-threads-tool/known-limitations-and-deferred-work:
   en: 7e925a72e4c366db
   zh: 95d7234474ac77b0

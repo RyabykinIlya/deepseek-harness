@@ -17,6 +17,7 @@ English | [中文](README.zh.md)
 - [Understand the implementation](#understand-the-implementation)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
 -----
 
@@ -30,7 +31,7 @@ Installing the bundle on its own changes nothing observable. The route advertise
 <a id="configure"></a>
 ### Configure the tiers
 
-The tiers live in the `model-routing` settings namespace, which is written as `config:` on the bundle's own row in the profile patch. The fragment below is what the plan's §16 step 5 documents; `trustedUnknownProviders` comes from the W0 survey.
+The tiers live in the `model-routing` settings namespace, which is written as `config:` on the bundle's own row in the profile patch. A patch row's `config:` **replaces** the row's configuration object instead of merging into it, so every key the row needs has to appear in the fragment.
 
 ```yaml
 - id: model-routing
@@ -39,13 +40,24 @@ The tiers live in the `model-routing` settings namespace, which is written as `c
     tiers:
       - { name: pro, label: Pro, models: [deepseek/deepseek-v4-pro, z-ai/glm-5.3], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: reject, free: 'off' }
       - { name: flash, label: Flash, models: [deepseek/deepseek-v4-flash, z-ai/glm-5.3-flash, stealth/space-bunny-alpha], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: trusted, free: prefer }
-    # Replace with the list from the W0 report (§8).
+    # Providers this deployment trusts without a published quantization.
     trustedUnknownProviders: [stealth]
     judgeModel: typesafe/jev-1.13
     presetRoutes:
       - { preset: project, model: pro }
-- id: project
+- id: threads-preset
   config:
+    id: project
+    workerId: project-thread
+    provider: thread
+    basePreset: standard
+    workerMaxDepth: 2
+    checkIn: milestones
+    spawn: ask
+    mergePolicy: ask
+    tools:
+      defaultLimit: 20
+      maxLimit: 100
     threadProvider: tiers
     threadModel: flash
     threadReasoningEffort: high
@@ -56,7 +68,7 @@ The tiers live in the `model-routing` settings namespace, which is written as `c
     tierContract: tiers
 ```
 
-The `project` block belongs to `dsh-experimental-threads-preset`, a different bundle. Installing this one alone leaves it inert; installing both, and declaring the `project` row's `id` so the user patch targets it by id, is what makes a Project coordinator start on `tiers/pro`.
+The second row belongs to `dsh-experimental-threads-preset`, a different bundle. Its patch id is `threads-preset` — the row id that bundle inserts, not the `project` preset id its own `config.id` carries; a patch naming `project` matches no row, and the loader warns and skips it. Because `config:` replaces, that row repeats the preset keys `dsh-experimental-threads-profile` ships alongside the four routing keys. Installing this bundle alone leaves the block inert; installing both is what makes a Project coordinator start on `tiers/pro`.
 
 <a id="credential"></a>
 ### Store the OpenRouter credential
@@ -102,9 +114,7 @@ None; the bundle carries no configuration and dispatches nothing.
 - The bundle does not install `llm-pi-ai`, so a profile without it mounts the route and then refuses every request with `NO_ADAPTER`. The web profile already ships it; a headless profile must add it explicitly.
 - `judgeModel` is pinned to `typesafe/jev-1.13`. A newer decisions model would move the calibrated thresholds off their calibration, so upgrading it is a deliberate act rather than a default that follows an alias.
 
------
-
 <a id="dev-note"></a>
-## Dev Note
+### Dev Note
 
 None.

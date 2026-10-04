@@ -17,6 +17,7 @@ kind: "package-reference"
 - [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
@@ -89,9 +90,7 @@ kind: "package-reference"
 - `contextWindow` 与 `maxTokens` 只读展示。它们限定了压缩层认为模型能容纳的规模，而错误的值会在比本页更晚、更远的地方才失败。
 - 该页对每份草稿中的每个 tier 都做一次实时读取以报价。因此一个含多个模型的 tier，在每次编辑时都要为每个模型付出一次 endpoint 读取；下一步是一个带防抖的共享价格缓存。
 
------
-
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
 
 无。

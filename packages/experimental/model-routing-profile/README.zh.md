@@ -17,6 +17,7 @@ kind: "package-bundle"
 - [理解实现](#understand-the-implementation)
 - [模型体验](#model-experience)
 - [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
 -----
 
@@ -30,7 +31,7 @@ kind: "package-bundle"
 <a id="configure"></a>
 ### 配置 tier
 
-这些 tier 位于 `model-routing` settings 命名空间中，在 profile patch 里写作该组合包自身那一行的 `config:`。下面这段正是计划 §16 第 5 步记录的内容；`trustedUnknownProviders` 来自 W0 调研。
+这些 tier 位于 `model-routing` settings 命名空间中，在 profile patch 里写作该组合包自身那一行的 `config:`。patch 行的 `config:` 是**整体替换**该行的配置对象，而不是合入，所以该行需要的每个键都必须在这段里出现。
 
 ```yaml
 - id: model-routing
@@ -39,13 +40,24 @@ kind: "package-bundle"
     tiers:
       - { name: pro, label: Pro, models: [deepseek/deepseek-v4-pro, z-ai/glm-5.3], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: reject, free: 'off' }
       - { name: flash, label: Flash, models: [deepseek/deepseek-v4-flash, z-ai/glm-5.3-flash, stealth/space-bunny-alpha], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: trusted, free: prefer }
-    # Replace with the list from the W0 report (§8).
+    # Providers this deployment trusts without a published quantization.
     trustedUnknownProviders: [stealth]
     judgeModel: typesafe/jev-1.13
     presetRoutes:
       - { preset: project, model: pro }
-- id: project
+- id: threads-preset
   config:
+    id: project
+    workerId: project-thread
+    provider: thread
+    basePreset: standard
+    workerMaxDepth: 2
+    checkIn: milestones
+    spawn: ask
+    mergePolicy: ask
+    tools:
+      defaultLimit: 20
+      maxLimit: 100
     threadProvider: tiers
     threadModel: flash
     threadReasoningEffort: high
@@ -56,7 +68,7 @@ kind: "package-bundle"
     tierContract: tiers
 ```
 
-`project` 块属于另一个组合包 `dsh-experimental-threads-preset`。只安装本组合包会让它保持惰性；把两者都安装、并声明 `project` 行的 `id` 以便用户 patch 按 id 指向它，才会让 Project 协调者以 `tiers/pro` 启动。
+第二行属于另一个组合包 `dsh-experimental-threads-preset`。它的 patch id 是 `threads-preset` —— 即该组合包插入的行 id，而不是其 `config.id` 所带的 `project` 预设 id；指向 `project` 的 patch 匹配不到任何行，加载器会警告并跳过。因为 `config:` 是整体替换，该行除四个路由键外还要重写 `dsh-experimental-threads-profile` 随包发出的预设键。只安装本组合包会让这一块保持惰性；把两者都安装，才会让 Project 协调者以 `tiers/pro` 启动。
 
 <a id="credential"></a>
 ### 存储 OpenRouter 凭据
@@ -102,9 +114,7 @@ kind: "package-bundle"
 - 本组合包不安装 `llm-pi-ai`，因此缺少它的 profile 会挂载该路由，随后以 `NO_ADAPTER` 拒绝每一个请求。Web profile 已经自带它；headless profile 必须显式添加。
 - `judgeModel` 固定为 `typesafe/jev-1.13`。更新的 decisions model 会把校准过的阈值移出它们的校准区间，因此升级它是一次有意为之的动作，而不是随别名更新的默认值。
 
------
-
 <a id="dev-note"></a>
-## 开发备注
+### 开发备注
 
 无。
