@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash|write|edit|str_replace_editor|bash|pwsh",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/.fork/hooks/block-external-edits.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking external trees"
+          }
+        ]
+      }
+    ]
+  }
+}

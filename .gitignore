@@ -46,3 +46,13 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Fork-local: the external-tree guard hatch is a deliberate, momentary act.
+.fork/.allow-external-edit
+.fork/.blocked-edits.log
+
+# Snapshot runs seed a workspace and init a git dir inside it. The seeded files
+# are regenerated per run and no committed snapshot tracks them.
+snapshots/**/workspace/.dsh/
+snapshots/session/threads-project-worktree/workspace/
+snapshots/session/threads-project-worktree-tiers/workspace/

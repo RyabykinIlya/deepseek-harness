@@ -41,6 +41,12 @@ pre-commit:
     - name: vendor manifest guard
       run: scripts/check-vendor-manifest.sh
 
+    # Fork-local: the harness-independent half of the external-tree guard. The
+    # PreToolUse hook in .fork/hooks.json stops an agent working through Claude
+    # Code or dsh; this stops every other path into a commit. See .fork/hooks/README.md.
+    - name: external tree guard
+      run: .fork/hooks/check-staged-external.sh
+
 pre-merge-commit:
   jobs:
     # Disabled alongside its pre-commit twin; see the note there.
