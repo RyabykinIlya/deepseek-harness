@@ -105,6 +105,19 @@ export type {
   OpenRouterEndpoint,
   OpenRouterEndpointRequest,
 } from './openrouter-endpoints.ts'
+export {
+  CATALOG_HTTP_ERROR_CODE,
+  CATALOG_UNREACHABLE_CODE,
+  MALFORMED_CATALOG_CODE,
+  OPENROUTER_CATALOG_MAX_BYTES,
+  OPENROUTER_CATALOG_TIMEOUT_MS,
+  fetchOpenRouterModelCatalog,
+  parseOpenRouterCatalog,
+} from './openrouter-catalog.ts'
+export type {
+  OpenRouterCatalogEntry,
+  OpenRouterCatalogRequest,
+} from './openrouter-catalog.ts'
 export { piAiResponseIdentity } from './dispatch.ts'
 export type {
   OpenRouterRoutingBlock,

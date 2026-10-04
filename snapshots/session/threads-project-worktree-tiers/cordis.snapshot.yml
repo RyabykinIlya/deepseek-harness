@@ -1,0 +1,102 @@
+# Replay patch for the Threads/Projects headless tiers composition.
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand:
+      - bash
+      - -c
+      - while [ "$1" != "--" ]; do shift; done; shift; exec "$@"
+      - passthrough-runner
+    runnerFailureSignatures:
+      - 'passthrough-runner: profile rejected'
+- insert:
+    - id: llm-replay
+      name: '@deepseek-ai/dsh-llm-replay'
+      config:
+        providers:
+          - id: deepseek-official
+            name: DeepSeek
+            models:
+              - id: deepseek-v4-flash
+          - id: deepseek-messages
+            name: DeepSeek Messages
+            models:
+              - id: deepseek-v4-flash
+    - id: worktree-manager
+      name: '@deepseek-ai/dsh-worktree-manager'
+      config:
+        worktreeRoot: !!js process.cwd() + '/../' + process.cwd().split('/').pop() + '-worktrees'
+        pruneOnStart: true
+    - id: threads
+      name: '@deepseek-ai/dsh-experimental-threads'
+    - id: subagent-thread-worktree
+      name: '@deepseek-ai/dsh-subagent-thread-worktree'
+      config:
+        providerName: thread
+        branchPerThread: true
+        branchTemplate: dsh/thread-{{id}}
+        childAgentPreset: project-thread
+    - id: project-memory
+      name: '@deepseek-ai/dsh-experimental-project-memory'
+    - id: tool-threads
+      name: '@deepseek-ai/dsh-experimental-threads-tool'
+    - id: model-routing
+      name: '@deepseek-ai/dsh-experimental-model-routing'
+      config:
+        tiers: []
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+    - id: preset-standard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard
+        order: 1
+        plugins:
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+              backgroundMode: continuable
+    - id: threads-preset
+      name: '@deepseek-ai/dsh-experimental-threads-preset'
+      config:
+        id: project
+        workerId: project-thread
+        provider: thread
+        basePreset: standard
+        workerMaxDepth: 2
+        tierContract: tiers
+        threadModels:
+          - provider: tiers
+            model: flash
+          - provider: tiers
+            model: pro
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: thread
+    toolName: subagent
+    backgroundMode: continuable

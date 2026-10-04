@@ -23,13 +23,14 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 // The `agent/request` seam this service rewrites.
 import type {} from '@deepseek-ai/dsh-agent'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { fetchOpenRouterEndpoints } from '@deepseek-ai/dsh-llm-pi-ai'
+import { fetchOpenRouterEndpoints, fetchOpenRouterModelCatalog } from '@deepseek-ai/dsh-llm-pi-ai'
 import { TiersAdapter } from './adapter.ts'
 import { routingEndpointOf } from './endpoint.ts'
 import { Config, readSettings, validateSettings } from './config.ts'
 import type { RoutingSettings, TierSettingsSnapshot } from './config.ts'
 import { resolveApiKeyRef } from './credentials.ts'
 import { EndpointsCache } from './endpoints-cache.ts'
+import { FamilyCache } from './family-cache.ts'
 import { askJudge } from './judge.ts'
 import { KeyInfo } from './key-info.ts'
 import { modelRoutingProjectionDefinition } from './projection.ts'
@@ -48,8 +49,8 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
   private registry: SessionProjectionRegistry | undefined
   private readonly adapter: TiersAdapter
   private readonly endpoints: EndpointsCache
+  private readonly catalog: FamilyCache
   private readonly keyInfo: KeyInfo
-  private warnedTiers: unknown
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'modelRouting')
@@ -66,6 +67,14 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       (model, signal) => fetchOpenRouterEndpoints(model, {
         baseURL: config.baseUrl,
         timeoutMs: settings().endpointsTimeoutMs,
+        signal,
+      }),
+      now,
+    )
+    this.catalog = new FamilyCache(
+      signal => fetchOpenRouterModelCatalog({
+        baseURL: config.baseUrl,
+        timeoutMs: settings().catalogTimeoutMs,
         signal,
       }),
       now,
@@ -100,6 +109,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
         return info?.reasoning?.efforts.map(effort => String(effort.id))
       },
       endpoints: this.endpoints,
+      catalog: this.catalog,
       keyInfo: this.keyInfo,
       judge: request => askJudge({
         ...request,
@@ -109,7 +119,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       apiKey: () => resolveApiKeyRef(ctx, config.apiKeyRef),
       headers: () => attributionHeaders(),
       now,
-      warn: (message) =>{  ctx.logger.warn(message) },
+      warn: (message) => { ctx.logger.warn(message) },
     }, {
       routeName: config.routeName,
       routeLabel: config.routeLabel,
@@ -117,7 +127,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       decisionsUrl: config.decisionsUrl,
     })
     ctx.llm.registerAdapter([config.routeName], this.adapter)
-    ctx.on('session/disposed', (session: Session) =>{  this.adapter.forget(session.id) })
+    ctx.on('session/disposed', (session: Session) => { this.adapter.forget(session.id) })
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register(modelRoutingProjectionDefinition)
       this.registry = projectionCtx.sessionProjections
@@ -158,8 +168,12 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
 
   /**
    * Price what one tier's models would cost this turn.
+   *
+   * Under `snapshotPolicy: 'latest'` the reply prices the releases the route
+   * would actually decide under rather than the ids the tier names, because the
+   * price of an April snapshot says nothing about what an August one costs.
    * @param request - the tier to price under, and the model ids to price.
-   * @returns one quote per model, in the order asked for.
+   * @returns one quote per resolved model, in tier order.
    * @throws RemoteError `model-routing/unknown-tier` for a tier no configuration names,
    *   `model-routing/too-many-models` past the request limit.
    */
@@ -181,10 +195,17 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
         { limit: QUOTE_MODEL_LIMIT },
       )
     }
-    const lists = await this.endpoints.read(request.models, settings.endpointsTtlMs, new AbortController().signal)
-    return request.models.map(model => quoteOne(model, lists, tier, settings))
+    const signal = new AbortController().signal
+    const batch = settings.snapshotPolicy === 'latest'
+      ? await this.catalog.resolve(request.models, settings.catalogTtlMs, signal)
+      : {
+        resolutions: request.models.map(model => ({ configured: model, resolved: model, moved: false })),
+        unreadable: false,
+      }
+    const models = batch.resolutions.map(resolution => resolution.resolved)
+    const lists = await this.endpoints.read(models, settings.endpointsTtlMs, signal)
+    return models.map(model => quoteOne(model, lists, tier, settings))
   }
-
   /**
    * The account's remaining free-model requests for today.
    * @returns the budget, or `null` when no key is stored or the read failed.
@@ -223,11 +244,9 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
     })
   }
 
-  /** One warning per settings revision when the model list cannot be described. */
+  /** One warning per mount when the model list cannot be described. */
   private warnEmptyCatalog(ctx: Context): void {
     const tiers = this.config.tiers.get()
-    if (tiers === this.warnedTiers) return
-    this.warnedTiers = tiers
     if (tiers.length === 0) return
     try {
       if (this.adapter.catalog(this.config.routeName).length > 0) return

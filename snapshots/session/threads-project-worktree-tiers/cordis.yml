@@ -1,0 +1,89 @@
+# Live composition owner for the Threads/Projects headless scenario. Replay uses
+# `cordis.snapshot.yml`; this document records the same feature rows the way a
+# recording deployment would state them, so a recorded rerun needs no second
+# composition.
+#
+# The generated workspace is itself a Git checkout, so `worktreeRoot` names a
+# sibling of it: the service refuses at load any root inside the registered
+# checkout, which includes the `$DSH_HOME/worktrees` the shipped bundle states.
+
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  config:
+    runnerCommand:
+      - bash
+      - -c
+      - while [ "$1" != "--" ]; do shift; done; shift; exec "$@"
+      - passthrough-runner
+
+- id: session-persistence-jsonl
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- insert:
+    - id: worktree-manager
+      name: '@deepseek-ai/dsh-worktree-manager'
+      config:
+        worktreeRoot: !!js process.cwd() + '/../' + process.cwd().split('/').pop() + '-worktrees'
+        pruneOnStart: true
+
+    - id: threads
+      name: '@deepseek-ai/dsh-experimental-threads'
+
+    - id: subagent-thread-worktree
+      name: '@deepseek-ai/dsh-subagent-thread-worktree'
+      config:
+        providerName: thread
+        branchPerThread: true
+        branchTemplate: dsh/thread-{{id}}
+        childAgentPreset: project-thread
+
+    - id: project-memory
+      name: '@deepseek-ai/dsh-experimental-project-memory'
+
+    - id: tool-threads
+      name: '@deepseek-ai/dsh-experimental-threads-tool'
+
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+
+    - id: preset-standard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard
+        order: 1
+        plugins:
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+              backgroundMode: continuable
+
+    - id: threads-preset
+      name: '@deepseek-ai/dsh-experimental-threads-preset'
+      config:
+        id: project
+        workerId: project-thread
+        provider: thread
+        basePreset: standard
+        workerMaxDepth: 2
+
+- id: tool-subagent
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: thread
+    toolName: subagent
+    backgroundMode: continuable

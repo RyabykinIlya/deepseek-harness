@@ -124,4 +124,15 @@ describe('modelRoutingProjectionDefinition', () => {
     expect(modelRoutingProjectionDefinition.stateVersion).toBe(1)
     expect(modelRoutingProjectionDefinition.init({} as SessionHeader, SessionLogOffset(0))).toEqual(emptyModelRoutingState())
   })
+
+  it('validates the pre-decision view the registry publishes', () => {
+    const { wire } = modelRoutingProjectionDefinition
+    expect(wire.viewSchema.parse(wire.view(emptyModelRoutingState()))).toBeNull()
+  })
+
+  it('validates a decided view', () => {
+    const { wire } = modelRoutingProjectionDefinition
+    const decided = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', DECISION, 11))
+    expect(wire.viewSchema.parse(wire.view(decided))).toEqual(modelRoutingView(decided))
+  })
 })

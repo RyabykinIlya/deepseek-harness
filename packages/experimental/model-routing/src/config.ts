@@ -33,6 +33,19 @@ export type FreeMode = 'off' | 'prefer' | 'only'
 /** Input modality a tier advertises to the model catalog. */
 export type ModelInput = 'text' | 'image'
 
+/**
+ * Whether a tier's configured model ids stand for themselves or for the family
+ * they belong to (default `pinned`).
+ *
+ * `pinned` decides under the ids the configuration names, which is what makes a
+ * deployment's cost and behavior reproducible from that configuration alone.
+ * `latest` moves each id forward to the newest snapshot of its family before
+ * deciding, so a tier follows new releases without being edited. An unversioned
+ * id is not a rolling alias — `deepseek/deepseek-v4-pro` is the April snapshot of
+ * that family — so `pinned` is the mode that can silently hold an old release.
+ */
+export type SnapshotPolicy = 'pinned' | 'latest'
+
 /** One named group of interchangeable models. */
 export interface TierSettings {
   /** Model id on the route: `^[a-z][a-z0-9-]*$`, not `auto`, unique. */
@@ -133,6 +146,9 @@ export interface Config {
   freeForSubagents: Volatile<boolean>
   freeMinRemaining: Volatile<number>
   keyInfoTtlMs: Volatile<number>
+  snapshotPolicy: Volatile<SnapshotPolicy>
+  catalogTtlMs: Volatile<number>
+  catalogTimeoutMs: Volatile<number>
 }
 
 /**
@@ -186,6 +202,9 @@ export interface RoutingSettings {
   readonly freeForSubagents: boolean
   readonly freeMinRemaining: number
   readonly keyInfoTtlMs: number
+  readonly snapshotPolicy: SnapshotPolicy
+  readonly catalogTtlMs: number
+  readonly catalogTimeoutMs: number
 }
 
 const tierSettings: z<TierSettings> = z.object({
@@ -299,6 +318,14 @@ export const Config = z.object({
   freeForSubagents: z.boolean().default(false).volatile(),
   freeMinRemaining: z.number().default(20).volatile(),
   keyInfoTtlMs: z.number().default(60000).volatile(),
+  snapshotPolicy: z.union(['pinned', 'latest'] as const).default('pinned').volatile(),
+  // The catalog is one list for the whole deployment and changes only when a
+  // publisher releases something, so it outlives the endpoint lists' own churn by
+  // an order of magnitude and is read on the same one-hour cadence.
+  catalogTtlMs: z.number().default(3600000).volatile(),
+  // A catalog read transfers the whole list, which is an order of magnitude more
+  // than one model's endpoint list, so it is given more of the caller's budget.
+  catalogTimeoutMs: z.number().default(15000).volatile(),
 })
 
 /**
@@ -351,6 +378,9 @@ export function readSettings(config: Config): RoutingSettings {
     freeForSubagents: config.freeForSubagents.get(),
     freeMinRemaining: config.freeMinRemaining.get(),
     keyInfoTtlMs: config.keyInfoTtlMs.get(),
+    snapshotPolicy: config.snapshotPolicy.get(),
+    catalogTtlMs: config.catalogTtlMs.get(),
+    catalogTimeoutMs: config.catalogTimeoutMs.get(),
   }
 }
 

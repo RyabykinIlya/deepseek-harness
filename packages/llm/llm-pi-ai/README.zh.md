@@ -150,6 +150,9 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 | [`src/replay.ts`](src/replay.ts) | 带版本的 `ReplayEnvelope` 存储与校验 |
 | [`src/dispatch.ts`](src/dispatch.ts) | `ctx.piAiDispatch`：一次流式调用携带按调用给出的 OpenRouter `provider` 块，以及 `piAiResponseIdentity` |
 | [`src/discovery.ts`](src/discovery.ts) | 面向配置界面的端点询问 |
+| [`src/openrouter-http.ts`](src/openrouter-http.ts) | 所有 OpenRouter 列表共用的 GET、超时、字节上限与失败码 |
+| [`src/openrouter-endpoints.ts`](src/openrouter-endpoints.ts) | 单个模型的上游提供方列表，以价格与客观条款表示 |
+| [`src/openrouter-catalog.ts`](src/openrouter-catalog.ts) | 模型目录，其 `canonical_slug` 决定一个模型 id 属于哪个带日期的家族 |
 
 ### 注册与目录
 

@@ -150,6 +150,9 @@ The adapter is built on immutable snapshots and per-operation resolution. Each o
 | [`src/replay.ts`](src/replay.ts) | Versioned `ReplayEnvelope` storage and validation |
 | [`src/dispatch.ts`](src/dispatch.ts) | `ctx.piAiDispatch`: one stream call carrying a per-call OpenRouter `provider` block, plus `piAiResponseIdentity` |
 | [`src/discovery.ts`](src/discovery.ts) | Endpoint interrogation for configuration surfaces |
+| [`src/openrouter-http.ts`](src/openrouter-http.ts) | The GET, deadline, byte ceiling, and failure codes every OpenRouter listing shares |
+| [`src/openrouter-endpoints.ts`](src/openrouter-endpoints.ts) | One model's upstream provider list, as prices and objective terms |
+| [`src/openrouter-catalog.ts`](src/openrouter-catalog.ts) | The model catalog, whose `canonical_slug` is what places a model id in a dated family |
 
 ### Registration and directory
 

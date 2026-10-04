@@ -71,21 +71,33 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   })
 
   // The page edits the Host's own `model-routing` namespace, so it appears only
-  // while that namespace is served.
-  const controller = new ModelRoutingCardController(ctx.configForms.get(MODEL_ROUTING_NS), ctx)
-  ctx.effect(() => () => { controller.dispose() }, 'ui-model-routing: card subscription')
-  const face = controller.inject()
-  ctx.effect(() => ctx.configForms.whileServed([MODEL_ROUTING_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
-    name: 'plugins.item',
-    id: 'model-routing',
-    order: 35,
-    label: () => t('title'),
-    locale: NS,
-    inject: () => face,
-  }, ModelRoutingCard))), 'ui-model-routing: settings page')
-  ctx.effect(
-    () => ctx.remote.$on('llm/adapters-updated', () => { controller.refreshCatalog() }),
-    'ui-model-routing: adapter invalidations',
-  )
-  return disposeRemote
+  // while that namespace is served. The controller calls that namespace for
+  // quotes and the free budget, and a Context only reads `remote.modelRouting`
+  // from a scope that declares it — which this plugin cannot do at the top, as
+  // the mount above is what provides it.
+  const card = ctx.inject(['remote.modelRouting'], (scope: ClientContext) => {
+    const controller = new ModelRoutingCardController(scope.configForms.get(MODEL_ROUTING_NS), scope)
+    scope.effect(() => () => { controller.dispose() }, 'ui-model-routing: card subscription')
+    const face = controller.inject()
+    scope.effect(() => scope.configForms.whileServed([MODEL_ROUTING_NS], () => scope.slots.inject('plugins.item', () => scope.slots.register({
+      name: 'plugins.item',
+      id: 'model-routing',
+      order: 35,
+      label: () => t('title'),
+      locale: NS,
+      inject: () => face,
+    }, ModelRoutingCard))), 'ui-model-routing: settings page')
+    scope.effect(
+      () => scope.remote.$on('llm/adapters-updated', () => { controller.refreshCatalog() }),
+      'ui-model-routing: adapter invalidations',
+    )
+  })
+  try {
+    await card
+  } catch (error: unknown) {
+    await card.dispose()
+    await disposeRemote()
+    throw error
+  }
+  return async () => { await card.dispose(); await disposeRemote() }
 }

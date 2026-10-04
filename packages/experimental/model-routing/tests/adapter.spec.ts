@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { OpenRouterEndpoint, OpenRouterRoutingBlock, PiAiDispatch } from '@deepseek-ai/dsh-llm-pi-ai'
+import type {
+  OpenRouterCatalogEntry,
+  OpenRouterEndpoint,
+  OpenRouterRoutingBlock,
+  PiAiDispatch,
+} from '@deepseek-ai/dsh-llm-pi-ai'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import { TiersAdapter } from '../src/adapter.ts'
@@ -9,6 +14,7 @@ import type { TiersAdapterDeps } from '../src/adapter.ts'
 import { Config, readSettings, validateSettings } from '../src/config.ts'
 import type { RoutingSettings } from '../src/config.ts'
 import { EndpointsCache } from '../src/endpoints-cache.ts'
+import { FamilyCache } from '../src/family-cache.ts'
 import { KeyInfo } from '../src/key-info.ts'
 import type { JudgeVerdict, ModelRoutingState } from '../src/types.ts'
 import { endpointsOf } from './fixtures.ts'
@@ -53,6 +59,9 @@ interface Harness {
   judge: { reply: Omit<JudgeVerdict, 'rule'> | undefined }
   freeRemaining: number
   origin: string | undefined
+  warnings: string[]
+  catalogEntries: readonly OpenRouterCatalogEntry[]
+  catalogFails: boolean
 }
 
 /** Build an adapter over stub dependencies and recorded endpoint lists. */
@@ -62,6 +71,8 @@ async function harness(over: {
   responses?: StreamChunk[][]
   endpoints?: Record<string, readonly OpenRouterEndpoint[] | Error>
   state?: ModelRoutingState
+  catalog?: readonly OpenRouterCatalogEntry[]
+  catalogFails?: boolean
 } = {}): Promise<Harness> {
   const clock = 1000
   const tiers = over.tiers ?? [PRO, FLASH] as Record<string, unknown>[]
@@ -92,6 +103,9 @@ async function harness(over: {
     judge: { reply: undefined },
     freeRemaining: 1000,
     origin: undefined,
+    warnings: [] as string[],
+    catalogEntries: over.catalog ?? [],
+    catalogFails: over.catalogFails ?? false,
   }
   for (const model of Object.keys(endpoints)) record.endpoints[model] = endpoints[model]!
 
@@ -131,6 +145,10 @@ async function harness(over: {
     usage: () => undefined,
     innerEfforts: async () => ['off', 'high', 'xhigh'],
     endpoints: cache,
+    catalog: new FamilyCache(async () => {
+      if (record.catalogFails) throw new Error('OpenRouter answered 503')
+      return record.catalogEntries
+    }, () => clock),
     keyInfo: new KeyInfo({
       fetch: async () => new Response(JSON.stringify({
         data: { free_model_daily_requests: { used: 0, limit: 1000, remaining: record.freeRemaining } },
@@ -145,7 +163,10 @@ async function harness(over: {
     apiKey: () => Promise.resolve('key'),
     headers: () => ({}),
     now: () => clock,
-    warn: (message) => { record.judge.reply ??= { model: 'typesafe/jev-1.13', latencyMs: 0, error: message } },
+    warn: (message) => {
+      record.warnings.push(message)
+      record.judge.reply ??= { model: 'typesafe/jev-1.13', latencyMs: 0, error: message }
+    },
   }
   record.adapter = new TiersAdapter(deps, {
     routeName: 'tiers',
@@ -539,5 +560,104 @@ describe('TiersAdapter catalog', () => {
   it('advertises nothing while no tier is configured', async () => {
     const h = await harness({ tiers: [] })
     expect(h.adapter.catalog('tiers')).toEqual([])
+  })
+})
+
+describe('TiersAdapter snapshot policy', () => {
+  /** The DeepSeek Pro family as OpenRouter's catalog states it on 2026-10-04. */
+  const FAMILY: readonly OpenRouterCatalogEntry[] = [
+    { id: 'deepseek/deepseek-v4-pro', canonicalSlug: 'deepseek/deepseek-v4-pro-20260423' },
+    { id: 'deepseek/deepseek-v4-pro-0813', canonicalSlug: 'deepseek/deepseek-v4-pro-20260813' },
+    { id: 'deepseek/deepseek-v4-flash', canonicalSlug: 'deepseek/deepseek-v4-flash-20260423' },
+  ]
+
+  /** A Pro tier whose newest release is priced by the recorded April listing. */
+  async function proTier(options: {
+    policy: string
+    catalog?: readonly OpenRouterCatalogEntry[]
+    catalogFails?: boolean
+    decideEveryTime?: boolean
+  }): Promise<Harness> {
+    const pro = await endpointsOf('deepseek/deepseek-v4-pro')
+    return harness({
+      tiers: [{ ...PRO, models: ['deepseek/deepseek-v4-pro'] }],
+      endpoints: { 'deepseek/deepseek-v4-pro': pro, 'deepseek/deepseek-v4-pro-0813': pro },
+      catalog: options.catalog ?? FAMILY,
+      catalogFails: options.catalogFails ?? false,
+      settings: { snapshotPolicy: options.policy },
+      // A Session compacted since its last decision decides again at every
+      // boundary, which is what makes a second run a second decision rather than
+      // a reuse of the pin the first one left.
+      ...options.decideEveryTime ? { state: compacted('deepseek/deepseek-v4-pro') } : {},
+    })
+  }
+
+  /** A Pro session that has to decide again at the next boundary. */
+  function compacted(model: string): ModelRoutingState {
+    return {
+      decision: {
+        boundary: 'start', requested: 'pro', tier: 'pro', model,
+        considered: 1, runnersUp: [], excludedTags: [],
+      },
+      decidedAt: 1,
+      lastResponseAt: 1000,
+      compactedSinceDecision: true,
+      explicitSelection: false,
+      overrides: {},
+    }
+  }
+
+  it('decides under the newest snapshot of the family a tier names', async () => {
+    const h = await proTier({ policy: 'latest' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.events[0]).toMatchObject({
+      tier: 'pro',
+      model: 'deepseek/deepseek-v4-pro-0813',
+    })
+    expect(h.warnings).toEqual([
+      'model-routing: "deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813",'
+      + ' the newest snapshot of its family',
+    ])
+  })
+
+  it('says once that a tier moved, however many boundaries decide afterwards', async () => {
+    const h = await proTier({ policy: 'latest', decideEveryTime: true })
+    await run(h.adapter, { model: 'pro' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.events).toHaveLength(2)
+    expect(h.warnings).toHaveLength(1)
+  })
+
+  it('moves a request that named one of the tier models itself', async () => {
+    const h = await proTier({ policy: 'latest' })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.events[0]?.tier).toBe('pro')
+  })
+
+  it('leaves every id exactly as configured when the policy is pinned', async () => {
+    const h = await proTier({ policy: 'pinned' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(h.warnings).toEqual([])
+  })
+
+  it('decides under the configured ids when the catalog cannot be read', async () => {
+    const h = await proTier({ policy: 'latest', catalogFails: true, decideEveryTime: true })
+    await run(h.adapter, { model: 'pro' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(h.warnings).toEqual([
+      'model-routing: the OpenRouter model catalog could not be read, so tiers are deciding under'
+      + ' their configured model ids',
+    ])
+  })
+
+  it('leaves a tier where it was when the catalog places none of its models', async () => {
+    const h = await proTier({ policy: 'latest', catalog: [] })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(h.warnings).toEqual([])
   })
 })

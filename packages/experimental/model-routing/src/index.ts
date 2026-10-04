@@ -29,9 +29,14 @@ export type {
   PresetRouteSnapshot,
   Quantization,
   RoutingSettings,
+  SnapshotPolicy,
   TierSettings,
   TierSettingsSnapshot,
 } from './config.ts'
+export { resolveModelFamily } from './family.ts'
+export type { FamilyResolution } from './family.ts'
+export { FamilyCache } from './family-cache.ts'
+export type { CatalogReader, FamilyResolutionBatch } from './family-cache.ts'
 export { QUANTIZATION_RANK, quantizationRank, quantizationsAtOrAbove } from './quantization.ts'
 export {
   baseSlugOf,

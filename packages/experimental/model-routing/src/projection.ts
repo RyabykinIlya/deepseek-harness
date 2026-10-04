@@ -79,6 +79,9 @@ const modelRoutingStateSchema = z.object({
   overrides: overridesSchema,
 }).strict() as z.ZodType<ModelRoutingState>
 
+// Nullable because the registry validates every published value, and the value
+// before the first decision is `null`: a non-nullable schema rejects it and the
+// rejection fails the whole snapshot, not just this unit's slot.
 const modelRoutingViewSchema = z.object({
   requested: z.string(),
   tier: z.string(),
@@ -88,7 +91,7 @@ const modelRoutingViewSchema = z.object({
   boundary: routingBoundarySchema,
   decidedAt: z.number(),
   unpinned: z.boolean(),
-}).strict() as z.ZodType<ModelRoutingView>
+}).strict().nullable() as z.ZodType<ModelRoutingView | null>
 
 /**
  * The state of a Session that has never taken a routing decision.

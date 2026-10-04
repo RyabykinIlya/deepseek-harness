@@ -1348,7 +1348,7 @@ export type TierContract = 'none' | 'tiers'
 ## `@deepseek-ai/dsh-experimental-threads-tool`
 
 - `inject`: `tools`
-- `source`: [`packages/experimental/tool-threads/src/index.ts:57`](../packages/experimental/tool-threads/src/index.ts)
+- `source`: [`packages/experimental/tool-threads/src/index.ts:60`](../packages/experimental/tool-threads/src/index.ts)
 
 ```ts config-catalog
 /** Configuration: what one call may spend. */

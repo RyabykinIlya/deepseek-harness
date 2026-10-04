@@ -35,6 +35,8 @@ import { boundaryOf } from './boundary.ts'
 import type { RoutingSettings, TierSettingsSnapshot } from './config.ts'
 import { mapEffort } from './effort.ts'
 import type { EndpointsCache } from './endpoints-cache.ts'
+import type { FamilyCache } from './family-cache.ts'
+import type { FamilyResolution } from './family.ts'
 import { routingEndpointOf } from './endpoint.ts'
 import { judgeQuestions, judgeState, tierFromVerdict } from './judge.ts'
 import type { JudgeRequest } from './judge.ts'
@@ -82,6 +84,8 @@ export interface TiersAdapterDeps {
   /** Reasoning efforts the inner route's model actually supports. */
   innerEfforts(model: string, signal: AbortSignal): Promise<readonly string[] | undefined>
   endpoints: EndpointsCache
+  /** The whole OpenRouter catalog, read behind a cache; decides which snapshot a configured id names. */
+  catalog: FamilyCache
   keyInfo: KeyInfo
   /** One judge call, with `fetch` and `now` already bound by the host. */
   judge(request: Omit<JudgeRequest, 'fetch' | 'now'>): Promise<Omit<JudgeVerdict, 'rule'>>
@@ -112,15 +116,10 @@ const NO_SESSION_KEY = ''
 /** Finish reasons that carry no provider failure worth rerouting around. */
 const SUCCESSFUL_FINISH = new Set(['stop', 'tool-calls', 'max-tokens'])
 
-/** Milliseconds until the next UTC midnight, the free-endpoint block's end. */
-function untilUtcMidnight(now: number): number {
+/** The next UTC midnight, the instant a free-endpoint block expires. */
+function nextUtcMidnight(now: number): number {
   const day = 86_400_000
   return now - (now % day) + day
-}
-
-/** The next UTC midnight as an absolute instant, from a wall-clock reading. */
-function nextUtcMidnight(now: number): number {
-  return untilUtcMidnight(now)
 }
 
 /** Every input modality a tier advertises, as the catalog spells them. */
@@ -153,6 +152,8 @@ export class TiersAdapter extends LlmAdapter {
   private readonly pins = new Map<string, Pin>()
   private readonly failures = new Set<string>()
   private readonly excluded = new Map<string, Map<string, number>>()
+  private readonly snapshots = new Map<string, string>()
+  private readonly reported = new Set<string>()
   private freeBlockedUntil = 0
 
   constructor(
@@ -430,7 +431,7 @@ export class TiersAdapter extends LlmAdapter {
       judge = outcome.verdict
     }
     const tier = this.tierNamed(settings, tierName)
-    const models = target.kind === 'fixed' ? [target.model] : [...tier.models]
+    const models = await this.candidateModels(settings, target, tier, signal)
     const lists = await this.deps.endpoints.read(models, settings.endpointsTtlMs, signal)
     const allowFree = await this.freeAdmission({ settings, tier, session })
     const excludedTags = this.excludedTagsOf(key)
@@ -519,6 +520,74 @@ export class TiersAdapter extends LlmAdapter {
       block,
     }
     return { pin: next, payload }
+  }
+
+  /**
+   * The model ids one decision ranks over.
+   *
+   * Under `latest` a tier's list is a list of *families* rather than releases,
+   * which is the only way an unversioned id such as `deepseek/deepseek-v4-pro`
+   * stops meaning the April snapshot forever. A request that named one of those
+   * ids itself is resolved the same way, because the model picker offers the ids
+   * a tier lists and picking `deepseek/deepseek-v4-pro` there means the pro
+   * model, not one release of it. A deployment that wants a tier to stay on an
+   * exact release says so with `snapshotPolicy: 'pinned'`.
+   * @param settings - the whole settings value.
+   * @param target - what this request asked for.
+   * @param tier - the tier the decision landed on.
+   * @param signal - the request's cancellation.
+   * @returns the ids to rank, in tier order.
+   */
+  private async candidateModels(
+    settings: RoutingSettings,
+    target: RequestedTarget,
+    tier: TierSettingsSnapshot,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const configured = target.kind === 'fixed' ? [target.model] : [...tier.models]
+    if (settings.snapshotPolicy !== 'latest') return configured
+    const batch = await this.deps.catalog.resolve(tier.models, settings.catalogTtlMs, signal)
+    if (batch.unreadable) {
+      // The turn still has to be decided, and the configured ids are the ones
+      // every other part of the deployment names, so the catalog failing is not
+      // a reason to refuse.
+      this.warnOnce(
+        'catalog',
+        'model-routing: the OpenRouter model catalog could not be read, so tiers are deciding under'
+        + ' their configured model ids',
+      )
+      return configured
+    }
+    for (const resolution of batch.resolutions) this.announce(resolution)
+    return batch.resolutions.map(resolution => resolution.resolved)
+  }
+
+  /**
+   * Report a model id that now names a different release than it did last time.
+   *
+   * A decision runs on every boundary of every turn, so the remembered value is
+   * what keeps this to one line per move: a route that re-announced an unchanged
+   * resolution would bury the one line that says a tier changed models.
+   * @param resolution - one configured id and the release it resolved to.
+   */
+  private announce(resolution: FamilyResolution): void {
+    if (!resolution.moved || this.snapshots.get(resolution.configured) === resolution.resolved) return
+    this.snapshots.set(resolution.configured, resolution.resolved)
+    this.deps.warn(
+      `model-routing: "${resolution.configured}" now resolves to "${resolution.resolved}",`
+      + ' the newest snapshot of its family',
+    )
+  }
+
+  /**
+   * Report a condition once for the life of this adapter.
+   * @param key - what identifies the condition.
+   * @param message - the line to log the first time it is seen.
+   */
+  private warnOnce(key: string, message: string): void {
+    if (this.reported.has(key)) return
+    this.reported.add(key)
+    this.deps.warn(message)
   }
 
   /** Whether this caller may spend a turn on a free endpoint right now. */

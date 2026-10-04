@@ -36,7 +36,8 @@
  * @module dsh-llm-pi-ai/openrouter-endpoints
  */
 
-import { LlmError, attributionHeaders } from '@deepseek-ai/dsh-llm'
+import { LlmError } from '@deepseek-ai/dsh-llm'
+import { readOpenRouterJson } from './openrouter-http.ts'
 
 /**
  * OpenRouter REST API root. Overridable because the endpoint may be reached
@@ -339,38 +340,6 @@ function endpointsUrl(baseURL: string, id: OpenRouterModelId): string {
 }
 
 /**
- * Read one reply body, refusing one that outgrows the ceiling.
- *
- * A declared length is checked first, so an honest server is turned away before
- * anything is transferred. What is actually enforced afterwards is the byte
- * count of what arrived: a server that under-declares or streams tells us
- * nothing up front, and the only reading available then is the one taken after
- * the transfer. Unlike `discovery.ts` — which interrogates whatever URL a user
- * typed and must therefore cap the bytes it will pull — this reads OpenRouter's
- * own API path, so the residual gap is a misbehaving upstream rather than a
- * caller-supplied one, and it is documented rather than papered over with an
- * untestable mid-stream cancel.
- * @param response - the 2xx response.
- * @param url - the URL read, named in the diagnostic.
- * @returns the decoded body text.
- * @throws LlmError when the body exceeds {@link OPENROUTER_ENDPOINTS_MAX_BYTES}.
- */
-async function readBounded(response: Response, url: string): Promise<string> {
-  const oversized = (): LlmError => new LlmError(
-    `llm-pi-ai: ${url} answered with more than ${OPENROUTER_ENDPOINTS_MAX_BYTES} bytes`,
-    MALFORMED_ENDPOINTS_CODE,
-  )
-  const declared = Number(response.headers.get('content-length') ?? Number.NaN)
-  if (Number.isFinite(declared) && declared > OPENROUTER_ENDPOINTS_MAX_BYTES) {
-    await response.body?.cancel()
-    throw oversized()
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.byteLength > OPENROUTER_ENDPOINTS_MAX_BYTES) throw oversized()
-  return new TextDecoder().decode(bytes)
-}
-
-/**
  * Fetch one model's upstream provider list.
  *
  * The caller is expected to have already decided that a routing decision needs
@@ -388,73 +357,14 @@ export async function fetchOpenRouterEndpoints(
   request: OpenRouterEndpointRequest = {},
 ): Promise<readonly OpenRouterEndpoint[]> {
   const id = splitModelId(model)
-  const timeoutMs = request.timeoutMs ?? OPENROUTER_ENDPOINTS_TIMEOUT_MS
   const url = endpointsUrl(request.baseURL ?? OPENROUTER_DEFAULT_BASE_URL, id)
-  const timeout = AbortSignal.timeout(timeoutMs)
-  const deadline = request.signal === undefined ? timeout : AbortSignal.any([request.signal, timeout])
-  let response: Response
-  try {
-    const headers = new Headers(request.headers === undefined ? undefined : Object.entries(request.headers))
-    headers.set('accept', 'application/json')
-    if (request.apiKey !== undefined && request.apiKey.length > 0) {
-      headers.set('authorization', `Bearer ${request.apiKey}`)
-    }
-    for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
-    response = await fetch(url, { method: 'GET', redirect: 'error', headers, signal: deadline })
-  } catch (error: unknown) {
-    throw transportError(error, request.signal, deadline, timeoutMs, url)
-  }
-  if (!response.ok) {
-    await response.body?.cancel()
-    throw new LlmError(
-      `${url} answered ${String(response.status)}${response.status === 401 || response.status === 403
-        ? '; OpenRouter refused the credential this listing used'
-        : ''}`,
-      ENDPOINTS_HTTP_ERROR_CODE,
-    )
-  }
-  let text_: string
-  try {
-    text_ = await readBounded(response, url)
-  } catch (error: unknown) {
-    if (request.signal?.aborted) {
-      throw new LlmError('OpenRouter endpoint listing aborted by caller', 'ABORTED', { cause: error })
-    }
-    throw error
-  }
-  let body: unknown
-  try {
-    body = JSON.parse(text_)
-  } catch (error: unknown) {
-    throw new LlmError(`${url} did not answer with JSON`, MALFORMED_ENDPOINTS_CODE, { cause: error })
-  }
+  const body = await readOpenRouterJson(url, request, {
+    timeoutMs: request.timeoutMs ?? OPENROUTER_ENDPOINTS_TIMEOUT_MS,
+    maxBytes: OPENROUTER_ENDPOINTS_MAX_BYTES,
+  }, {
+    http: ENDPOINTS_HTTP_ERROR_CODE,
+    malformed: MALFORMED_ENDPOINTS_CODE,
+    unreachable: ENDPOINTS_UNREACHABLE_CODE,
+  })
   return parseOpenRouterEndpoints(body, model)
-}
-
-/**
- * Classify one failed request. The caller's own cancellation wins over the
- * deadline, so a read the session stopped is `ABORTED` even if a transport
- * timeout surfaced; a deadline that fired is this package's timeout; anything
- * else is an endpoint this process could not reach.
- * @param error - the caught failure.
- * @param signal - the caller's cancellation signal, when one was supplied.
- * @param deadline - the combined caller-and-timeout signal.
- * @param timeoutMs - the configured request timeout.
- * @param url - the URL read, named in the diagnostic.
- * @returns the classified failure.
- */
-function transportError(
-  error: unknown,
-  signal: AbortSignal | undefined,
-  deadline: AbortSignal,
-  timeoutMs: number,
-  url: string,
-): LlmError {
-  if (signal?.aborted === true) {
-    return new LlmError('OpenRouter endpoint listing aborted by caller', 'ABORTED', { cause: error })
-  }
-  if (deadline.aborted) {
-    return new LlmError(`OpenRouter endpoint listing timed out after ${String(timeoutMs)}ms`, 'TIMEOUT', { cause: error })
-  }
-  return new LlmError(`could not reach ${url}`, ENDPOINTS_UNREACHABLE_CODE, { cause: error })
 }
