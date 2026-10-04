@@ -536,7 +536,6 @@
       "@deepseek-ai/dsh-workflow": ["./packages/workflow/workflow/src"],
       "@deepseek-ai/dsh-workflow-ptc": ["./packages/workflow/workflow-ptc/src"],
       "@deepseek-ai/dsh-workspace": ["./packages/workspace/workspace/src"],
-      "@deepseek-ai/dsh-workspace/invariant": ["./packages/workspace/workspace/src/invariant.ts"],
       "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"],
       "@deepseek-ai/dsh-worktree-manager": ["./packages/subagent/worktree-manager/src"]
       // END generated package aliases
