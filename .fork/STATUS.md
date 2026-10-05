@@ -201,6 +201,14 @@ Threads подняты до **собирается** 2026-10-04: оба снап
 
 ## Закрытые баги
 
+### 2026-10-05 — fetch до любого сайта падал с «non-public IP address»
+
+Живые пробы 2026-10-05 в запущенном хосте: `web_fetch http://127.0.0.1:48777/` прошёл, `web_fetch https://claude.com/blog/projects-redesigned` упал с `URL hostname "claude.com" resolves to a non-public IP address` (`WEB_BLOCKED_URL`, `packages/web/web-fetch-http/src/network.ts`).
+
+**Корневая причина.** Transparent-proxy работает в режиме fake-ip/TUN: системный DNS отвечает на каждый домен синтетическим адресом (замер — `dns.lookup('claude.com')` → `198.18.2.112`, пул `198.18.0.0/15`). Guard `web-fetch-http` принимает только адреса из `trustedProxyAddressRanges`; дефолт бандла `packages/bundle/base/cordis.patch.yml` — `[198.18.0.0/15]` — в живом конфиге отсутствует, потому что строка `config:` в патче профиля заменяет весь config строки бандла целиком, а `~/.dsh/profiles/web/cordis.patch.yml` перечисляет свою строку `web-fetch-http` только с LAN-диапазонами (`127.0.0.0/8`, `::1/128`, `192.168.0.0/16`, `10.0.0.0/8`). Локальный адрес при этом работал: LAN-диапазоны профиля активны, а `198.18.0.0/15` молча удалён частичным перечислением. Тот же механизм замены `config:`, что в пункте **Профиль сужает список доверенных площадок до одной** (`trustedUnknownProviders`, «Открытые баги → Model routing»).
+
+**Исправление.** В список `trustedProxyAddressRanges` строки `web-fetch-http` в `~/.dsh/profiles/web/cordis.patch.yml` добавлен `198.18.0.0/15`. Профиль живёт вне репозитория, правка применена 2026-10-05; после неё `web_fetch` до `claude.com` проходит (HTTP 200), хост подхватил конфиг без перезапуска.
+
 ### 2026-10-05 — Третий раунд, #5: continuable-провайдер терял изоляцию на форграунд-пути
 
 Пятая находка — **[HIGH]** `subagent-thread-worktree/src/index.ts:117-119`, `tool-subagent/src/index.ts:587`.

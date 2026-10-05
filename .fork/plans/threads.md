@@ -6,7 +6,7 @@
 
 **Собирается.** Оба снапшот-сценария проходят keyless, 563 теста host-пакетов и 458 тестов клиентских пакетов зелёные (проверено 2026-10-04). В запущенном приложении сценарий «Project → два Thread'а → слияние» не проходился.
 
-Девять новых пакетов: `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads`.
+Девять новых пакетов: `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads`. 2026-10-05 добавлен десятый — `experimental/client-ui-project-memory`, карточка настроек памяти Project.
 
 ## Соответствие модели Anthropic
 
@@ -19,7 +19,7 @@
 | Supervise from main chat, or open a thread | ростер в шапке плюс чат Thread'а в главной области или в правой панели | полностью |
 | Redirect mid-flight | `send_message` и `interrupt_agent` в контракте координатора | полностью |
 | Conflicts = ordinary merge conflict | `git merge --no-ff` в контракте, `thread_diff` считает пересечения | глубже: пересечения видны **до** слияния |
-| Shared project memory | `project-memory`, `memory_read` и `memory_write` у обеих ролей | полностью |
+| Shared project memory | `project-memory`, `memory_read` и `memory_write` у обеих ролей; потолки правятся в настройках (`client-ui-project-memory`) | полностью |
 | Library | `library_list` и панель: вложения, `present`, изменённые файлы | полностью |
 | Project-specific usage visibility | `ProjectTokenUsage` агрегирует Project и его Thread'ы | частично: токены есть, денег нет |
 | Своя модель для координатора и для Thread'ов | `presetRoutes`, `allowedModels`, `thread_tier` | полностью, точнее их формулировки |

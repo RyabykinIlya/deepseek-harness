@@ -19,15 +19,21 @@ chore(llm-pi-ai): upgrade @earendil-works/pi-ai to 0.99.2                    9 �
 
 Первый коммит — архив незакоммиченной работы на 304 файла. **Оставляем как есть:** откатывать из него ничего не нужно, поэтому разложение истории по фичам не планируется и в приоритетах не стоит.
 
-## Новые пакеты — 15, конфликтов не дают
+## Новые пакеты — 16, конфликтов не дают
 
 | Фича | Пакеты |
 |---|---|
 | Model routing | `experimental/model-routing`, `experimental/client-ui-model-routing`, `experimental/model-routing-profile` |
-| Threads / Projects | `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads` |
+| Threads / Projects | `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `client-ui-project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads` |
 | Web search | `web/web-search-brave`, `web/web-search-duckduckgo`, `web/web-search-tavily` |
 
-Команда перезамера ниже сейчас покажет 17: `experimental/schedule-bundle` и `runtime-diagnostics/invariants` существуют в точке расхождения, но отсутствуют в нынешнем `origin/master`. Это не наши пакеты — апстрим их переименовал или убрал в `0.2.1-alpha.1`, и при мерже это придётся разобрать отдельно.
+`experimental/client-ui-project-memory` добавлен 2026-10-05 (карточка настроек памяти Project), поэтому в таблице 16, а не 15. Остальные числа ниже — с замера 2026-10-04: полный перезамер требует `git fetch`, а его не было.
+
+**Каталог `packages/experimental/` у нас общий с апстримом, и это главный источник путаницы.** Пакет, лежащий там, не апстримный: `project-memory` и `client-ui-project-memory` отсутствуют в `origin/master` целиком. Проверять принадлежность нужно командой ниже, а не названием каталога.
+
+Новый пакет добавил три апстримных точки регистрации — `tsconfig.base.json`, `tsconfig.client.json`, `scripts/verify-package-readme-model-experience.ts` (категория B, по одной строке, цена нулевая) — и потребовал перегенерации четырёх артефактов, из которых `slot-catalog.ts` и `api-catalog.ts` стоят в списке шести, где нужен глаз. Плюс строка `ui-project-memory` в `experimental/threads-profile/cordis.patch.yml`, но это наш файл: конфликтовать не с чем.
+
+Команда перезамера ниже сейчас покажет 18: `experimental/schedule-bundle` и `runtime-diagnostics/invariants` существуют в точке расхождения, но отсутствуют в нынешнем `origin/master`. Это не наши пакеты — апстрим их переименовал или убрал в `0.2.1-alpha.1`, и при мерже это придётся разобрать отдельно.
 
 ## Поверхность конфликтов
 
@@ -77,11 +83,14 @@ scripts/check-workspace-constraints.ts
 | UI воркспейса | `client/ui-workspace` | 8 |
 | Web search | `client/ui-settings-web-search` | 7 |
 | Session | `core/session` | 7 |
-| Web search | `web/web`, `web/web-fetch-http` | 6 |
+| Web search | `web/web` | 2 |
+| Web fetch — доверенные адреса для fake-ip прокси | `web/web-fetch-http` | 4 |
 | Threads: allowedModels | `subagent/tool-subagent` | 4 |
 | Тест-инфраструктура | `test-support/session-snapshot`, `test-support/client-runtime` | 5 |
 | Документация подсистем | `docs/subsystems/*` | 10 |
 | Прочее | `extensions/tool-cordis`, `extensions/cordis-client-runner`, `preset/agent-preset`, `experimental/webworker-runtime`, `apps/cli/composition.md` | ~5 |
+
+Строка про `web-fetch-http` — отдельный кастом форка, а не часть web-search: в `trustedProxyAddressRanges` оператор объявляет CIDR-блоки (LAN и fake-ip пул transparent-proxy), адреса внутри которых guard принимает как допустимые назначения. Решение с причинами — [DECISIONS.md](DECISIONS.md), раздел «Web fetch». Конфиг-точка фичи — `bundle/base/cordis.patch.yml`, дефолт `trustedProxyAddressRanges: [198.18.0.0/15]`; этот файл уже перечислен в категории B.
 
 ## Как перезамерить
 
