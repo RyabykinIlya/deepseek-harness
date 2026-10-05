@@ -106,6 +106,9 @@ class ThreadWorktreeProvider implements SubagentProvider {
   // A fresh Thread starts with no inherited history: an independent context window is
   // the point, and a fork prefix would spend the child's budget on the parent's bytes.
   readonly inheritsParentContext = false
+  // The worktree is established in `prepareContinuable` and nowhere else, so the
+  // one-shot route below would run this child in the parent's own checkout.
+  readonly isolatesContinuableCwd = true
 
   constructor(
     readonly name: string,

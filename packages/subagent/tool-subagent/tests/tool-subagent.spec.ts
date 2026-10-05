@@ -1228,8 +1228,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const properties = (schema.parameters as {
       properties: Record<string, { description?: string }>
     }).properties
-    expect(properties.run_in_background?.description).toContain('Always runs in the background')
-    expect(properties.run_in_background?.description).toContain('`false` is refused')
+    expect(properties.run_in_background?.description).toContain('Defaults to true')
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
     expect(guidance?.text).toContain('Start independent subagent delegations together')
@@ -1264,24 +1263,80 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(assembly.sections.find(section => section.name === 'tool:subagent')?.text).toBe('')
   })
 
-  it('refuses a foreground request on a continuable provider, whose isolation exists only on the background route', async () => {
-    // The foreground route is the one-shot `start()` path; a continuable
-    // provider establishes its isolation (a git worktree, for the Thread
-    // provider) while preparing a continuable creation and nowhere else, so
-    // honoring `false` would run the child in the parent's own cwd. The refusal
-    // is the point: the isolation must not be dropped silently.
+  it('refuses a foreground request on a provider that isolates only its continuable children', async () => {
+    // `thread` is that provider: it creates its git worktree while preparing a
+    // continuable creation and nowhere else, so the one-shot foreground route
+    // would run the child in the parent's own checkout. The refusal is the
+    // point: the isolation must not be dropped silently.
+    const { ctx, parent } = await continuableSetup()
+    ctx.subagents.registerProvider({
+      name: 'isolating',
+      capabilities: { agentOptions: false, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+      inheritsParentContext: false,
+      isolatesContinuableCwd: true,
+      start: async () => { throw new Error('an isolating provider must not take the one-shot route') },
+      prepareContinuable: async () => ({}),
+    })
+    tool.apply(ctx, {
+      provider: 'isolating',
+      toolName: 'subagent_isolating',
+      backgroundMode: 'continuable',
+    })
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('call-isolating'),
+      name: 'subagent_isolating',
+      arguments: { description: 'blocking work', prompt: 'dig in', run_in_background: false },
+      agent: parent,
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('run_in_background: false is not available for this provider')
+    expect(ctx.jobs.list(parent.id)).toEqual([])
+    // No durable child either: the call never reached a provider.
+    const sessions = await ctx.sessionPersistence.list()
+    expect(sessions.filter(entry => entry.header.id !== parent.id)).toEqual([])
+  })
+
+  it('describes the parameter as refused only for a provider whose isolation is background-only', async () => {
+    const { ctx } = await continuableSetup()
+    ctx.subagents.registerProvider({
+      name: 'isolating',
+      capabilities: { agentOptions: false, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+      inheritsParentContext: false,
+      isolatesContinuableCwd: true,
+      start: async () => { throw new Error('unused') },
+      prepareContinuable: async () => ({}),
+    })
+    tool.apply(ctx, { provider: 'isolating', toolName: 'subagent_isolating', backgroundMode: 'continuable' })
+    const schema = ctx.tools.schemas().find(entry => entry.name === 'subagent_isolating')
+    const properties = (schema!.parameters as {
+      properties: Record<string, { description?: string }>
+    }).properties
+    expect(properties.run_in_background?.description).toContain('`false` is refused')
+    // The ordinary continuable provider keeps offering the explicit foreground
+    // wait, because it isolates nothing that route could lose.
+    const plain = ctx.tools.schemas().find(entry => entry.name === 'subagent')
+    const plainProperties = (plain!.parameters as {
+      properties: Record<string, { description?: string }>
+    }).properties
+    expect(plainProperties.run_in_background?.description).toContain('Defaults to true')
+  })
+
+  it('still honors a foreground request when the provider isolates nothing', async () => {
+    // `spawn` runs its child in the parent's cwd on either route, so refusing
+    // `false` here would cost the synchronous result without protecting a
+    // working directory that was never isolated.
     const { ctx, parent } = await continuableSetup()
     const result = await callSubagent(
       ctx,
       { description: 'blocking work', prompt: 'dig in', run_in_background: false },
       { agent: parent },
     )
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('run_in_background: false is not available for this provider')
+    expect(result.isError).toBe(false)
+    if (result.isError) throw new Error('expected foreground subagent success')
+    expect(result.value).toMatchObject({ kind: 'foreground' })
+    expect(text(result)).toBe('continuable answer')
     expect(ctx.jobs.list(parent.id)).toEqual([])
-    // No durable child was created either: the call never reached a provider.
-    const sessions = await ctx.sessionPersistence.list()
-    expect(sessions.filter(entry => entry.header.id !== parent.id)).toEqual([])
   })
 
   it('starts a continuable child when the caller omits run_in_background', async () => {

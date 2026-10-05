@@ -409,4 +409,18 @@ export interface SubagentProvider {
    * data belonging only to `request.sessionId`.
    */
   prepareContinuable?(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+  /**
+   * Whether a continuable child of this provider runs somewhere the ONE-SHOT
+   * route would not put it — a git worktree, a container, any working
+   * directory the provider establishes only while preparing a continuable
+   * creation. `true` promises that {@link SubagentProvider.start} would run
+   * the child unisolated, so a caller that must not lose the isolation refuses
+   * the one-shot route instead of taking it.
+   *
+   * Descriptive, like {@link SubagentProvider.inheritsParentContext}: the
+   * provider states the fact and the model-facing tool derives its own wording
+   * and refusal from it. A provider that isolates nothing omits this, and its
+   * children then run identically on either route.
+   */
+  readonly isolatesContinuableCwd?: boolean
 }

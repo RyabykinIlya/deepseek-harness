@@ -300,7 +300,7 @@ interface DelegationRunSpec {
 /** Resolve the model's optional scheduling request into one execution route. */
 function resolveDelegationRun(
   request: DelegationRunRequest,
-  options: { readonly backgroundEnabled: boolean; readonly continuable: boolean },
+  options: { readonly backgroundEnabled: boolean; readonly continuable: boolean; readonly isolatesForeground: boolean },
 ): DelegationRunSpec {
   if (!options.backgroundEnabled) {
     // The validator permits undeclared keys, so schema omission also needs
@@ -310,13 +310,13 @@ function resolveDelegationRun(
     }
     return { runInBackground: false }
   }
-  if (options.continuable && request.run_in_background === false) {
-    // The foreground route is the one-shot `start()` path, and a continuable
-    // provider isolates its child only while preparing a continuable creation
-    // (the Thread provider's git worktree is created there and nowhere else).
-    // Honoring `false` would therefore run the child in the parent's own cwd —
-    // unisolated, writing into the Project checkout — so the request is refused
-    // rather than answered with the isolation silently dropped.
+  if (options.isolatesForeground && request.run_in_background === false) {
+    // This provider isolates its child only while preparing a continuable
+    // creation (the Thread provider's git worktree is created there and nowhere
+    // else), so the foreground route would run the child in the parent's own
+    // cwd — unisolated, writing into the Project checkout. Refused rather than
+    // answered with the isolation silently dropped. A provider that isolates
+    // nothing on either route keeps the foreground option.
     throw new Error(
       'run_in_background: false is not available for this provider, because the foreground route'
       + ' would run the child outside the isolation this provider establishes; omit the parameter'
@@ -404,6 +404,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
     const mount = (subagentProvider: SubagentProvider): void => {
       assertSubagentProviderConfiguration(subagentProvider)
       const wording = providerWording(subagentProvider.inheritsParentContext)
+      const isolatesForeground = subagentProvider.isolatesContinuableCwd === true
       const providerRouteDefaults = subagentProvider.agentRouteDefaults
       const selectionDescription = providerRouteDefaults !== undefined
         ? ' Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and this provider\'s route defaults. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model\'s default effort.'
@@ -458,9 +459,11 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
           ...backgroundEnabled ? {
             run_in_background: {
               type: 'boolean' as const,
-              description: continuable
+              description: isolatesForeground
                 ? 'Always runs in the background; omit this parameter. `false` is refused, because only the background route runs the child inside the isolation this provider establishes.'
-                : 'Run as a background job and return its id (collect with job_output, stop with job_kill). Defaults to false.',
+                : continuable
+                  ? 'Defaults to true. Set false only when your next action depends on the result.'
+                  : 'Run as a background job and return its id (collect with job_output, stop with job_kill). Defaults to false.',
             },
           } : {},
         },
@@ -560,7 +563,11 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             ...maxDepth !== undefined ? { maxDepth } : {},
           }
 
-          const runSpec = resolveDelegationRun(args, { backgroundEnabled, continuable })
+          const runSpec = resolveDelegationRun(args, {
+            backgroundEnabled,
+            continuable,
+            isolatesForeground: subagentProvider.isolatesContinuableCwd === true,
+          })
           if (runSpec.runInBackground) {
             if (continuable) {
               // Resolves at inbox acceptance: the child owns its own turns from
@@ -659,7 +666,6 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   }
   const selectForSession = (target: Session): ModelSelectionPolicy | undefined => {
     const freshSession = target.firstLiveSeq === 0
-      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       && target.eventAt(SessionSeq(0))?.type !== 'session/end-seed'
     let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, target)
     if (allowedModels === undefined) {
