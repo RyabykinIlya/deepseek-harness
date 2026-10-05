@@ -47,6 +47,10 @@ function headerProps(over: HeaderOverrides = {}): ThreadChatHeaderProps {
     stopThread: vi.fn(okResult),
     archiveThread: vi.fn(okResult),
     placement: 'tab',
+    // This file's cases drive the header entirely through `threads` projection
+    // rows, never the delegation catalog, so Project identity never gates
+    // anything here; an empty list is a safe, inert default.
+    projectAgentPresets: [],
     t,
     ...rest,
   }

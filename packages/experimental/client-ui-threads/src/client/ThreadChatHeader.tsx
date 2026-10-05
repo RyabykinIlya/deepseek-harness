@@ -23,6 +23,8 @@ export interface ThreadChatHeaderProps extends ThreadActionsInjected {
   threadId: ThreadId
   /** Session-list selector hook. */
   useSessions: UseSessions
+  /** Agent preset ids this deployment treats as Project identities. */
+  projectAgentPresets: readonly string[]
   /** `threads` namespace translator. */
   t: TranslateNS<typeof NS>
   /** Where the header sits: above a Sidebar chat body, or in the session header band. */
@@ -35,9 +37,9 @@ export interface ThreadChatHeaderProps extends ThreadActionsInjected {
  * @returns the header and the action feedback overlays.
  */
 export function ThreadChatHeader({
-  parentSessionId, threadId, useSessions, stopThread, archiveThread, refreshProjection, placement, t,
+  parentSessionId, threadId, useSessions, projectAgentPresets, stopThread, archiveThread, refreshProjection, placement, t,
 }: ThreadChatHeaderProps) {
-  const { roster } = useThreadRoster(useSessions, parentSessionId)
+  const { roster } = useThreadRoster(useSessions, parentSessionId, projectAgentPresets)
   const { actions, overlays } = useThreadActions({ parentSessionId, stopThread, archiveThread, refreshProjection, t })
   const row = roster.entries.find(candidate => candidate.threadId === threadId)
   if (row === undefined) return <>{overlays}</>
@@ -67,7 +69,10 @@ export function ThreadChatHeader({
 
 /** Props of the session-header entry that shows the header for a Thread opened as the main conversation. */
 export type ThreadHeaderActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & ThreadActionsInjected & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'>
+  & ThreadActionsInjected
+  & { projectAgentPresets: readonly string[] }
+  & PropsLocale<typeof NS>
 
 /**
  * Session-header entry for a Thread opened as the main conversation: the
@@ -76,7 +81,9 @@ export type ThreadHeaderActionProps =
  * @param props - session standard props, the Thread actions, and the translator.
  * @returns the Thread header, or null.
  */
-export function ThreadHeaderAction({ sessionId, useSessions, stopThread, archiveThread, refreshProjection, t }: ThreadHeaderActionProps) {
+export function ThreadHeaderAction({
+  sessionId, useSessions, projectAgentPresets, stopThread, archiveThread, refreshProjection, t,
+}: ThreadHeaderActionProps) {
   const parentId = useSessions(state => state.byId[sessionId]?.parentId)
   if (parentId === undefined) return null
   return (
@@ -84,6 +91,7 @@ export function ThreadHeaderAction({ sessionId, useSessions, stopThread, archive
       parentSessionId={parentId}
       threadId={threadIdOfSession(sessionId)}
       useSessions={useSessions}
+      projectAgentPresets={projectAgentPresets}
       stopThread={stopThread}
       archiveThread={archiveThread}
       refreshProjection={refreshProjection}

@@ -220,9 +220,10 @@ export function ThreadChatTab({ useResource, useTabInfo, SessionProvider, render
 /**
  * Sidebar tab body that adds the Thread header above the chat.
  * @param actions - Stop, Archive and projection refresh behind the header buttons.
+ * @param projectAgentPresets - agent preset ids this deployment treats as Project identities.
  * @returns the tab component to register.
  */
-function threadChatTabWithHeader(actions: ThreadActionsInjected) {
+function threadChatTabWithHeader(actions: ThreadActionsInjected, projectAgentPresets: readonly string[]) {
   return function ThreadChatTabWithHeader(props: ThreadChatTabProps & PropsLocale<typeof NS>) {
     return (
       <ThreadChatTab
@@ -233,6 +234,7 @@ function threadChatTabWithHeader(actions: ThreadActionsInjected) {
             parentSessionId={address.parentSessionId}
             threadId={address.threadId}
             useSessions={props.useSessions}
+            projectAgentPresets={projectAgentPresets}
             placement="tab"
             t={props.t}
           />
@@ -247,8 +249,14 @@ function threadChatTabWithHeader(actions: ThreadActionsInjected) {
  * @param ctx - Client root carrying Sessions, resources, Slots, and Sidebar registries.
  * @param t - Chat namespace translator used for fallback tab titles.
  * @param actions - Thread actions behind the header above the chat.
+ * @param projectAgentPresets - agent preset ids this deployment treats as Project identities.
  */
-export function registerThreadChat(ctx: Context, t: TranslateNS<typeof NS>, actions: ThreadActionsInjected): void {
+export function registerThreadChat(
+  ctx: Context,
+  t: TranslateNS<typeof NS>,
+  actions: ThreadActionsInjected,
+  projectAgentPresets: readonly string[],
+): void {
   ctx.effect(
     () => ctx.resources.register(threadChatResourceProvider(ctx.sessions)),
     'ui-threads: Sidebar chat resources',
@@ -275,7 +283,7 @@ export function registerThreadChat(ctx: Context, t: TranslateNS<typeof NS>, acti
     key: THREAD_CHAT_ID,
     locale: NS,
     children: { 'sidebar.thread.chat.conversation': { kind: 'single', scope: 'session' } },
-  }, threadChatTabWithHeader(actions))), 'ui-threads: Sidebar chat body')
+  }, threadChatTabWithHeader(actions, projectAgentPresets))), 'ui-threads: Sidebar chat body')
   ctx.effect(() => ctx.slots.inject('sidebar.thread.chat.conversation', () => ctx.slots.register({
     name: 'sidebar.thread.chat.conversation',
   }, ThreadConversationSlotPanel)), 'ui-threads: Sidebar Conversation')

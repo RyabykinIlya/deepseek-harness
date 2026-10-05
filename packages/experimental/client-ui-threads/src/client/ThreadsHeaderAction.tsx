@@ -521,7 +521,7 @@ export function ThreadsHeaderAction({
   sessionId, useSessions, projectAgentPresets, openThread, openThreadAside, refreshProjection,
   stopThread, archiveThread, listMemory, addMemory, updateMemory, removeMemory, listLibrary, inputActions, t,
 }: ThreadsHeaderActionProps) {
-  const { snapshot, roster } = useThreadRoster(useSessions, sessionId)
+  const { snapshot, roster } = useThreadRoster(useSessions, sessionId, projectAgentPresets)
   // The composition a Session runs is its identity, so it is read from the list
   // row the roster already depends on rather than from the `threads` read: a
   // Project is known before either read lands, which is what lets the control

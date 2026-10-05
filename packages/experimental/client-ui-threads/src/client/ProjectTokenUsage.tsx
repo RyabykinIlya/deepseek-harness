@@ -46,7 +46,7 @@ export function ProjectTokenUsage({ sessionId, useSessions, projectAgentPresets,
   const project = isProjectSession(agentPreset, projectAgentPresets)
   // The Project's Threads are the roster's rows, never a second membership
   // rule: the ledger counts exactly what the roster lists.
-  const { roster } = useThreadRoster(useSessions, sessionId)
+  const { roster } = useThreadRoster(useSessions, sessionId, projectAgentPresets)
   const threadIds = useMemo(
     () => roster.entries.map((row): SessionId => String(row.threadId) as SessionId),
     [roster.entries],

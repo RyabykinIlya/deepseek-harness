@@ -26,6 +26,7 @@ function isRoutingView(value: unknown): value is ModelRoutingView {
     && typeof view.boundary === 'string'
     && typeof view.decidedAt === 'number'
     && typeof view.unpinned === 'boolean'
+    && (view.providerName === undefined || typeof view.providerName === 'string')
 }
 
 /**
@@ -41,11 +42,19 @@ export function readThreadModel(blocks: ProjectionBlocks, threadId: string): Mod
 
 /**
  * Format one routing view for the roster's metadata line.
+ *
+ * The provider matters most while several Threads run on different tiers at
+ * once: the tier and model can match on two Threads that a different upstream
+ * provider is actually serving, and that difference is what a failure is
+ * attributed to. It is appended only when the route pinned one — before the
+ * first decision, and for an endpoint the catalog does not name, there is
+ * nothing honest to show.
  * @param view - the Thread's published routing decision.
- * @returns `<tier> <model>`, with the model stripped of its `author/` prefix.
+ * @returns `<tier> <model>` with the `author/` prefix stripped, plus ` · <provider>` when pinned.
  */
 export function threadModelLabel(view: ModelRoutingView): string {
   const slash = view.model.indexOf('/')
-  if (slash === -1) return `${view.tier} ${view.model}`
-  return `${view.tier} ${view.model.slice(slash + 1)}`
+  const model = slash === -1 ? view.model : view.model.slice(slash + 1)
+  const base = `${view.tier} ${model}`
+  return view.providerName === undefined ? base : `${base} · ${view.providerName}`
 }

@@ -367,6 +367,24 @@ describe('ThreadsHeaderAction liveness', () => {
   })
 })
 
+describe('ThreadsHeaderAction outside a Project', () => {
+  it('renders nothing for an ordinary session whose delegated child is merely continuable', () => {
+    // The shipped `standard` preset sets `backgroundMode: continuable` on
+    // ordinary delegation, so any session that used `subagent` once gets a
+    // catalog row shaped exactly like a Thread's. Outside a Project, that
+    // catalog row must not read as "evidence of a Thread" — it is an
+    // ordinary subagent child, and its Archive action has nothing real to
+    // archive (`threads.archive` would answer `threads/not-found`).
+    const { container } = render(<ThreadsHeaderAction {...props(snapshot({ state: 'ready', values: {} }), {}, {
+      // No `agentPreset` at all: an ordinary session carries no Project
+      // composition, exactly as the shipped `standard` preset leaves it.
+      presets: ['project'],
+      catalog: [{ id: sid('child-1'), createdAt: 0, mode: 'continuable', label: 'ordinary delegation' }],
+    })} />)
+    expect(container.innerHTML).toBe('')
+  })
+})
+
 describe('ThreadsHeaderAction opening a Thread', () => {
   it('opens the Thread as the main conversation and closes the roster', () => {
     const openThread = vi.fn()

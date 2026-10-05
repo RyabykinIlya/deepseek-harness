@@ -111,7 +111,7 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
     ),
   }
   ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
-    registerThreadChat(scope, ctx.locale.bind(NS), threadActions)
+    registerThreadChat(scope, ctx.locale.bind(NS), threadActions, projectAgentPresets)
   })
   const rosterActions = (parentSessionId: SessionId): ThreadsRosterInjected => ({
     ...threadActions,
@@ -158,7 +158,7 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
       // A Thread's own header leads its band; the roster of a Project never shares a Session with it.
       order: -26,
       locale: NS,
-      inject: () => threadActions,
+      inject: () => ({ ...threadActions, projectAgentPresets }),
     }, ThreadHeaderAction),
   )
   ctx.slots.inject(

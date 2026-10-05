@@ -32,11 +32,29 @@ describe('readThreadModel', () => {
     expect(readThreadModel({ t1: { values: { modelRouting: [VIEW] } } }, 't1')).toBeUndefined()
     expect(readThreadModel({ t1: { values: { modelRouting: null } } }, 't1')).toBeUndefined()
   })
+
+  it('rejects a block whose providerName is present but not a string', () => {
+    // The roster would otherwise render a literal "null" or "[object Object]"
+    // beside the tier and model, which is worse than showing no provider at all.
+    expect(readThreadModel({ t1: { values: { modelRouting: { ...VIEW, providerName: null } } } }, 't1'))
+      .toBeUndefined()
+    expect(readThreadModel({ t1: { values: { modelRouting: { ...VIEW, providerName: {} } } } }, 't1'))
+      .toBeUndefined()
+  })
 })
 
 describe('threadModelLabel', () => {
   it('names the tier and the model without its author prefix', () => {
-    expect(threadModelLabel(VIEW)).toBe('flash deepseek-v4-flash')
-    expect(threadModelLabel({ ...VIEW, model: 'stealth' })).toBe('flash stealth')
+    expect(threadModelLabel(VIEW)).toBe('flash deepseek-v4-flash · StreamLake')
+    expect(threadModelLabel({ ...VIEW, model: 'stealth' })).toBe('flash stealth · StreamLake')
+  })
+
+  it('names the provider when the route pinned one', () => {
+    expect(threadModelLabel({ ...VIEW, providerName: 'Together' })).toBe('flash deepseek-v4-flash · Together')
+  })
+
+  it('omits the provider while the decision names none', () => {
+    const { providerName: _omitted, ...unpinned } = VIEW
+    expect(threadModelLabel(unpinned)).toBe('flash deepseek-v4-flash')
   })
 })

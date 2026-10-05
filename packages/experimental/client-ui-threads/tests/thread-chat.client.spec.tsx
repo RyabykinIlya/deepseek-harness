@@ -114,7 +114,7 @@ describe('Thread chat registration', () => {
       stopThread: vi.fn(okResult),
       archiveThread: vi.fn(okResult),
     }
-    registerThreadChat(ctx, (key: string) => key === 'sidebar.chat' ? 'Chat' : key, actions)
+    registerThreadChat(ctx, (key: string) => key === 'sidebar.chat' ? 'Chat' : key, actions, [])
 
     expect(definition?.id).toBe(THREAD_CHAT_ID)
     expect(definition?.kind).toBe('threadchat')
@@ -254,7 +254,7 @@ describe('Thread chat components', () => {
       refreshProjection: vi.fn(),
       stopThread: vi.fn(okResult),
       archiveThread: vi.fn(okResult),
-    })
+    }, [])
     const Tab = registrations[0]!.component as ComponentType<ThreadChatTabProps & { t: (key: string) => string }>
     const state = fake<SessionListState>({
       ids: [],
