@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/tiers-route-input-modality/guide.md
+/:
+  en: dcdc91abd2d63175
+  zh: dcdc91abd2d63175
+/the-tiers-route-enforces-tier-input-declarations-for-image-requests:
+  en: 84450d5e756d417f
+  zh: 197b599d86d61e60
+/the-tiers-route-enforces-tier-input-declarations-for-image-requests/change:
+  en: 1cbcf0b4645ed774
+  zh: ed627f71c3151d85
+/the-tiers-route-enforces-tier-input-declarations-for-image-requests/migration:
+  en: 837dcc1e4f4d5ce8
+  zh: c058159a3b718139

@@ -13,8 +13,8 @@ import {
 /**
  * The identity fields of the entries this package's callers resolve against,
  * transcribed from `GET https://openrouter.ai/api/v1/models` on 2026-10-04. The
- * rest of each entry — pricing, architecture, limits — is not read here and is
- * not transcribed.
+ * rest of each entry — pricing, limits, and the rest of `architecture` — is not
+ * read here and is not transcribed.
  */
 const envelope = {
   data: [
@@ -93,6 +93,45 @@ describe('parseOpenRouterCatalog', () => {
       { id: 'spaced/model', canonicalSlug: 'spaced/model-20260101' },
       { id: 'blank/canonical', canonicalSlug: 'blank/canonical' },
     ])
+  })
+
+  it('carries the modalities an entry declares, and states none for a list it cannot read', () => {
+    const entries = parseOpenRouterCatalog({
+      data: [
+        {
+          id: 'vision/model',
+          canonical_slug: 'vision/model-20260101',
+          architecture: { input_modalities: ['text', 'image', 'file'] },
+        },
+        { id: 'text-only/model', canonical_slug: 'text-only/model-20260101', architecture: { input_modalities: ['text'] } },
+        { id: 'absent/model', architecture: { output_modalities: ['text'] } },
+        { id: 'empty-list/model', architecture: { input_modalities: [] } },
+        { id: 'not-a-list/model', architecture: { input_modalities: 'text' } },
+        { id: 'blank-member/model', architecture: { input_modalities: ['text', '  '] } },
+        { id: 'non-string-member/model', architecture: { input_modalities: ['text', 7] } },
+        { id: 'list-architecture/model', architecture: ['text'] },
+        { id: 'null-architecture/model', architecture: null },
+      ],
+    })
+    expect(entries).toEqual([
+      {
+        id: 'vision/model',
+        canonicalSlug: 'vision/model-20260101',
+        inputModalities: ['text', 'image', 'file'],
+      },
+      { id: 'text-only/model', canonicalSlug: 'text-only/model-20260101', inputModalities: ['text'] },
+      { id: 'absent/model', canonicalSlug: 'absent/model' },
+      { id: 'empty-list/model', canonicalSlug: 'empty-list/model' },
+      { id: 'not-a-list/model', canonicalSlug: 'not-a-list/model' },
+      { id: 'blank-member/model', canonicalSlug: 'blank-member/model' },
+      { id: 'non-string-member/model', canonicalSlug: 'non-string-member/model' },
+      { id: 'list-architecture/model', canonicalSlug: 'list-architecture/model' },
+      { id: 'null-architecture/model', canonicalSlug: 'null-architecture/model' },
+    ])
+    // A reply that names no modalities states no capability; only an entry that
+    // declares a readable list says which ones it accepts.
+    expect(entries[0]?.inputModalities).toEqual(['text', 'image', 'file'])
+    expect(entries[6]?.inputModalities).toBeUndefined()
   })
 
   it('refuses an envelope it cannot read, rather than reporting an empty catalog', () => {

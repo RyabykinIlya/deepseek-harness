@@ -52,7 +52,7 @@ export const CATALOG_HTTP_ERROR_CODE = 'OPENROUTER_CATALOG_HTTP'
 export const CATALOG_UNREACHABLE_CODE = 'OPENROUTER_CATALOG_UNREACHABLE'
 
 /**
- * One catalog entry's identity fields.
+ * One catalog entry's identity fields and declared input modalities.
  *
  * `canonicalSlug` is the id without OpenRouter's display-suffix spelling and
  * carries the release date; an entry that names no dated release states its own
@@ -63,6 +63,13 @@ export interface OpenRouterCatalogEntry {
   id: string
   /** The dated identity of that id, such as `deepseek/deepseek-v4-pro-20260813`. */
   canonicalSlug: string
+  /**
+   * The modalities OpenRouter states this model accepts as input, such as
+   * `text`, `image`, or `file`, in the reply's own spelling and order; a
+   * consumer decides which of them it supports. Absent means the reply named
+   * none: silence is not a capability.
+   */
+  inputModalities?: readonly string[]
 }
 
 /** Transport, timeout, credential, and deployment headers for one catalog read. */
@@ -87,6 +94,19 @@ function text(value: unknown): string | undefined {
 }
 
 /**
+ * Read the modalities one entry's `architecture` block declares, or `undefined`
+ * when that block states no usable list. A member that is not a non-empty
+ * string discards the whole list rather than reading as a shorter answer.
+ */
+function modalities(architecture: unknown): readonly string[] | undefined {
+  if (architecture === null || typeof architecture !== 'object' || Array.isArray(architecture)) return undefined
+  const declared: unknown = (architecture as { input_modalities?: unknown }).input_modalities
+  if (!Array.isArray(declared) || declared.length === 0) return undefined
+  const listed = declared.map(value => text(value))
+  return listed.every((modality): modality is string => modality !== undefined) ? listed : undefined
+}
+
+/**
  * Read the catalog out of a parsed reply body.
  *
  * A body that is not the documented envelope raises one coded failure rather
@@ -107,11 +127,16 @@ export function parseOpenRouterCatalog(body: unknown): readonly OpenRouterCatalo
   if (!Array.isArray(data)) throw malformed('expected a "data" array')
   return data.flatMap((raw) => {
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return []
-    const entry = raw as { id?: unknown; canonical_slug?: unknown }
+    const entry = raw as { id?: unknown; canonical_slug?: unknown; architecture?: unknown }
     const id = text(entry.id)
     if (id === undefined) return []
     const canonical = text(entry.canonical_slug)
-    return [{ id, canonicalSlug: canonical ?? id }]
+    const inputModalities = modalities(entry.architecture)
+    return [{
+      id,
+      canonicalSlug: canonical ?? id,
+      ...inputModalities === undefined ? {} : { inputModalities },
+    }]
   })
 }
 

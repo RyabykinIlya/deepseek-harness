@@ -9,6 +9,11 @@
  * the cache term is in. So the mix is the decision, and the mix is either the
  * tier's configured default or the session's own measured usage.
  *
+ * A tier's `input` declaration is enforced rather than assumed: a request that
+ * carries an image reaches only a model the catalog shows accepting one, so a
+ * tier whose candidates are all text-only refuses the request instead of sending
+ * it. Silence in the catalog is not a capability.
+ *
  * `preferModel` is what keeps a mid-dialog failure from changing the model. When
  * an endpoint fails, the exclusion list takes it out and the re-rank must exhaust
  * the *same* model's other providers before it reaches a different model; without
@@ -28,6 +33,14 @@ export interface TurnMix {
   output: number
 }
 
+/** Where a decision's token mix came from: measured session usage, or the configured default. */
+export type MixSource = 'default' | 'usage'
+
+/** A turn mix carrying the source it was measured or defaulted from, for the decision record. */
+export interface MeasuredMix extends TurnMix {
+  source: MixSource
+}
+
 /** A session's measured token spend, from the token-usage projection. */
 export interface UsageTotals {
   uncachedInputTokens: number
@@ -36,8 +49,12 @@ export interface UsageTotals {
   cacheWriteTokens: number
 }
 
+/** An input modality a request requires beyond text, which every model declares. */
+export type RequiredInput = 'image'
+
 /** Why one endpoint did not reach the ranking. */
 export type EndpointRejection =
+  | 'modality'
   | 'excluded'
   | 'status'
   | 'uptime'
@@ -62,6 +79,15 @@ export interface SelectionPolicy {
   requireNormalStatus: boolean
   /** Tags excluded after recent failures. */
   excludedTags: ReadonlySet<string>
+  /** The modality this request carries, when it carries one beyond text. */
+  requiredInput?: RequiredInput
+  /**
+   * The input modalities the catalog declares per model id, keyed by that id.
+   *
+   * Absent means no declaration was applied at all; an entry that names no
+   * modalities and a missing entry are both an absent capability.
+   */
+  modalities?: ReadonlyMap<string, readonly string[] | undefined>
   /** Model whose endpoints sort before every other model's, used when re-routing after a failure. */
   preferModel?: string
   /** Drops the uptime floor; set by `rankWithRelaxation` when nothing else passed. */
@@ -76,6 +102,13 @@ export interface RankedEndpoint {
   free: boolean
 }
 
+/** One endpoint a filter or a missing price dropped, with the reason it carries. */
+export interface RejectedEndpoint {
+  model: string
+  endpoint: OpenRouterEndpoint
+  reason: EndpointRejection
+}
+
 /** The outcome of one ranking pass. */
 export interface SelectionResult {
   ranked: readonly RankedEndpoint[]
@@ -85,6 +118,8 @@ export interface SelectionResult {
   considered: number
   /** Models whose endpoint list could not be read. */
   unreadable: readonly { model: string; reason: string }[]
+  /** Every dropped endpoint with its reason, in the order the walk met them. */
+  rejected: readonly RejectedEndpoint[]
 }
 
 /** Endpoint list per model, or the failure that model reported. */
@@ -115,19 +150,21 @@ export function defaultMix(settings: RoutingSettings): TurnMix {
  * Usage is only trusted above `mixMinTokens`: a session that has exchanged two
  * short messages has not established a cache pattern, and pricing its next turn
  * by that would pin an endpoint for a shape the conversation has not taken yet.
+ * The returned `source` says which of the two happened, so a decision record can
+ * show whether a price was compared under a measured shape or the default one.
  * @param usage - the session's measured totals, when a projection holds any.
  * @param fallback - the configured default mix.
  * @param minTokens - the total below which measured usage is not believed.
- * @returns the measured mix when it is believed, otherwise `fallback`.
+ * @returns the measured mix when it is believed, otherwise `fallback`, each with its source.
  */
-export function mixFromUsage(usage: UsageTotals | undefined, fallback: TurnMix, minTokens: number): TurnMix {
-  if (usage === undefined) return fallback
+export function mixFromUsage(usage: UsageTotals | undefined, fallback: TurnMix, minTokens: number): MeasuredMix {
+  if (usage === undefined) return { ...fallback, source: 'default' }
   const cached = usage.cacheReadTokens
   const fresh = usage.uncachedInputTokens + usage.cacheWriteTokens
   const output = usage.outputTokens
   const total = cached + fresh + output
-  if (total < minTokens) return fallback
-  return { cached: cached / total, fresh: fresh / total, output: output / total }
+  if (total < minTokens) return { ...fallback, source: 'default' }
+  return { cached: cached / total, fresh: fresh / total, output: output / total, source: 'usage' }
 }
 
 /**
@@ -165,6 +202,25 @@ export function baseSlugOf(slug: string): string {
 /** Whether an endpoint costs nothing for both directions. */
 function isFree(endpoint: OpenRouterEndpoint): boolean {
   return endpoint.promptPrice === 0 && endpoint.completionPrice === 0
+}
+
+/**
+ * Whether one candidate model cannot serve what this request carries.
+ *
+ * The catalog is the only evidence available, so an id it does not list and an
+ * id it lists with no modalities are the same answer: the model is not shown to
+ * accept the modality, and the request is refused rather than sent to a model
+ * that may reject it mid-turn.
+ * @param model - the exact model id about to be ranked.
+ * @param policy - the tier's filters and this request's requirements.
+ * @returns `'modality'` when the request needs a modality this model is not shown to accept, otherwise `undefined`.
+ */
+export function modelRejectionOf(model: string, policy: SelectionPolicy): EndpointRejection | undefined {
+  const required = policy.requiredInput
+  if (required === undefined) return undefined
+  const declared = policy.modalities?.get(model)
+  if (declared?.includes(required) !== true) return 'modality'
+  return undefined
 }
 
 /**
@@ -207,6 +263,7 @@ export function rejectionOf(endpoint: OpenRouterEndpoint, policy: SelectionPolic
 /** Every rejection key at zero, so a caller never has to guard a missing field. */
 function emptyRejections(): Record<EndpointRejection, number> {
   return {
+    modality: 0,
     excluded: 0,
     status: 0,
     uptime: 0,
@@ -230,7 +287,7 @@ function emptyRejections(): Record<EndpointRejection, number> {
  * so the same fixture list always produces the same decision.
  * @param lists - endpoint list per model, or the failure that model reported.
  * @param models - candidate model ids, in tier order.
- * @param policy - the tier's filters.
+ * @param policy - the tier's filters and this request's requirements.
  * @param mix - the turn's token buckets.
  * @returns the admitted endpoints in order, plus why the rest were dropped.
  */
@@ -243,6 +300,7 @@ export function rankEndpoints(
   const rejections = emptyRejections()
   const unreadable: { model: string; reason: string }[] = []
   const ranked: RankedEndpoint[] = []
+  const rejected: RejectedEndpoint[] = []
   let considered = 0
   for (const model of models) {
     const list = lists.get(model)
@@ -250,18 +308,24 @@ export function rankEndpoints(
       unreadable.push({ model, reason: list === undefined ? 'no endpoint list' : list.message })
       continue
     }
+    const modelRejection = modelRejectionOf(model, policy)
     for (const endpoint of list) {
       considered += 1
-      const rejection = rejectionOf(endpoint, policy)
+      const rejection = modelRejection ?? rejectionOf(endpoint, policy)
       if (rejection !== undefined) {
         rejections[rejection] += 1
+        rejected.push({ model, endpoint, reason: rejection })
         continue
       }
       const price = blendedPrice(endpoint, mix)
+      /* v8 ignore start -- `rejectionOf` has already refused anything unpriced,
+         so this guard only narrows `price` for the ranking below. */
       if (price === undefined) {
         rejections.unpriced += 1
+        rejected.push({ model, endpoint, reason: 'unpriced' })
         continue
       }
+      /* v8 ignore stop */
       ranked.push({ model, endpoint, blendedUsdPerToken: price, free: isFree(endpoint) })
     }
   }
@@ -284,14 +348,14 @@ export function rankEndpoints(
     if (left.model !== right.model) return left.model.localeCompare(right.model)
     return left.endpoint.slug.localeCompare(right.endpoint.slug)
   })
-  return { ranked, rejections, considered, unreadable }
+  return { ranked, rejections, considered, unreadable, rejected }
 }
 
 /**
  * Build the policy for one tier and one request.
  * @param tier - the tier whose filters apply.
  * @param settings - the whole settings value.
- * @param options - per-request overrides: free admission, recent failures, and the model to keep.
+ * @param options - per-request overrides: free admission, recent failures, the model to keep, and the modality the request carries.
  * @returns the policy to rank under.
  */
 export function policyFor(
@@ -302,6 +366,8 @@ export function policyFor(
     excludedTags: ReadonlySet<string>
     preferModel?: string
     ignoreUptime?: boolean
+    requiredInput?: RequiredInput
+    modalities?: ReadonlyMap<string, readonly string[] | undefined>
   },
 ): SelectionPolicy {
   return {
@@ -318,6 +384,8 @@ export function policyFor(
     // rather than turned into a failure, and the relaxation is reported.
     ...options.ignoreUptime === true ? { ignoreUptime: true as const } : {},
     ...options.preferModel === undefined ? {} : { preferModel: options.preferModel },
+    ...options.requiredInput === undefined ? {} : { requiredInput: options.requiredInput },
+    ...options.modalities === undefined ? {} : { modalities: options.modalities },
   }
 }
 

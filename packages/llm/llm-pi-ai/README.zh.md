@@ -152,7 +152,7 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 | [`src/discovery.ts`](src/discovery.ts) | 面向配置界面的端点询问 |
 | [`src/openrouter-http.ts`](src/openrouter-http.ts) | 所有 OpenRouter 列表共用的 GET、超时、字节上限与失败码 |
 | [`src/openrouter-endpoints.ts`](src/openrouter-endpoints.ts) | 单个模型的上游提供方列表，以价格与客观条款表示 |
-| [`src/openrouter-catalog.ts`](src/openrouter-catalog.ts) | 模型目录，其 `canonical_slug` 决定一个模型 id 属于哪个带日期的家族 |
+| [`src/openrouter-catalog.ts`](src/openrouter-catalog.ts) | 模型目录，其 `canonical_slug` 把一个模型 id 归入某个带日期的家族，其 `input_modalities` 说明该模型接受哪些输入 |
 
 ### 注册与目录
 

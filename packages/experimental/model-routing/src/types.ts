@@ -16,6 +16,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 // that write them. Nothing is imported but the declaration.
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-compaction'
+import type { FreeMode, Quantization } from './config.ts'
+import type { EndpointRejection, MeasuredMix, RequiredInput } from './select.ts'
 
 /** The moments at which the route may take a fresh decision. */
 export type RoutingBoundary = 'start' | 'selection-change' | 'compaction' | 'idle' | 'failure'
@@ -28,6 +30,8 @@ export interface RoutingEndpoint {
   promptUsd: number
   completionUsd: number
   cacheReadUsd?: number
+  /** Fraction OpenRouter marks off this provider's list price, when published. Already applied in the prices. */
+  discount?: number
   contextLength?: number
   maxCompletionTokens?: number
 }
@@ -60,31 +64,105 @@ export interface JudgeVerdict {
   error?: string
 }
 
+/** One endpoint of a candidate model, as a diagnostics record lists it. */
+export interface RoutingCandidate {
+  model: string
+  tag: string
+  providerName?: string
+  quantization?: string
+  promptUsd?: number
+  completionUsd?: number
+  cacheReadUsd?: number
+  /** Fraction OpenRouter marks off this provider's list price; already applied in the prices. */
+  discount?: number
+  contextLength?: number
+  maxCompletionTokens?: number
+  /** OpenRouter's provider status code; `0` is the healthy state. */
+  status?: number
+  /** Measured uptime over the last 30 minutes, as a percentage. */
+  uptimeLast30m?: number
+  /** The blended price this endpoint would charge, when it states both prices. */
+  blendedUsdPerToken?: number
+  /** 1-based position in the ranking; present ⇔ the filters admitted it. */
+  rank?: number
+  /** Present ⇔ the filters dropped it; then there is no `rank`. */
+  rejection?: EndpointRejection
+}
+
+/** The filters one ranking applied, as the decision records them. */
+export interface RoutingFilters {
+  contextWindow: number
+  minQuantization: Quantization
+  unknownQuantization: 'reject' | 'trusted' | 'accept'
+  free: FreeMode
+  /** Whether this caller may use free endpoints at all. */
+  allowFree: boolean
+  minUptime: number
+  requireNormalStatus: boolean
+  /** Base slugs whose `unknown` quantization the tier trusts. */
+  trustedUnknownProviders: readonly string[]
+  /** The input modality this request required beyond text, when one. */
+  requiredInput?: RequiredInput
+}
+
+/** One runner-up behind the pinned endpoint. */
+export interface RoutingRunnerUp {
+  model: string
+  tag: string
+  blendedUsdPerToken: number
+  quantization?: string
+  /** Fraction OpenRouter marks off this provider's list price; already applied in the prices. */
+  discount?: number
+}
+
+/** Model and upstream endpoint chosen at a routing boundary. Appended with `ignorable: true`. */
+export interface RoutingDecision {
+  boundary: RoutingBoundary
+  /** Model id on the `tiers` route: `auto` | tier | favorite. */
+  requested: string
+  tier: string
+  judge?: JudgeVerdict
+  /** Concrete OpenRouter model id. */
+  model: string
+  /** Absent ⇔ the request went out unpinned. */
+  endpoint?: RoutingEndpoint
+  /** Present ⇔ `endpoint` is absent. */
+  unpinnedReason?: string
+  blendedUsdPerToken?: number
+  /** Present ⇔ the uptime filter had to be dropped for anything to pass. */
+  relaxedUptime?: true
+  /** Endpoints considered across all candidate models. */
+  considered: number
+  /** Up to three runners-up behind the pinned endpoint. */
+  runnersUp: RoutingRunnerUp[]
+  /** Endpoints excluded after failures. */
+  excludedTags: string[]
+  /** The token buckets the blended price was computed under, and where they came from. */
+  mix?: MeasuredMix
+  /** How many endpoints each rejection reason dropped; every reason named, zero by default. */
+  rejections?: Readonly<Record<EndpointRejection, number>>
+  /** The cheapest endpoint each rejection reason dropped — why a cheaper rival is absent. */
+  cheapestRejected?: readonly RoutingCandidate[]
+  /** The tier filters the ranking applied. */
+  filters?: RoutingFilters
+}
+
+/** What one diagnostics line holds: the decision plus the candidate table it could not carry. */
+export interface RoutingDiagnosticsRecord extends RoutingDecision {
+  /** When the decision was taken, epoch milliseconds. */
+  at: number
+  /** The Session that owned the request, when there was one. */
+  sessionId?: string
+  /** Models whose endpoint list could not be read at all. */
+  unreadable: readonly { model: string; reason: string }[]
+  /** Every endpoint the ranking walked, in ranking order first and rejection order after. */
+  candidates: readonly RoutingCandidate[]
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Model and upstream endpoint chosen at a routing boundary. Appended with `ignorable: true`. */
-    'model-routing/decision': {
-      boundary: RoutingBoundary
-      /** Model id on the `tiers` route: `auto` | tier | favorite. */
-      requested: string
-      tier: string
-      judge?: JudgeVerdict
-      /** Concrete OpenRouter model id. */
-      model: string
-      /** Absent ⇔ the request went out unpinned. */
-      endpoint?: RoutingEndpoint
-      /** Present ⇔ `endpoint` is absent. */
-      unpinnedReason?: string
-      blendedUsdPerToken?: number
-      /** Present ⇔ the uptime filter had to be dropped for anything to pass. */
-      relaxedUptime?: true
-      /** Endpoints considered across all candidate models. */
-      considered: number
-      /** Up to three runners-up behind the pinned endpoint. */
-      runnersUp: { model: string; tag: string; blendedUsdPerToken: number }[]
-      /** Endpoints excluded after failures. */
-      excludedTags: string[]
-    }
+    'model-routing/decision': RoutingDecision
     /** Coordinator changed a Thread's tier. Written to the Project log. Appended with `ignorable: true`. */
     'model-routing/tier-override': { threadId: string; tier: string }
   }
@@ -150,6 +228,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'model-routing/unknown-tier': { readonly tier: string; readonly configured: readonly string[] }
     /** A `quote` asked for more models than one call may price. */
     'model-routing/too-many-models': { readonly limit: number }
+    /** The settings document `quote` read cannot be served; message names the field. */
+    'model-routing/invalid-settings': Record<string, never>
   }
 }
 

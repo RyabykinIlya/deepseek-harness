@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for 2026-10-05-per-model-input-modality-enforcement.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-05-per-model-input-modality-enforcement.md
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog:
+  en: 4f11b95898f32727
+  zh: 932b9a73189962c4
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/problem:
+  en: 2108118fde2ed388
+  zh: 4289838c0c18923d
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/decision:
+  en: a15c7c13f167e5ac
+  zh: 63bcc2ef60c2f344
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/decision/the-catalog-states-the-capability:
+  en: ab61d1479316609e
+  zh: b444c880fc7f455f
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/decision/a-model-with-no-declaration-is-not-a-candidate:
+  en: f1609007030c7a16
+  zh: dada526744fcdfc4
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/decision/the-requirement-comes-from-the-request-history:
+  en: 7f4a9d1e1be931c2
+  zh: 7a6a02d439098215
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/decision/a-pin-that-cannot-serve-the-request-is-dropped-and-the-tier-decides-again:
+  en: 69fe60bd934108be
+  zh: 3a6318f968680680
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/alternatives-considered:
+  en: 1c77542a24142875
+  zh: 5f26678dda6e3834
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/testing:
+  en: f125b08335fcf630
+  zh: 565d81f0f68671ad
+/agent-note-input-modality-is-enforced-per-model-from-the-catalog/consequences:
+  en: 0311ae6e5fe20c2b
+  zh: e4e8b1500e3e7f53

@@ -11,6 +11,7 @@ import {
   rankEndpoints,
   rankWithRelaxation,
   type EndpointLists,
+  type RequiredInput,
   type SelectionPolicy,
 } from '../src/select.ts'
 import { endpointsOf } from './fixtures.ts'
@@ -65,7 +66,13 @@ async function listsOf(models: readonly string[]): Promise<EndpointLists> {
 async function rank(
   tier: TierSettings,
   settings: RoutingSettings,
-  options: { allowFree?: boolean; excludedTags?: string[]; preferModel?: string } = {},
+  options: {
+    allowFree?: boolean
+    excludedTags?: string[]
+    preferModel?: string
+    requiredInput?: RequiredInput
+    modalities?: ReadonlyMap<string, readonly string[] | undefined>
+  } = {},
 ): Promise<{ length: number; top: string[]; rejections: Record<string, number> }> {
   const lists = await listsOf(tier.models)
   const result = rankEndpoints(
@@ -75,6 +82,8 @@ async function rank(
       allowFree: options.allowFree ?? true,
       excludedTags: new Set(options.excludedTags ?? []),
       ...options.preferModel === undefined ? {} : { preferModel: options.preferModel },
+      ...options.requiredInput === undefined ? {} : { requiredInput: options.requiredInput },
+      ...options.modalities === undefined ? {} : { modalities: options.modalities },
     }),
     MIX,
   )
@@ -83,6 +92,14 @@ async function rank(
     top: result.ranked.slice(0, 4).map(entry => `${entry.model} ${entry.endpoint.slug}=${entry.blendedUsdPerToken}`),
     rejections: Object.fromEntries(Object.entries(result.rejections).filter(([, count]) => count > 0)),
   }
+}
+
+/** What the catalog declares for the pro tier's two models, `glm` named as asked. */
+function declaredForPro(glm: readonly string[] | undefined): ReadonlyMap<string, readonly string[] | undefined> {
+  return new Map<string, readonly string[] | undefined>([
+    ['deepseek/deepseek-v4-pro', ['text']],
+    ['z-ai/glm-5.3', glm],
+  ])
 }
 
 describe('rankEndpoints over the recorded replies', () => {
@@ -224,6 +241,83 @@ describe('preferModel after a failure', () => {
   })
 })
 
+describe('a request that carries an image', () => {
+  const IMAGE = 'image'
+  const TEXT_ONLY: ReadonlyMap<string, readonly string[] | undefined> = new Map([
+    ['deepseek/deepseek-v4-pro', ['text']],
+    ['z-ai/glm-5.3', ['text', 'image']],
+  ])
+
+  it('ranks the image-capable model ahead of the cheaper text-only one', async () => {
+    const result = await rank(PRO, settingsOf(), { requiredInput: IMAGE, modalities: TEXT_ONLY })
+    expect(result.length).toBe(12)
+    expect(result.top).toEqual([
+      'z-ai/glm-5.3 novita/fp8=1.302e-7',
+      'z-ai/glm-5.3 siliconflow/fp8=2.17e-7',
+      'z-ai/glm-5.3 sail-research/fp8=2.1900000000000002e-7',
+      'z-ai/glm-5.3 sail-research/us=2.1900000000000002e-7',
+    ])
+    expect(result.rejections.modality).toBe(16)
+  })
+
+  it('still counts every endpoint of a rejected model as considered', async () => {
+    const lists = await listsOf(PRO.models)
+    const result = rankEndpoints(lists, PRO.models, policyFor(PRO, settingsOf(), {
+      allowFree: true,
+      excludedTags: new Set(),
+      requiredInput: IMAGE,
+      modalities: TEXT_ONLY,
+    }), MIX)
+    expect(result.considered).toBe(56)
+    expect(result.rejections.modality).toBe(16)
+    expect(result.ranked.every(entry => entry.model === 'z-ai/glm-5.3')).toBe(true)
+  })
+
+  it('refuses a model the catalog does not list, and one it lists with no modalities', async () => {
+    const unlisted = await rank(PRO, settingsOf(), {
+      requiredInput: IMAGE,
+      modalities: new Map<string, readonly string[] | undefined>([['z-ai/glm-5.3', ['text', 'image']]]),
+    })
+    expect(unlisted.rejections.modality).toBeGreaterThan(0)
+    expect(unlisted.top.every(entry => entry.startsWith('z-ai/glm-5.3 '))).toBe(true)
+
+    const silent = await rank(PRO, settingsOf(), { requiredInput: IMAGE, modalities: declaredForPro(undefined) })
+    expect(silent.rejections.modality).toBe(56)
+    expect(silent.length).toBe(0)
+  })
+
+  it('refuses every candidate when no declaration was fetched at all', async () => {
+    const result = await rank(PRO, settingsOf(), { requiredInput: IMAGE })
+    expect(result.length).toBe(0)
+    expect(result.rejections).toEqual({ modality: 56 })
+  })
+
+  it('leaves the ranking untouched when the request carries no modality beyond text', async () => {
+    const textOnly = await rank(PRO, settingsOf())
+    const withUnusedDeclarations = await rank(PRO, settingsOf(), { modalities: TEXT_ONLY })
+    expect(withUnusedDeclarations).toEqual(textOnly)
+    expect(textOnly.top[0]).toBe('deepseek/deepseek-v4-pro streamlake/fp8=4.0716e-8')
+    expect('modality' in textOnly.rejections).toBe(false)
+  })
+
+  it('hands the request\'s requirement to the ranking only when one was declared', () => {
+    const settings = settingsOf()
+    const declared = declaredForPro(['text', 'image'])
+    const applied = policyFor(PRO, settings, {
+      allowFree: true,
+      excludedTags: new Set(),
+      requiredInput: IMAGE,
+      modalities: declared,
+    })
+    expect(applied.requiredInput).toBe(IMAGE)
+    expect(applied.modalities).toBe(declared)
+
+    const plain = policyFor(PRO, settings, { allowFree: true, excludedTags: new Set() })
+    expect('requiredInput' in plain).toBe(false)
+    expect('modalities' in plain).toBe(false)
+  })
+})
+
 describe('the turn mix', () => {
   it('normalizes the configured weights', () => {
     expect(defaultMix(settingsOf())).toEqual(MIX)
@@ -233,9 +327,9 @@ describe('the turn mix', () => {
 
   it('believes measured usage above the floor and the default below it', () => {
     const measured = { uncachedInputTokens: 100, outputTokens: 100, cacheReadTokens: 800, cacheWriteTokens: 0 }
-    expect(mixFromUsage(measured, MIX, 1000)).toEqual({ cached: 0.8, fresh: 0.1, output: 0.1 })
-    expect(mixFromUsage({ ...measured, cacheReadTokens: 799 }, MIX, 1000)).toEqual(MIX)
-    expect(mixFromUsage(undefined, MIX, 1000)).toEqual(MIX)
+    expect(mixFromUsage(measured, MIX, 1000)).toEqual({ cached: 0.8, fresh: 0.1, output: 0.1, source: 'usage' })
+    expect(mixFromUsage({ ...measured, cacheReadTokens: 799 }, MIX, 1000)).toEqual({ ...MIX, source: 'default' })
+    expect(mixFromUsage(undefined, MIX, 1000)).toEqual({ ...MIX, source: 'default' })
   })
 
   it('charges a cache hit at the prompt price when the provider publishes no cache price', () => {
