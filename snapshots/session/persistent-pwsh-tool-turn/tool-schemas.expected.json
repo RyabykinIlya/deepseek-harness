@@ -228,7 +228,7 @@
           },
           "run_in_background": {
             "type": "boolean",
-            "description": "Always runs in the background; omit this parameter. `false` is refused, because only the background route runs the child inside the isolation this provider establishes."
+            "description": "Defaults to true. Set false only when your next action depends on the result."
           }
         },
         "required": [
