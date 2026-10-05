@@ -310,6 +310,19 @@ function resolveDelegationRun(
     }
     return { runInBackground: false }
   }
+  if (options.continuable && request.run_in_background === false) {
+    // The foreground route is the one-shot `start()` path, and a continuable
+    // provider isolates its child only while preparing a continuable creation
+    // (the Thread provider's git worktree is created there and nowhere else).
+    // Honoring `false` would therefore run the child in the parent's own cwd —
+    // unisolated, writing into the Project checkout — so the request is refused
+    // rather than answered with the isolation silently dropped.
+    throw new Error(
+      'run_in_background: false is not available for this provider, because the foreground route'
+      + ' would run the child outside the isolation this provider establishes; omit the parameter'
+      + ' to start the child in the background',
+    )
+  }
   return {
     // Continuable work is independently scheduled unless the caller explicitly
     // needs the result before its next action. One-shot policy keeps its existing
@@ -446,7 +459,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             run_in_background: {
               type: 'boolean' as const,
               description: continuable
-                ? 'Defaults to true. Set false only when your next action depends on the result.'
+                ? 'Always runs in the background; omit this parameter. `false` is refused, because only the background route runs the child inside the isolation this provider establishes.'
                 : 'Run as a background job and return its id (collect with job_output, stop with job_kill). Defaults to false.',
             },
           } : {},

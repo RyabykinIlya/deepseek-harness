@@ -9,10 +9,17 @@
  * decide at nearly the same moment and OpenRouter does not need to be asked the
  * same question twice.
  *
+ * The shared read runs under its own cancellation, never a caller's: a read
+ * started for one decision outlives that decision. Otherwise a coordinator that
+ * abandons its request — a cancelled turn, a superseded boundary — would abort
+ * the fetch a parallel Thread is still awaiting, and the Thread would decide from
+ * a stale list or an `AbortError` it never caused.
+ *
  * @module dsh-experimental-model-routing/endpoints-cache
  */
 
 import type { OpenRouterEndpoint } from '@deepseek-ai/dsh-llm-pi-ai'
+import { uncancellable } from './uncancellable.ts'
 
 /** Reads one model's endpoint list; may reject, and the caller sees the rejection as a value. */
 export type EndpointsReader = (model: string, signal: AbortSignal) => Promise<readonly OpenRouterEndpoint[]>
@@ -53,25 +60,38 @@ export class EndpointsCache {
         result.set(model, cached.list)
         continue
       }
-      const shared = this.inFlight.get(model)
-      if (shared !== undefined) {
-        pending.push(shared.then((list) => { result.set(model, list) }, (error: unknown) => {
-          result.set(model, this.stale.get(model) ?? asError(error))
-        }))
-        continue
-      }
-      const reading = this.reader(model, signal).then((list) => {
-        this.fresh.set(model, { at: this.now(), list })
-        this.stale.set(model, list)
-        return list
-      }).finally(() => { this.inFlight.delete(model) })
-      this.inFlight.set(model, reading)
-      pending.push(reading.then((list) => { result.set(model, list) }, (error: unknown) => {
+      const shared = this.inFlight.get(model) ?? this.start(model)
+      // This caller's own cancellation ends only its wait. The shared read keeps
+      // running, so a Thread that joined after the coordinator started it still
+      // gets the list rather than the coordinator's abort.
+      pending.push(uncancellable(shared, signal).then((list) => {
+        result.set(model, list ?? this.stale.get(model) ?? asError(signal.reason))
+      }, (error: unknown) => {
         result.set(model, this.stale.get(model) ?? asError(error))
       }))
     }
     await Promise.all(pending)
     return result
+  }
+
+  /**
+   * Start the one read every caller of `model` shares.
+   *
+   * The read gets a private controller rather than the caller's signal: see the
+   * module note. A rejection here is not yet an error value — each joiner
+   * resolves it against the stale list itself.
+   */
+  private start(model: string): Promise<readonly OpenRouterEndpoint[]> {
+    const reading = this.reader(model, new AbortController().signal).then((list) => {
+      this.fresh.set(model, { at: this.now(), list })
+      this.stale.set(model, list)
+      return list
+    }).finally(() => { this.inFlight.delete(model) })
+    // A caller that aborts before awaiting this read never attaches a rejection
+    // handler, and a read whose every joiner did that would reject unhandled.
+    reading.catch(() => {})
+    this.inFlight.set(model, reading)
+    return reading
   }
 }
 

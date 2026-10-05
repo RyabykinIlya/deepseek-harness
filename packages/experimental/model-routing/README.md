@@ -33,7 +33,13 @@ Choose it when a tier's models must be ranked by what the *next agent turn* cost
 <a id="tiers"></a>
 ### Tiers
 
-A tier is a named group of interchangeable models plus the filters every endpoint serving one of them must pass: `minQuantization`, `unknownQuantization`, `free`, and the `contextWindow` the tier advertises. `validateSettings` refuses a settings value the route cannot act on — a tier name that is not a route model id, a model id without an `author/`, a default effort outside the effort list, an inverted pair of judge thresholds — with one message naming the first field that cannot be served.
+A tier is a named group of interchangeable models plus the filters every endpoint serving one of them must pass: `minQuantization`, `unknownQuantization`, `free`, and the `contextWindow` the tier advertises. `input` (default `[text]`) declares the modalities the tier advertises, and a decision enforces it per model against the OpenRouter model catalog: a request that reaches the route carrying an image reaches only a model whose catalog entry states `image` in `architecture.input_modalities`, and every endpoint of a model that does not state it — including a model the catalog does not list at all — is rejected, because silence is not a capability.
+
+A text-only model in a tier that declares `image` is therefore safe: it is simply not used for an image request. It cannot serve a Session that has read an image, because the image stays in that Session's history and is replayed on every later request.
+
+When no candidate model of the tier is shown to accept image input, the decision fails with `MODEL_ROUTING_NO_ENDPOINT`, whose message counts the rejected endpoints by reason, `modality=<n>` among them. A catalog that cannot be read produces that outcome for every candidate, and one warning line names the unreadable catalog as the reason. A text request never reads the catalog for modalities and is unaffected by this filter.
+
+`validateSettings` refuses a settings value the route cannot act on — a tier name that is not a route model id, a model id without an `author/`, a default effort outside the effort list, an inverted pair of judge thresholds — with one message naming the first field that cannot be served.
 
 <a id="snapshots"></a>
 ### Snapshots
@@ -45,12 +51,27 @@ An unversioned model id is not a rolling alias. `deepseek/deepseek-v4-pro` names
 
 Under `latest` a request that named one of those ids itself is resolved the same way, because the model picker offers the ids a tier lists and picking `deepseek/deepseek-v4-pro` there means the pro model rather than one release of it. Two configured ids of one tier may resolve to the same release, and only the release is ranked. The resolution is reported in the log once per move — `"deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813"` — and every `model-routing/decision` event records the release that actually answered. A catalog that cannot be read is not a routing failure: the tier decides under its configured ids and the log says the catalog was unavailable.
 
+A resolved release is used only if the inner route can dispatch it. OpenRouter publishes a release to its catalog before the pinned `pi-ai` dependency learns it, and a request for an id the inner route has never heard of fails `UNKNOWN_MODEL` on every turn — an error no reroute covers, because every endpoint of that release is equally unknown. A tier whose resolved release is not yet dispatchable stays on the id its configuration named, and the log reports the release it cannot reach instead of the move it cannot make.
+
 OpenRouter's own `~author/slug-latest` aliases are not a substitute for this. They redirect on the chat-completions path, but `/endpoints` answers them with an empty list, so a tier naming one has nothing to rank.
+
+The same cached catalog read also states what each release accepts as input, and the modality filter reads the release a decision actually ranks: under `latest` it is the newest snapshot's declaration that decides whether a tier can serve an image request, so a family whose new release drops image input stops serving image requests until the configuration pins a release that accepts them.
 
 <a id="ranking"></a>
 ### Ranking
 
 `rankEndpoints` sorts candidates by a **blended** price per token, `cached · cacheRead + fresh · prompt + output · completion`, because an agent turn is overwhelmingly cached input and the providers that look cheapest on prompt alone frequently publish no cache-read discount at all. `preferModel` puts one model's endpoints ahead of every other model's while leaving price order intact inside that group, which is what keeps a failed provider from re-routing a conversation onto a different model mid-dialog. `rankWithRelaxation` re-runs once without the uptime floor when that floor is what emptied the list, and reports `relaxedUptime` so the decision log says so.
+
+The modality filter is the one rejection decided per model rather than per endpoint: when the request carries an image, every endpoint of a candidate model the catalog does not show accepting one is rejected as `modality`, and each of those endpoints still counts toward `considered`. Relaxation does not cover it — `rankWithRelaxation` drops only the uptime floor — so a tier with no image-capable candidate fails instead of retrying without the requirement.
+
+<a id="diagnostics"></a>
+### Diagnostics
+
+Every decision is recorded twice. The `model-routing/decision` event in the Session log carries the miniature a reader needs at a glance: model and endpoint, the blended price, the token mix it was computed under and whether that mix was measured from the session or taken from the configuration, the filters in force, how many endpoints each rejection reason dropped, and the cheapest endpoint each reason dropped. That last field is what answers "the leader is not the cheapest — where did the cheaper one go" from the log alone.
+
+The full candidate table goes to the file `diagnosticsPath` names: one JSON line per decision, holding every endpoint the ranking walked with its prices, its OpenRouter discount, its measurements, and then either its rank or its rejection reason. A price decision taken weeks ago can be re-checked against the data as it was then, rather than against a catalog that has since moved. An empty `diagnosticsPath` — the default — writes no file at all.
+
+Each line is bounded to `diagnosticsMaxBytes` (256 KiB by default) in UTF-8 bytes, metadata included: candidates are kept in ranking order and the ones that did not fit are simply absent, which `considered` against `candidates.length` shows. A budget too small to hold one record at all writes nothing and says so on every decision, rather than keeping a silently incomplete history. The file is append-only and never rotated; retention is the deployment's own.
 
 -----
 
@@ -72,7 +93,8 @@ The observable behavior is fully covered in [Use this package](#use-this-package
 | `src/family-cache.ts` | The whole-catalog cache, with the stale reading that survives a failed read |
 | `src/types.ts` | Session events, projection state and view, `ctx.modelRouting`, quote types |
 | `src/quantization.ts` | Precision ranks and the `quantizations` filter list |
-| `src/select.ts` | Endpoint rejection reasons, the blended price, ranking, uptime relaxation |
+| `src/select.ts` | Endpoint and model rejection reasons, the blended price, ranking, uptime relaxation |
+| `src/diagnostics.ts` | The candidate table of one decision and the bounded JSONL file it is appended to |
 | `src/projection.ts` | The `modelRouting` projection and its wire view |
 
 ### Fold identity
@@ -101,10 +123,11 @@ None; this package dispatches nothing itself. The route that consumes its rankin
 <a id="known-limitations-and-deferred-work"></a>
 
 - The default `trustedUnknownProviders` list comes from a 30-model survey of official-author models (the W0 report). A provider that only serves third-party models was never measured, so `unknown` on such a model is admitted only when its host is already trusted for another reason.
-- Ranking reads a live endpoint list. Between the read and the request the cheapest provider can fail; the adapter handles that by re-deciding at the `failure` boundary, not by re-reading here.
+- Ranking reads a live endpoint list. Between the read and the request the cheapest provider can fail; the adapter handles that by re-deciding at the `failure` boundary, not by re-reading here. A failing endpoint is excluded for `excludeAfterFailureMs` even when the failure arrives after content has already streamed and the attempt cannot be replayed, so the re-decision cannot land on it again.
 - `minQuantization` is a floor, not a proof: a provider declaring `unknown` on a trusted host states no format at all, and this package accepts the host's word for it (§3.2 of the plan).
 - Under `snapshotPolicy: 'latest'` a tier follows its families, so a new release changes the model and the price behind a configuration nobody edited. The catalog is read at most every `catalogTtlMs`, and the move is reported once in the log and recorded in every decision, but nothing asks first. A deployment that has to approve a release change belongs on `pinned`.
 - The family comes from the catalog's `canonical_slug`, so a model published only as an undated id — including every OpenRouter `~alias` — has no family and never moves.
+- The diagnostics file is append-only and never rotated. Each line is bounded, the file is not: a deployment that enables it owns its retention.
 
 <a id="dev-note"></a>
 ### Dev Note

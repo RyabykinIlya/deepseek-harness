@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type {
   OpenRouterCatalogEntry,
@@ -7,6 +7,7 @@ import type {
   OpenRouterRoutingBlock,
   PiAiDispatch,
 } from '@deepseek-ai/dsh-llm-pi-ai'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import { TiersAdapter } from '../src/adapter.ts'
@@ -16,7 +17,8 @@ import type { RoutingSettings } from '../src/config.ts'
 import { EndpointsCache } from '../src/endpoints-cache.ts'
 import { FamilyCache } from '../src/family-cache.ts'
 import { KeyInfo } from '../src/key-info.ts'
-import type { JudgeVerdict, ModelRoutingState } from '../src/types.ts'
+import type { UsageTotals } from '../src/select.ts'
+import type { JudgeVerdict, ModelRoutingState, RoutingDiagnosticsRecord } from '../src/types.ts'
 import { endpointsOf } from './fixtures.ts'
 
 const PRO = {
@@ -54,6 +56,8 @@ interface Harness {
   adapter: TiersAdapter
   sent: Dispatched[]
   events: SessionEventMap['model-routing/decision'][]
+  /** Every diagnostics record the adapter produced, in order. */
+  records: RoutingDiagnosticsRecord[]
   clock: { now: number }
   endpoints: Record<string, readonly OpenRouterEndpoint[] | Error>
   judge: { reply: Omit<JudgeVerdict, 'rule'> | undefined }
@@ -62,6 +66,8 @@ interface Harness {
   warnings: string[]
   catalogEntries: readonly OpenRouterCatalogEntry[]
   catalogFails: boolean
+  /** Model ids the inner route cannot dispatch, as a release newer than the pinned pi-ai catalog. */
+  innerUnknown: Set<string>
 }
 
 /** Build an adapter over stub dependencies and recorded endpoint lists. */
@@ -73,6 +79,8 @@ async function harness(over: {
   state?: ModelRoutingState
   catalog?: readonly OpenRouterCatalogEntry[]
   catalogFails?: boolean
+  innerUnknown?: readonly string[]
+  usage?: UsageTotals
 } = {}): Promise<Harness> {
   const clock = 1000
   const tiers = over.tiers ?? [PRO, FLASH] as Record<string, unknown>[]
@@ -94,10 +102,12 @@ async function harness(over: {
     over.endpoints ?? await loadFixtures(tiers as { models: string[] }[])
   const sent: Dispatched[] = []
   const events: SessionEventMap['model-routing/decision'][] = []
+  const records: RoutingDiagnosticsRecord[] = []
   const record: Harness = {
     adapter: undefined as unknown as TiersAdapter,
     sent,
     events,
+    records,
     clock: { now: clock },
     endpoints: {},
     judge: { reply: undefined },
@@ -106,6 +116,7 @@ async function harness(over: {
     warnings: [] as string[],
     catalogEntries: over.catalog ?? [],
     catalogFails: over.catalogFails ?? false,
+    innerUnknown: new Set(over.innerUnknown ?? []),
   }
   for (const model of Object.keys(endpoints)) record.endpoints[model] = endpoints[model]!
 
@@ -123,6 +134,8 @@ async function harness(over: {
       return {
         async *[Symbol.asyncIterator]() {
           for (const chunk of chunks) yield chunk
+          const thrown = (chunks as StreamChunk[] & { [THROW_AFTER]?: Error })[THROW_AFTER]
+          if (thrown !== undefined) throw thrown
         },
       } as AsyncIterable<StreamChunk>
     },
@@ -142,8 +155,9 @@ async function harness(over: {
     dispatch: () => dispatch,
     session: () => session,
     routingState: () => over.state,
-    usage: () => undefined,
+    usage: () => over.usage,
     innerEfforts: async () => ['off', 'high', 'xhigh'],
+    innerCanDispatch: async model => !record.innerUnknown.has(model),
     endpoints: cache,
     catalog: new FamilyCache(async () => {
       if (record.catalogFails) throw new Error('OpenRouter answered 503')
@@ -163,6 +177,7 @@ async function harness(over: {
     apiKey: () => Promise.resolve('key'),
     headers: () => ({}),
     now: () => clock,
+    diagnostics: (entry) => { records.push(entry) },
     warn: (message) => {
       record.warnings.push(message)
       record.judge.reply ??= { model: 'typesafe/jev-1.13', latencyMs: 0, error: message }
@@ -200,6 +215,18 @@ function failureChunks(code: string): StreamChunk[] {
   return [{ type: 'finish', reason: { kind: 'error', failure: { code, message: code } } }]
 }
 
+/** Carries the error a scripted attempt's iterator throws once its chunks are exhausted. */
+const THROW_AFTER = Symbol('throw-after-last-chunk')
+
+/**
+ * Chunks for an attempt whose iterator throws instead of yielding a finish
+ * chunk once it has yielded `chunks` — the pi-ai idle watchdog's own failure
+ * path, which surfaces as a rejection of `iterator.next()`, not a chunk.
+ */
+function chunksThenThrow(chunks: StreamChunk[], error: Error): StreamChunk[] {
+  return Object.assign([...chunks], { [THROW_AFTER]: error })
+}
+
 /** A folded state as it looks after one turn on `flash`. */
 function priorDecision(over: Partial<ModelRoutingState> = {}): ModelRoutingState {
   return {
@@ -217,7 +244,10 @@ function priorDecision(over: Partial<ModelRoutingState> = {}): ModelRoutingState
 }
 
 /** Drain one request and collect the chunks that reached the caller. */
-async function run(adapter: TiersAdapter, over: Partial<GenerateOptions> = {}): Promise<StreamChunk[]> {
+async function run(
+  adapter: TiersAdapter,
+  over: Partial<Omit<GenerateOptions, 'sessionId'>> & { sessionId?: SessionId | undefined } = {},
+): Promise<StreamChunk[]> {
   const options = {
     provider: 'tiers',
     model: 'flash',
@@ -250,6 +280,92 @@ describe('TiersAdapter pinning', () => {
       model: 'deepseek/deepseek-v4-flash',
     })
     expect(h.events[0]?.endpoint?.tag).toBe('streamlake/fp8')
+  })
+
+  it('records the mix, the filters, and the candidate table behind the price', async () => {
+    const h = await harness()
+    await run(h.adapter, { model: 'pro' })
+    const event = h.events[0]!
+    const record = h.records[0]!
+    expect(record.at).toBe(1000)
+    expect(record.sessionId).toBe('s1')
+    // The event and the file describe one decision: the same verdict in
+    // miniature, and the whole table the price was compared over.
+    expect(event.mix).toEqual({ cached: 0.9, fresh: 0.08, output: 0.02, source: 'default' })
+    expect(event.filters).toEqual({
+      contextWindow: 1_000_000,
+      minQuantization: 'fp8',
+      unknownQuantization: 'reject',
+      free: 'off',
+      allowFree: true,
+      minUptime: 95,
+      requireNormalStatus: true,
+      trustedUnknownProviders: ['stealth'],
+    })
+    expect(record.filters).toEqual(event.filters)
+    expect(record.candidates).toHaveLength(record.considered)
+    const admitted = record.candidates.filter(entry => entry.rejection === undefined)
+    const dropped = record.candidates.filter(entry => entry.rejection !== undefined)
+    expect(admitted.map(entry => entry.rank)).toEqual(admitted.map((_, index) => index + 1))
+    expect(admitted[0]?.tag).toBe(record.endpoint?.tag)
+    for (const entry of dropped) expect(entry.rank).toBeUndefined()
+    // The per-reason counts are the same toll the table shows, and the event
+    // names the cheapest endpoint each reason dropped.
+    const counts: Readonly<Record<string, number>> = event.rejections ?? {}
+    for (const [reason, count] of Object.entries(counts)) {
+      expect(dropped.filter(entry => entry.rejection === reason).length).toBe(count)
+    }
+    const named = event.cheapestRejected ?? []
+    for (const entry of named) expect(entry.rejection).toBeDefined()
+    expect(named.map(entry => entry.rejection).sort())
+      .toEqual(Object.entries(counts).filter(([, count]) => count > 0).map(([reason]) => reason).sort())
+    // A provider discount is a fact the record keeps, even when it is zero.
+    expect(record.candidates.some(entry => entry.discount !== undefined)).toBe(true)
+    expect(record.unreadable).toEqual([])
+  })
+
+  it('records a measured mix once the session has established a shape', async () => {
+    const h = await harness({
+      usage: { cacheReadTokens: 8_000, uncachedInputTokens: 1_000, cacheWriteTokens: 0, outputTokens: 1_000 },
+    })
+    await run(h.adapter)
+    expect(h.events[0]?.mix).toEqual({ cached: 0.8, fresh: 0.1, output: 0.1, source: 'usage' })
+    expect(h.records[0]?.mix).toEqual(h.events[0]?.mix)
+  })
+
+  it('records a session-less decision too, naming no Session', async () => {
+    const h = await harness()
+    await run(h.adapter, { sessionId: undefined })
+    // No Session asked to keep the event, so only the file has the decision.
+    expect(h.events).toHaveLength(0)
+    expect(h.records).toHaveLength(1)
+    expect(h.records[0]?.sessionId).toBeUndefined()
+    expect(h.records[0]?.candidates.length).toBe(h.records[0]?.considered)
+  })
+
+  it('leaves out a runner-up fact the endpoint did not publish', async () => {
+    /** An endpoint that states neither a quantization nor a discount. */
+    const plain = (slug: string, promptPrice: number): OpenRouterEndpoint => ({
+      slug,
+      promptPrice,
+      completionPrice: promptPrice * 3,
+      inputCacheReadPrice: promptPrice / 2,
+      status: 0,
+      uptimeLast30m: 99,
+      supportedParameters: ['tools'],
+      contextLength: 1_048_576,
+    })
+    const h = await harness({
+      tiers: [{
+        name: 'flash', label: 'Flash', models: ['author/m'], contextWindow: 1_000_000, maxTokens: 100,
+        input: ['text'], minQuantization: 'fp4', unknownQuantization: 'accept', free: 'off',
+      }],
+      endpoints: { 'author/m': [plain('one', 1e-7), plain('two', 2e-7)] },
+    })
+    await run(h.adapter)
+    expect(h.events[0]?.runnersUp[0]).toEqual({
+      model: 'author/m', tag: 'two', blendedUsdPerToken: expect.any(Number) as number,
+    })
   })
 
   it('keeps the pin for the next request in the same session', async () => {
@@ -308,6 +424,55 @@ describe('TiersAdapter pinning', () => {
     expect(h.sent[0]?.routing).toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events).toHaveLength(0)
   })
+
+  it('decides again instead of clinching every request when a live settings edit renamed or removed the pinned tier', async () => {
+    // The log recorded a decision for tier `pro`, but a volatile settings write
+    // landed since (a rename or deletion) and the current config no longer has
+    // it. Nothing in the live settings can validate or dispatch against `pro`
+    // anymore, so the stale pin must be discarded, not clinch this and every
+    // later request behind `INVALID_CONFIG` until an unrelated boundary happens
+    // to re-decide.
+    const h = await harness({
+      tiers: [FLASH],
+      settings: { judgeEnabled: false },
+      state: {
+        decision: {
+          boundary: 'start', requested: 'auto', tier: 'pro', model: 'deepseek/deepseek-v4-pro',
+          endpoint: { tag: 'streamlake/fp8', promptUsd: 1e-8, completionUsd: 2e-8 },
+          considered: 1, runnersUp: [], excludedTags: [],
+        },
+        decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
+        explicitSelection: false, overrides: {},
+      },
+    })
+    const chunks = await run(h.adapter, { model: 'auto' })
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(h.events).toHaveLength(1)
+    expect(h.events[0]).toMatchObject({ boundary: 'start', tier: 'flash' })
+  })
+
+  it('discards a restored unpinned-block decision for a tier that is gone, instead of throwing out of restorePin', async () => {
+    // Same scenario as above, but for a decision recorded without a pinned
+    // endpoint (the tier-wide `unpinnedBlock` path) — `restorePin` itself used
+    // to look the tier up unconditionally and throw before `run()` ever got a
+    // chance to notice the pin was stale.
+    const h = await harness({
+      tiers: [FLASH],
+      settings: { judgeEnabled: false },
+      state: {
+        decision: {
+          boundary: 'start', requested: 'auto', tier: 'pro', model: 'deepseek/deepseek-v4-pro',
+          considered: 1, runnersUp: [], excludedTags: [],
+        },
+        decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
+        explicitSelection: false, overrides: {},
+      },
+    })
+    const chunks = await run(h.adapter, { model: 'auto' })
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(h.events).toHaveLength(1)
+    expect(h.events[0]).toMatchObject({ boundary: 'start', tier: 'flash' })
+  })
 })
 
 describe('TiersAdapter and the judge', () => {
@@ -346,6 +511,116 @@ describe('TiersAdapter rerouting', () => {
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     // Only the successful attempt's chunks reached the caller.
     expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('reroutes within the same turn when a provider reports its failure in-band, after a leading usage chunk', async () => {
+    // pi-ai's own in-band failure reporting always yields a `usage` chunk
+    // before the error `finish` (stream.ts's 'error' case). Reading only the
+    // very first `.next()` result would see that `usage` chunk, never the
+    // failure, and treat the attempt as "content already reached the caller"
+    // — excluding the endpoint without rerouting, so every pi-ai in-band
+    // failure surfaced as an error to the caller instead of recovering
+    // within the turn. Looking past the leading usage chunk fixes that.
+    const h = await harness({
+      responses: [
+        [{ type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } }, ...failureChunks('PI_AI_ERROR')],
+        normalChunks(),
+      ],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(h.events).toHaveLength(2)
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+    // The failed attempt's chunks never reached the caller; only the
+    // successful attempt's did.
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('excludes an endpoint that fails on its very first chunk with no leading usage, exactly as one buffered behind usage', async () => {
+    // Confirms the leading-usage buffering in the fix above does not change
+    // behavior for a provider that reports the failure immediately, with no
+    // usage chunk at all.
+    const h = await harness({ responses: [failureChunks('PI_AI_ERROR'), normalChunks()] })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('excludes, but does not reroute, an endpoint that fails after real content has already reached the caller', async () => {
+    // Once genuine content (not just a leading `usage` chunk) has streamed,
+    // the attempt cannot be replayed on another endpoint — rerouting would
+    // duplicate or corrupt what the caller already received. The endpoint
+    // must still be excluded, so the next turn's failure boundary does not
+    // pin straight back onto it.
+    const h = await harness({
+      responses: [
+        [
+          { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+          { type: 'block-start', index: 0, blockType: 'text' },
+          { type: 'text-delta', index: 0, text: 'partial' },
+          ...failureChunks('PI_AI_ERROR'),
+        ],
+        normalChunks(),
+      ],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(1)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+
+    await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+  })
+
+  it('excludes but does not reroute an endpoint whose iterator throws after real content has streamed', async () => {
+    // The pi-ai idle watchdog rejects `iterator.next()` directly rather than
+    // yielding a finish chunk with a failure code — the same "content already
+    // reached the caller, cannot replay, must exclude" situation, reaching
+    // the adapter through the other path.
+    const h = await harness({
+      responses: [
+        chunksThenThrow(
+          [
+            { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+            { type: 'block-start', index: 0, blockType: 'text' },
+            { type: 'text-delta', index: 0, text: 'partial' },
+          ],
+          new LlmError('pi-ai idle watchdog fired', 'TIMEOUT'),
+        ),
+        normalChunks(),
+      ],
+    })
+    await expect(run(h.adapter)).rejects.toMatchObject({ code: 'TIMEOUT' })
+    expect(h.sent).toHaveLength(1)
+
+    await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+  })
+
+  it('reroutes within the same turn when the iterator throws while only a leading usage chunk has been buffered', async () => {
+    // A throw while still reading leading `usage` chunks is the same "nothing
+    // has reached the caller yet" situation as an in-band failure chunk
+    // arriving there — it must reroute, not merely exclude and fail the turn.
+    const h = await harness({
+      responses: [
+        chunksThenThrow(
+          [{ type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } }],
+          new LlmError('pi-ai idle watchdog fired', 'TIMEOUT'),
+        ),
+        normalChunks(),
+      ],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
@@ -577,6 +852,7 @@ describe('TiersAdapter snapshot policy', () => {
     catalog?: readonly OpenRouterCatalogEntry[]
     catalogFails?: boolean
     decideEveryTime?: boolean
+    innerUnknown?: readonly string[]
   }): Promise<Harness> {
     const pro = await endpointsOf('deepseek/deepseek-v4-pro')
     return harness({
@@ -584,6 +860,7 @@ describe('TiersAdapter snapshot policy', () => {
       endpoints: { 'deepseek/deepseek-v4-pro': pro, 'deepseek/deepseek-v4-pro-0813': pro },
       catalog: options.catalog ?? FAMILY,
       catalogFails: options.catalogFails ?? false,
+      innerUnknown: options.innerUnknown ?? [],
       settings: { snapshotPolicy: options.policy },
       // A Session compacted since its last decision decides again at every
       // boundary, which is what makes a second run a second decision rather than
@@ -659,5 +936,142 @@ describe('TiersAdapter snapshot policy', () => {
     await run(h.adapter, { model: 'pro' })
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro')
     expect(h.warnings).toEqual([])
+  })
+
+  it('keeps the configured id when `latest` resolves to a release the inner route cannot dispatch', async () => {
+    // OpenRouter's catalog runs ahead of the pinned pi-ai dependency: the
+    // 0813 release exists upstream, but the inner route has never learned it.
+    // Dispatching it anyway fails `UNKNOWN_MODEL` on every turn — an error no
+    // reroute covers, because every endpoint of the id is equally unknown. The
+    // decision must fall back to the configured id, which the route knows.
+    const h = await proTier({ policy: 'latest', innerUnknown: ['deepseek/deepseek-v4-pro-0813'] })
+    const chunks = await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(h.events[0]).toMatchObject({ tier: 'pro', model: 'deepseek/deepseek-v4-pro' })
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(h.warnings).toEqual([
+      'model-routing: "deepseek/deepseek-v4-pro" resolves to "deepseek/deepseek-v4-pro-0813",'
+      + ' which the inner route "openrouter" cannot dispatch, so the tier keeps'
+      + ' "deepseek/deepseek-v4-pro" — @deepseek-ai/dsh-llm-pi-ai has not learned that release yet',
+    ])
+  })
+
+  it('says once that a resolved release is undispatchable, however many boundaries decide afterwards', async () => {
+    const h = await proTier({
+      policy: 'latest',
+      innerUnknown: ['deepseek/deepseek-v4-pro-0813'],
+      decideEveryTime: true,
+    })
+    await run(h.adapter, { model: 'pro' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.events).toHaveLength(2)
+    expect(h.warnings).toHaveLength(1)
+  })
+
+  it('still moves to the newest release when the inner route can dispatch it', async () => {
+    const h = await proTier({ policy: 'latest' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.warnings).toEqual([
+      'model-routing: "deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813",'
+      + ' the newest snapshot of its family',
+    ])
+  })
+
+  it('ranks only the model a request named, never the rest of its tier', async () => {
+    // Asking for one model of a tier means that model. Resolving the whole tier
+    // here would hand the ranking every other family of the tier too, so a
+    // request for the Pro model could quietly be decided onto (and priced
+    // against) the cheaper sibling in the same tier.
+    const h = await harness({
+      tiers: [{ ...PRO, models: ['deepseek/deepseek-v4-pro', 'z-ai/glm-5.3'] }],
+      settings: { snapshotPolicy: 'latest' },
+      catalog: FAMILY,
+      // The sibling is priced well below Pro, so it would win any ranking that
+      // considered it.
+      endpoints: { 'z-ai/glm-5.3': await endpointsOf('z-ai/glm-5.3') },
+    })
+    h.judge.reply = { model: 'typesafe/jev-1.13', pPro: 0, confidence: 1, precision: 0.07, latencyMs: 1 }
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.events[0]).toMatchObject({ tier: 'pro', model: 'deepseek/deepseek-v4-pro-0813' })
+  })
+})
+
+/** One user message whose content carries an image the Session must send onward. */
+function imageRequest(): Partial<GenerateOptions> {
+  return {
+    messages: [createUserMessage({
+      content: [{
+        type: 'image',
+        attachment: {
+          attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+          mediaType: 'image/png',
+          bytes: 3,
+          width: 1,
+          height: 1,
+        },
+      }],
+      source: { kind: 'user' },
+    })],
+  }
+}
+
+describe('TiersAdapter input modalities', () => {
+  // Only one Flash model is shown to accept image input; the catalog names no
+  // modalities for the other two, which is the same as showing none.
+  const IMAGE_CATALOG: readonly OpenRouterCatalogEntry[] = [
+    { id: 'deepseek/deepseek-v4-flash', canonicalSlug: 'deepseek/deepseek-v4-flash-20260423', inputModalities: ['text'] },
+    { id: 'z-ai/glm-5.3-flash', canonicalSlug: 'z-ai/glm-5.3-flash-20260423', inputModalities: ['text', 'image'] },
+  ]
+
+  it('serves an image request only from a model the catalog shows accepting image', async () => {
+    const h = await harness({ catalog: IMAGE_CATALOG })
+    await run(h.adapter, imageRequest())
+    expect(h.sent[0]?.options.model).toBe('z-ai/glm-5.3-flash')
+    expect(h.events[0]).toMatchObject({ tier: 'flash', model: 'z-ai/glm-5.3-flash' })
+  })
+
+  it('leaves a text request on the same endpoint it would have used', async () => {
+    const h = await harness({ catalog: IMAGE_CATALOG })
+    await run(h.adapter)
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
+    expect(h.warnings).toEqual([])
+  })
+
+  it('decides the Session again inside its own tier once an image arrives', async () => {
+    // An image stays in the Session's history, so the model pinned before it
+    // cannot serve the Session afterwards either. The tier is the deployment's
+    // cost and quality contract and must not change; only the model inside it.
+    const h = await harness({ catalog: IMAGE_CATALOG })
+    await run(h.adapter)
+    await run(h.adapter, imageRequest())
+    expect(h.sent[1]?.options.model).toBe('z-ai/glm-5.3-flash')
+    expect(h.events[1]).toMatchObject({ boundary: 'start', tier: 'flash', model: 'z-ai/glm-5.3-flash' })
+    expect(h.warnings).toContain(
+      'model-routing: "deepseek/deepseek-v4-flash" is not shown to accept image input, so this Session'
+      + ' decides its flash tier again on a model that does',
+    )
+  })
+
+  it('keeps a pin the catalog shows able to serve the request', async () => {
+    const h = await harness({ catalog: IMAGE_CATALOG })
+    await run(h.adapter, imageRequest())
+    await run(h.adapter, imageRequest())
+    expect(h.sent[1]?.options.model).toBe('z-ai/glm-5.3-flash')
+    expect(h.events).toHaveLength(1)
+  })
+
+  it('refuses an image request rather than serve it from a model nothing vouches for', async () => {
+    const h = await harness({ catalogFails: true })
+    const failure = await run(h.adapter, imageRequest()).then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(LlmError)
+    expect((failure as LlmError).message).toContain('modality=')
+    expect((failure as LlmError).message).not.toContain('unpriced=')
+    expect(h.sent).toEqual([])
+    expect(h.warnings).toContain(
+      'model-routing: the OpenRouter model catalog could not be read, so no model is shown to accept'
+      + ' image input and an image request has no endpoint to serve it',
+    )
   })
 })

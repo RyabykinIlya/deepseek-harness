@@ -54,11 +54,32 @@ describe('FamilyCache.resolve', () => {
     expect(read).toHaveBeenCalledTimes(2)
   })
 
-  it('hands the caller its own cancellation signal', async () => {
+  it('does not hand the reader a caller\'s cancellation signal', async () => {
+    // The read is shared with every other caller deciding at the same moment,
+    // so it must outlive any one of them: a coordinator that abandons its
+    // request must not abort the catalog a parallel Thread is still awaiting.
     const { cache, signals } = cacheOver([async () => CATALOG])
     const controller = new AbortController()
     await cache.resolve(['deepseek/deepseek-v4-pro'], 1000, controller.signal)
-    expect(signals).toEqual([controller.signal])
+    expect(signals).toHaveLength(1)
+    expect(signals[0]).not.toBe(controller.signal)
+  })
+
+  it('lets one caller abort while the shared read still completes for another', async () => {
+    let release: ((catalog: readonly OpenRouterCatalogEntry[]) => void) | undefined
+    const gate = new Promise<readonly OpenRouterCatalogEntry[]>((resolve) => { release = resolve })
+    const { cache } = cacheOver([() => gate])
+    const coordinator = new AbortController()
+    const thread = new AbortController()
+    const abandoned = cache.resolve(['deepseek/deepseek-v4-pro'], 1000, coordinator.signal)
+    const joined = cache.resolve(['deepseek/deepseek-v4-pro'], 1000, thread.signal)
+    coordinator.abort()
+    // The abandoned caller stops waiting; the read it started keeps going.
+    expect(await abandoned).toMatchObject({ unreadable: true })
+    release?.(CATALOG)
+    const batch = await joined
+    expect(batch.unreadable).toBe(false)
+    expect(batch.resolutions[0]?.resolved).toBe('deepseek/deepseek-v4-pro-0813')
   })
 
   it('drops two configured ids that resolve to the same release', async () => {
@@ -133,5 +154,51 @@ describe('FamilyCache.resolve', () => {
     const second = await cache.resolve(['deepseek/deepseek-v4-pro'], 1000, new AbortController().signal)
     expect(second.unreadable).toBe(false)
     expect(second.resolutions[0]?.resolved).toBe('deepseek/deepseek-v4-pro-0813')
+  })
+})
+
+describe('FamilyCache.modalities', () => {
+  const MODALITIES: readonly OpenRouterCatalogEntry[] = [
+    { id: 'z-ai/glm-5.3', canonicalSlug: 'z-ai/glm-5.3-20260920', inputModalities: ['text', 'image', 'file'] },
+    { id: 'deepseek/deepseek-v4-pro', canonicalSlug: 'deepseek/deepseek-v4-pro-20260423', inputModalities: ['text'] },
+  ]
+
+  it('reports what the catalog declares for the exact ids it was asked about', async () => {
+    const clock = { now: 0 }
+    const cache = new FamilyCache(async () => MODALITIES, () => clock.now)
+    const signal = new AbortController().signal
+    const batch = await cache.modalities(['z-ai/glm-5.3', 'deepseek/deepseek-v4-pro'], 1000, signal)
+    expect(batch.unreadable).toBe(false)
+    expect(batch.declared.get('z-ai/glm-5.3')).toEqual(['text', 'image', 'file'])
+    expect(batch.declared.get('deepseek/deepseek-v4-pro')).toEqual(['text'])
+  })
+
+  it('leaves an id the catalog does not name absent rather than empty', async () => {
+    const clock = { now: 0 }
+    const cache = new FamilyCache(async () => MODALITIES, () => clock.now)
+    const batch = await cache.modalities(['moonshotai/kimi-k3'], 1000, new AbortController().signal)
+    expect(batch.unreadable).toBe(false)
+    expect(batch.declared.get('moonshotai/kimi-k3')).toBeUndefined()
+  })
+
+  it('answers with nothing to declare when no catalog has ever been read', async () => {
+    const clock = { now: 0 }
+    const cache = new FamilyCache(async () => Promise.reject(new Error('OpenRouter answered 503')), () => clock.now)
+    const batch = await cache.modalities(['z-ai/glm-5.3'], 1000, new AbortController().signal)
+    expect(batch.unreadable).toBe(true)
+    expect(batch.declared.size).toBe(0)
+  })
+
+  it('answers from the last catalog it read when a later read fails', async () => {
+    const { cache, clock } = cacheOver([
+      async () => MODALITIES,
+      async () => { throw new Error('OpenRouter answered 503') },
+    ])
+    const signal = new AbortController().signal
+    await cache.modalities(['z-ai/glm-5.3'], 1000, signal)
+    clock.now = 1000
+    const batch = await cache.modalities(['z-ai/glm-5.3'], 1000, signal)
+    expect(batch.unreadable).toBe(false)
+    expect(batch.declared.get('z-ai/glm-5.3')).toEqual(['text', 'image', 'file'])
   })
 })

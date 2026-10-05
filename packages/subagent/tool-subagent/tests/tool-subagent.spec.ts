@@ -1228,7 +1228,8 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const properties = (schema.parameters as {
       properties: Record<string, { description?: string }>
     }).properties
-    expect(properties.run_in_background?.description).toContain('Defaults to true')
+    expect(properties.run_in_background?.description).toContain('Always runs in the background')
+    expect(properties.run_in_background?.description).toContain('`false` is refused')
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
     expect(guidance?.text).toContain('Start independent subagent delegations together')
@@ -1263,17 +1264,35 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(assembly.sections.find(section => section.name === 'tool:subagent')?.text).toBe('')
   })
 
-  it('waits for a continuable provider only when run_in_background is explicitly false', async () => {
+  it('refuses a foreground request on a continuable provider, whose isolation exists only on the background route', async () => {
+    // The foreground route is the one-shot `start()` path; a continuable
+    // provider establishes its isolation (a git worktree, for the Thread
+    // provider) while preparing a continuable creation and nowhere else, so
+    // honoring `false` would run the child in the parent's own cwd. The refusal
+    // is the point: the isolation must not be dropped silently.
     const { ctx, parent } = await continuableSetup()
     const result = await callSubagent(
       ctx,
       { description: 'blocking work', prompt: 'dig in', run_in_background: false },
       { agent: parent },
     )
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('run_in_background: false is not available for this provider')
+    expect(ctx.jobs.list(parent.id)).toEqual([])
+    // No durable child was created either: the call never reached a provider.
+    const sessions = await ctx.sessionPersistence.list()
+    expect(sessions.filter(entry => entry.header.id !== parent.id)).toEqual([])
+  })
+
+  it('starts a continuable child when the caller omits run_in_background', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const result = await callSubagent(
+      ctx,
+      { description: 'background work', prompt: 'dig in' },
+      { agent: parent },
+    )
     expect(result.isError).toBe(false)
-    if (result.isError) throw new Error('expected foreground subagent success')
-    expect(result.value).toMatchObject({ kind: 'foreground' })
-    expect(text(result)).toBe('continuable answer')
+    expect(result.value).toMatchObject({ kind: 'continuable' })
     expect(ctx.jobs.list(parent.id)).toEqual([])
   })
 

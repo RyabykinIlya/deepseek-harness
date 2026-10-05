@@ -20,13 +20,14 @@
  * @module dsh-experimental-model-routing/adapter
  */
 
-import { LlmAdapter, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId, contentHasImage } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
   LlmModelReasoningInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  RequestMessage,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { OpenRouterEndpoint, OpenRouterRoutingBlock, PiAiDispatch } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -38,14 +39,24 @@ import type { EndpointsCache } from './endpoints-cache.ts'
 import type { FamilyCache } from './family-cache.ts'
 import type { FamilyResolution } from './family.ts'
 import { routingEndpointOf } from './endpoint.ts'
+import { candidatesOf, cheapestRejectedOf } from './diagnostics.ts'
 import { judgeQuestions, judgeState, tierFromVerdict } from './judge.ts'
 import type { JudgeRequest } from './judge.ts'
 import type { KeyInfo } from './key-info.ts'
 import { quantizationsAtOrAbove } from './quantization.ts'
 import { unwrapHistory, wrapReplay } from './replay.ts'
 import { defaultMix, mixFromUsage, policyFor, rankWithRelaxation } from './select.ts'
+import type { RequiredInput } from './select.ts'
 import type { UsageTotals } from './select.ts'
-import type { JudgeRule, JudgeVerdict, ModelRoutingState, RoutingBoundary } from './types.ts'
+import type {
+  JudgeRule,
+  JudgeVerdict,
+  ModelRoutingState,
+  RoutingBoundary,
+  RoutingDecision,
+  RoutingDiagnosticsRecord,
+  RoutingFilters,
+} from './types.ts'
 
 /** Machine code for a tier whose endpoint lists could not be read at all. */
 export const MODEL_ROUTING_UNAVAILABLE_CODE = 'MODEL_ROUTING_UNAVAILABLE'
@@ -83,6 +94,19 @@ export interface TiersAdapterDeps {
   usage(session: Session): UsageTotals | undefined
   /** Reasoning efforts the inner route's model actually supports. */
   innerEfforts(model: string, signal: AbortSignal): Promise<readonly string[] | undefined>
+  /**
+   * Whether the inner route can dispatch one exact model id.
+   *
+   * Under `snapshotPolicy: 'latest'` a tier's id is resolved against OpenRouter's
+   * live catalog, which runs ahead of the static catalog the inner pi-ai route
+   * was built with. A resolved release the inner route has never heard of would
+   * be dispatched anyway and fail `UNKNOWN_MODEL` on every turn, so a decision
+   * asks this before ranking.
+   * @param model - the resolved `{author}/{slug}` id, dated release included.
+   * @param signal - the request's cancellation.
+   * @returns whether the inner route resolves the id.
+   */
+  innerCanDispatch(model: string, signal: AbortSignal): Promise<boolean>
   endpoints: EndpointsCache
   /** The whole OpenRouter catalog, read behind a cache; decides which snapshot a configured id names. */
   catalog: FamilyCache
@@ -92,6 +116,8 @@ export interface TiersAdapterDeps {
   apiKey(): Promise<string | undefined>
   headers(): Readonly<Record<string, string>>
   now(): number
+  /** Receives the full candidate table of every decision; the diagnostics file owns what happens to it. */
+  diagnostics(record: RoutingDiagnosticsRecord): void
   warn(message: string): void
 }
 
@@ -127,6 +153,34 @@ function modalitiesOf(tier: TierSettingsSnapshot): readonly ('text' | 'image')[]
   return [...tier.input]
 }
 
+/**
+ * The input modality one request requires of the model that serves it.
+ *
+ * Text is what every model declares, so only a modality beyond it can make a
+ * request unservable. The image content of a Session is part of its durable
+ * history, which is why the requirement applies to every later request and not
+ * only to the request that read the image.
+ * @param messages - the complete request history.
+ * @returns the required modality, or undefined when the request is text-only.
+ */
+function requiredInputOf(messages: readonly RequestMessage[]): RequiredInput | undefined {
+  return messages.some(message => contentHasImage(message.content)) ? 'image' : undefined
+}
+
+/**
+ * Whether what the catalog declares for one model covers what a request needs.
+ *
+ * Silence is not a capability: a model the catalog does not list, or lists
+ * without the modality, is treated as unable to serve the request, because the
+ * alternative is sending an image to a model that may reject it.
+ * @param declared - what the catalog states the model accepts as input.
+ * @param requiredInput - the modality the request carries.
+ * @returns whether the declaration proves the model can serve it.
+ */
+function acceptsInput(declared: readonly string[] | undefined, requiredInput: RequiredInput): boolean {
+  return declared !== undefined && declared.includes(requiredInput)
+}
+
 /** The tier-level effort vocabulary, branded the way the catalog spells it. */
 function tierEfforts(settings: RoutingSettings): LlmModelReasoningInfo['efforts'] {
   return settings.efforts.map(id => ({ id: ReasoningEffortId(id), name: id }))
@@ -138,6 +192,37 @@ function unpinnedBlock(tier: TierSettingsSnapshot): OpenRouterRoutingBlock {
     sort: 'price',
     quantizations: quantizationsAtOrAbove(tier.minQuantization, tier.unknownQuantization !== 'reject'),
     allow_fallbacks: true,
+  }
+}
+
+/**
+ * The tier filters one ranking applied, as a decision records them.
+ *
+ * A decision is only explicable against the filters it was taken under, and a
+ * settings edit can change those after the fact, so the record carries them
+ * rather than pointing at a configuration that may no longer read the same.
+ * @param tier - the tier the decision landed on.
+ * @param settings - the whole settings value.
+ * @param allowFree - whether this caller may use free endpoints.
+ * @param requiredInput - the input modality this request required beyond text.
+ * @returns the filters, as plain serializable values.
+ */
+function filtersOf(
+  tier: TierSettingsSnapshot,
+  settings: RoutingSettings,
+  allowFree: boolean,
+  requiredInput: RequiredInput | undefined,
+): RoutingFilters {
+  return {
+    contextWindow: tier.contextWindow,
+    minQuantization: tier.minQuantization,
+    unknownQuantization: tier.unknownQuantization,
+    free: tier.free,
+    allowFree,
+    minUptime: settings.minUptime,
+    requireNormalStatus: settings.requireNormalStatus,
+    trustedUnknownProviders: [...settings.trustedUnknownProviders],
+    ...requiredInput === undefined ? {} : { requiredInput },
   }
 }
 
@@ -154,6 +239,8 @@ export class TiersAdapter extends LlmAdapter {
   private readonly excluded = new Map<string, Map<string, number>>()
   private readonly snapshots = new Map<string, string>()
   private readonly reported = new Set<string>()
+  /** Whether the inner route dispatches one id, remembered for this adapter's life. */
+  private readonly dispatchable = new Map<string, boolean>()
   private freeBlockedUntil = 0
 
   constructor(
@@ -289,15 +376,22 @@ export class TiersAdapter extends LlmAdapter {
     }
   }
 
-  /** Rebuild a pin from a decision a previous Host instance wrote to this Session's log. */
-  private restorePin(settings: RoutingSettings, decision: SessionEventMap['model-routing/decision']): Pin {
+  /**
+   * Rebuild a pin from a decision a previous Host instance wrote to this Session's log.
+   * @returns `undefined` when the decision's tier no longer exists in the current
+   * settings — a live settings edit can rename or remove a tier after the decision
+   * was recorded, and nothing remains to build an unpinned routing block from.
+   */
+  private restorePin(settings: RoutingSettings, decision: SessionEventMap['model-routing/decision']): Pin | undefined {
     const endpoint = decision.endpoint
     if (endpoint === undefined) {
+      const tier = settings.tiers.find(candidate => candidate.name === decision.tier)
+      if (tier === undefined) return undefined
       return {
         requested: decision.requested,
         tier: decision.tier,
         model: decision.model,
-        block: unpinnedBlock(this.tierNamed(settings, decision.tier)),
+        block: unpinnedBlock(tier),
       }
     }
     return {
@@ -376,6 +470,24 @@ export class TiersAdapter extends LlmAdapter {
     if (pin === undefined && state?.decision != null) {
       pin = this.restorePin(settings, state.decision)
     }
+    // A live settings edit can rename or remove the tier a live or restored pin
+    // names, between the request that set it and this one. Nothing in the
+    // current settings can validate or dispatch against a tier that is gone, so
+    // the pin is discarded here rather than clinching every request behind it
+    // with `INVALID_CONFIG` until an unrelated boundary happens to re-decide.
+    const pinnedTier = pin?.tier
+    if (pinnedTier !== undefined && !settings.tiers.some(candidate => candidate.name === pinnedTier)) pin = undefined
+    const requiredInput = requiredInputOf(options.messages)
+    // A pin whose model is not shown to accept what this request carries cannot
+    // serve it. The image that demands a vision model stays in the Session's
+    // history, so every later request carries it too and the pin would keep
+    // failing for the rest of the Session. The re-decision stays inside the pin's
+    // tier, because the tier is the deployment's cost and quality contract, and a
+    // request that reaches a decision without a usable pin records `start`.
+    const tierForInput = pin === undefined || requiredInput === undefined
+      ? undefined
+      : await this.tierForInput(settings, pin, requiredInput, signal)
+    if (tierForInput !== undefined) pin = undefined
     const boundary = main
       ? boundaryOf({
         pinned: pin,
@@ -388,20 +500,38 @@ export class TiersAdapter extends LlmAdapter {
       })
       : undefined
     if ((main && boundary !== undefined) || pin === undefined) {
+      // At `failure`, the pin's own tier is the target, never the raw request:
+      // a provider hiccup must stay inside the tier the session is already
+      // on. Re-resolving `auto` here would re-ask the judge on every single
+      // provider failure — the exact mid-dialog model change `cacheIdleMs`
+      // and the other boundaries exist to prevent — and could switch tier or
+      // model on nothing more than a transient 5xx. `dispatchWithReroute`'s
+      // own internal reroute already decides this way; this keeps the two
+      // consistent.
+      const decisionTarget: RequestedTarget = boundary === 'failure' && pin !== undefined
+        ? { kind: 'tier', tier: pin.tier }
+        : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
+          : target
       const decided = await this.decide({
-        settings, target, pin, session, options, signal, persist: main, key,
+        settings, target: decisionTarget, pin, session, options, signal, persist: main, key, requiredInput,
         ...boundary === undefined ? {} : { boundary },
       })
       pin = decided.pin
       if (main) this.pins.set(key, pin)
     }
-    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key, signal, main })
+    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key, signal, main, requiredInput })
   }
 
-  /** The tier a decision named; a decision always names a configured one. */
+  /**
+   * The tier a name resolved against the current settings already names.
+   * Every call site resolves `name` against the same `settings.tiers` beforehand
+   * (`resolveRequested`, the judge's verdict, or a pin `run()` already confirmed
+   * still names a configured tier), so a miss here would be a resolution bug,
+   * not a stale reference.
+   */
   private tierNamed(settings: RoutingSettings, name: string): TierSettingsSnapshot {
     const tier = settings.tiers.find(candidate => candidate.name === name)
-    /* v8 ignore next -- a decision event is written from a configured tier, so a restored log always names one. */
+    /* v8 ignore next -- every call site already validated `name` against these same settings. */
     if (tier === undefined) throw new LlmError(`model-routing: no configured tier named "${name}"`, 'INVALID_CONFIG')
     return tier
   }
@@ -416,9 +546,10 @@ export class TiersAdapter extends LlmAdapter {
     signal: AbortSignal
     persist: boolean
     key: string
+    requiredInput: RequiredInput | undefined
     boundary?: RoutingBoundary
   }): Promise<Decision> {
-    const { settings, target, pin, session, options, signal, persist, key } = input
+    const { settings, target, pin, session, options, signal, persist, key, requiredInput } = input
     const boundary = input.boundary ?? 'start'
     const current = pin?.tier
     let tierName: string
@@ -441,10 +572,19 @@ export class TiersAdapter extends LlmAdapter {
       settings.mixMinTokens,
     )
     const preferModel = pin !== undefined && pin.tier === tier.name && target.kind !== 'fixed' ? pin.model : undefined
+    const requirement = requiredInput === undefined ? undefined : {
+      requiredInput,
+      modalities: await this.declaredModalities(settings, models, requiredInput, signal),
+    }
     const result = rankWithRelaxation(
       lists,
       models,
-      policyFor(tier, settings, { allowFree, excludedTags, ...preferModel === undefined ? {} : { preferModel } }),
+      policyFor(tier, settings, {
+        allowFree,
+        excludedTags,
+        ...preferModel === undefined ? {} : { preferModel },
+        ...requirement,
+      }),
       mix,
     )
     const best = result.ranked[0]
@@ -483,7 +623,8 @@ export class TiersAdapter extends LlmAdapter {
         MODEL_ROUTING_NO_ENDPOINT_CODE,
       )
     }
-    const payload = {
+    const candidates = candidatesOf(result, mix)
+    const payload: RoutingDecision = {
       boundary,
       requested: options.model,
       tier: tier.name,
@@ -498,9 +639,25 @@ export class TiersAdapter extends LlmAdapter {
         model: entry.model,
         tag: entry.endpoint.slug,
         blendedUsdPerToken: entry.blendedUsdPerToken,
+        ...entry.endpoint.quantization === undefined ? {} : { quantization: entry.endpoint.quantization },
+        ...entry.endpoint.discount === undefined ? {} : { discount: entry.endpoint.discount },
       })),
       excludedTags: [...excludedTags].sort(),
+      mix,
+      rejections: result.rejections,
+      cheapestRejected: cheapestRejectedOf(candidates),
+      filters: filtersOf(tier, settings, allowFree, requiredInput),
     }
+    // The file takes every decision, including those no Session asked to keep:
+    // a turn that could not record its event is exactly the turn a later
+    // investigation will ask about.
+    this.deps.diagnostics({
+      ...payload,
+      at: this.deps.now(),
+      ...session === undefined ? {} : { sessionId: session.id },
+      unreadable: result.unreadable,
+      candidates,
+    })
     if (persist && session !== undefined) {
       try {
         session.append('model-routing/decision', payload, { ignorable: true })
@@ -546,7 +703,12 @@ export class TiersAdapter extends LlmAdapter {
   ): Promise<string[]> {
     const configured = target.kind === 'fixed' ? [target.model] : [...tier.models]
     if (settings.snapshotPolicy !== 'latest') return configured
-    const batch = await this.deps.catalog.resolve(tier.models, settings.catalogTtlMs, signal)
+    // Resolve exactly the ids this request ranks over — `configured`, not the
+    // whole tier. A request that named one model of the tier means that model:
+    // resolving `tier.models` here would hand the ranking every other family of
+    // the tier as well, and the request would quietly be priced against and
+    // dispatched from models it did not ask for.
+    const batch = await this.deps.catalog.resolve(configured, settings.catalogTtlMs, signal)
     if (batch.unreadable) {
       // The turn still has to be decided, and the configured ids are the ones
       // every other part of the deployment names, so the catalog failing is not
@@ -558,8 +720,133 @@ export class TiersAdapter extends LlmAdapter {
       )
       return configured
     }
-    for (const resolution of batch.resolutions) this.announce(resolution)
-    return batch.resolutions.map(resolution => resolution.resolved)
+    for (const [index, resolution] of batch.resolutions.entries()) {
+      if (resolution.resolved === resolution.configured) continue
+      if (await this.innerKnows(resolution.resolved, signal)) this.announce(resolution)
+      else this.warnUndispatchable(resolution, configured[index] ?? resolution.resolved)
+    }
+    return this.dispatchableModels(batch.resolutions, configured, signal)
+  }
+
+  /** Whether the inner route can dispatch one id, answered once per decision. */
+  private innerKnows(model: string, signal: AbortSignal): Promise<boolean> {
+    const cached = this.dispatchable.get(model)
+    if (cached !== undefined) return Promise.resolve(cached)
+    return this.deps.innerCanDispatch(model, signal).then((answer) => {
+      this.dispatchable.set(model, answer)
+      return answer
+    })
+  }
+
+  /**
+   * Report an id that `latest` resolved to but the inner route cannot dispatch.
+   *
+   * One line per model, not per boundary: the same resolution recurs on every
+   * decision of every turn until a dependency bump changes it.
+   * @param resolution - the configured id and the undispatchable release it resolved to.
+   * @param configured - the id the configuration named, which the route does know.
+   */
+  private warnUndispatchable(resolution: FamilyResolution, configured: string): void {
+    this.warnOnce(
+      `inner-unknown:${resolution.resolved}`,
+      `model-routing: "${resolution.configured}" resolves to "${resolution.resolved}", which`
+      + ` the inner route "${this.route.innerRoute}" cannot dispatch, so the tier keeps "${configured}"`
+      + ' — @deepseek-ai/dsh-llm-pi-ai has not learned that release yet',
+    )
+  }
+
+  /**
+   * Restrict a catalog resolution to ids the inner route can actually dispatch.
+   *
+   * OpenRouter publishes a release to its catalog before the pinned `pi-ai`
+   * dependency learns it, so `latest` can resolve a tier onto an id the inner
+   * route answers `UNKNOWN_MODEL` for — an error no reroute covers, because
+   * every endpoint of that model is equally unknown. A resolution the inner
+   * route cannot serve falls back to the id the configuration named, which the
+   * route knows by construction, so the tier keeps working and stays on the
+   * release it can serve until a dependency bump moves the ceiling.
+   * @param resolutions - what `latest` resolved each configured id to.
+   * @param configured - the ids the configuration named, in tier order.
+   * @param signal - the request's cancellation.
+   * @returns the ids to rank, in tier order.
+   */
+  private async dispatchableModels(
+    resolutions: readonly FamilyResolution[],
+    configured: readonly string[],
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const ranked: string[] = []
+    for (const [index, resolution] of resolutions.entries()) {
+      const dispatchable = resolution.resolved === resolution.configured
+        || await this.innerKnows(resolution.resolved, signal)
+      // `resolutions` is derived one-for-one from `configured`, so the index is
+      // always present; `resolved` is the total fallback if that ever changed.
+      ranked.push(dispatchable ? resolution.resolved : configured[index] ?? resolution.resolved)
+    }
+    return ranked
+  }
+
+  /**
+   * The tier a pinned model cannot serve, when the request carries something it
+   * is not shown to accept.
+   *
+   * An image stays in the Session's history once it has been read, so a model
+   * pinned before that point cannot serve the Session afterwards either. The
+   * re-decision stays inside the pin's own tier: the tier is the deployment's
+   * cost and quality contract, and the requirement is about which model inside it
+   * may answer, not about which contract this Session is on.
+   * @param settings - the whole settings value.
+   * @param pin - the pin this Session is held to.
+   * @param requiredInput - the input modality the request carries.
+   * @param signal - the request's cancellation.
+   * @returns the pin's tier when the pin cannot serve the request, otherwise undefined.
+   */
+  private async tierForInput(
+    settings: RoutingSettings,
+    pin: Pin,
+    requiredInput: RequiredInput,
+    signal: AbortSignal,
+  ): Promise<string | undefined> {
+    const batch = await this.deps.catalog.modalities([pin.model], settings.catalogTtlMs, signal)
+    if (acceptsInput(batch.declared.get(pin.model), requiredInput)) return undefined
+    this.warnOnce(
+      `input:${pin.model}:${requiredInput}`,
+      `model-routing: "${pin.model}" is not shown to accept ${requiredInput} input, so this Session`
+      + ` decides its ${pin.tier} tier again on a model that does`,
+    )
+    return pin.tier
+  }
+
+  /**
+   * What the catalog declares about the input of every model one decision ranks.
+   *
+   * Only a request that carries an image reads the catalog: a text request's
+   * ranking cannot depend on modalities, and it must not pay for a catalog read
+   * to learn that.
+   * @param settings - the whole settings value.
+   * @param models - the exact ids the decision ranks, in tier order.
+   * @param requiredInput - the input modality the request carries.
+   * @param signal - the request's cancellation.
+   * @returns the declared modalities per id; an empty map when the catalog could not be read.
+   */
+  private async declaredModalities(
+    settings: RoutingSettings,
+    models: readonly string[],
+    requiredInput: RequiredInput,
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, readonly string[] | undefined>> {
+    const batch = await this.deps.catalog.modalities(models, settings.catalogTtlMs, signal)
+    if (batch.unreadable) {
+      // Every model then fails the requirement, and the decision reports that
+      // with the tier's other counts. This line says why the counts are what
+      // they are.
+      this.warnOnce(
+        'modalities',
+        'model-routing: the OpenRouter model catalog could not be read, so no model is shown to'
+        + ` accept ${requiredInput} input and an image request has no endpoint to serve it`,
+      )
+    }
+    return batch.declared
   }
 
   /**
@@ -671,8 +958,9 @@ export class TiersAdapter extends LlmAdapter {
     signal: AbortSignal
     /** Whether this is the agent's own turn, the only request allowed to leave a pin behind. */
     main: boolean
+    requiredInput: RequiredInput | undefined
   }): AsyncIterable<StreamChunk> {
-    const { settings, dispatch, options, key, signal, main } = input
+    const { settings, dispatch, options, key, signal, main, requiredInput } = input
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
     for (let attempt = 0; ; attempt += 1) {
@@ -691,9 +979,20 @@ export class TiersAdapter extends LlmAdapter {
       // re-declared through a helper that carries the chunk type the caller knows
       // it produces. Nothing here converts a value; it names one.
       const iterator = chunkIterator(dispatch.stream(inner, { openRouterRouting: pin.block }))
-      let first: IteratorResult<StreamChunk>
+      // pi-ai's in-band failure reporting always yields a `usage` chunk before the
+      // error `finish` (llm-pi-ai's stream.ts `'error'` case), so "has this attempt
+      // produced any content yet" must look past a leading `usage` chunk — reading
+      // only the very first `.next()` would see `usage`, never the failure, and
+      // rerouting would never fire for pi-ai's own error reporting (only for a
+      // thrown `LlmError`, which this attempt budget already covers below).
+      const leadingUsage: StreamChunk[] = []
+      let committed: IteratorResult<StreamChunk>
       try {
-        first = await iterator.next()
+        for (;;) {
+          const next = await iterator.next()
+          if (next.done === true || next.value.type !== 'usage') { committed = next; break }
+          leadingUsage.push(next.value)
+        }
       } catch (error: unknown) {
         const reroutable = error instanceof LlmError
           && settings.rerouteCodes.includes(error.code)
@@ -701,11 +1000,11 @@ export class TiersAdapter extends LlmAdapter {
           && pin.endpoint !== undefined
         if (!reroutable) throw error
         this.excludeEndpoint(key, pin, error.code, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
         continue
       }
-      if (first.done === true) return
-      const chunk = first.value
+      if (committed.done === true) return
+      const chunk = committed.value
       const failure = failureOf(chunk)
       const reroutable = failure !== undefined
         && settings.rerouteCodes.includes(failure)
@@ -714,20 +1013,34 @@ export class TiersAdapter extends LlmAdapter {
       if (reroutable) {
         await iterator.return?.(undefined)
         this.excludeEndpoint(key, pin, failure, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
         continue
       }
       if (failure !== undefined) {
         this.failures.add(key)
         if (pin.endpoint !== undefined) this.excludeEndpoint(key, pin, failure, settings)
       }
+      for (const usageChunk of leadingUsage) yield usageChunk
       yield chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)
         ? { ...chunk, replayState: wrapReplay(chunk.replayState, this.route.innerRoute, pin.model) }
         : chunk
       let done = false
       try {
         while (!done) {
-          const next = await iterator.next()
+          let next: IteratorResult<StreamChunk>
+          try {
+            next = await iterator.next()
+          } catch (error: unknown) {
+            // Chunks have already reached the caller, so — like a failure chunk
+            // arriving here — this attempt cannot be replayed on another
+            // endpoint. Excluding the failed one is still required: without it
+            // the next turn's failure boundary re-decides onto the same one.
+            this.failures.add(key)
+            if (pin.endpoint !== undefined) {
+              this.excludeEndpoint(key, pin, error instanceof LlmError ? error.code : 'PI_AI_ERROR', settings)
+            }
+            throw error
+          }
           if (next.done === true) {
             done = true
             break
@@ -735,7 +1048,14 @@ export class TiersAdapter extends LlmAdapter {
           const item = next.value
           if (item.type === 'finish') {
             const code = failureOf(item)
-            if (code !== undefined) this.failures.add(key)
+            if (code !== undefined) {
+              this.failures.add(key)
+              // Chunks have already reached the caller, so this attempt cannot be
+              // replayed on another endpoint. Excluding the failed one is still
+              // required: without it the failure boundary re-decides to the same
+              // endpoint and the next turn fails on it again.
+              if (pin.endpoint !== undefined) this.excludeEndpoint(key, pin, code, settings)
+            }
             yield SUCCESSFUL_FINISH.has(item.reason.kind)
               ? { ...item, replayState: wrapReplay(item.replayState, this.route.innerRoute, pin.model) }
               : item
@@ -773,6 +1093,7 @@ export class TiersAdapter extends LlmAdapter {
     signal: AbortSignal
     persist: boolean
     key: string
+    requiredInput: RequiredInput | undefined
   }): Promise<Pin> {
     return this.decide({ ...input, boundary: 'failure' }).then(decision => decision.pin)
   }

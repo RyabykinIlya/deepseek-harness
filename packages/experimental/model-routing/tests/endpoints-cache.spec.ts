@@ -67,6 +67,38 @@ describe('EndpointsCache', () => {
     expect(a.get('m')).toEqual(b.get('m'))
   })
 
+  it('does not hand the reader a caller\'s cancellation signal', async () => {
+    // The endpoint reader takes the signal it is given, so passing a caller's
+    // own would let the first caller's abort kill the shared read. The read
+    // belongs to the cache and outlives whichever caller happened to start it.
+    const signals: AbortSignal[] = []
+    const cache = new EndpointsCache(async (model, signal) => {
+      signals.push(signal)
+      return [endpoint(`${model}/fp8`)]
+    }, () => 0)
+    const controller = new AbortController()
+    await cache.read(['m'], 1000, controller.signal)
+    expect(signals).toHaveLength(1)
+    expect(signals[0]).not.toBe(controller.signal)
+  })
+
+  it('lets one caller abort while the shared read still completes for another', async () => {
+    let release: ((list: readonly OpenRouterEndpoint[]) => void) | undefined
+    const reader = vi.fn(() => new Promise<readonly OpenRouterEndpoint[]>((resolve) => { release = resolve }))
+    const cache = new EndpointsCache(reader, () => 0)
+    const coordinator = new AbortController()
+    const thread = new AbortController()
+    const abandoned = cache.read(['m'], 1000, coordinator.signal)
+    const joined = cache.read(['m'], 1000, thread.signal)
+    coordinator.abort()
+    // The abandoned caller resolves (to nothing it can use, with no stale list)
+    // while the read it started keeps running for the Thread.
+    expect((await abandoned).get('m')).toBeInstanceOf(Error)
+    release?.([endpoint('m/fp8')])
+    expect((await joined).get('m')).toEqual([endpoint('m/fp8')])
+    expect(reader).toHaveBeenCalledTimes(1)
+  })
+
   it('answers each model independently', async () => {
     const cache = new EndpointsCache(async model => [endpoint(`${model}/fp8`)], () => 0)
     const lists = await cache.read(['a', 'b'], 1000, SIGNAL)

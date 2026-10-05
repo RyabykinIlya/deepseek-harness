@@ -34,6 +34,7 @@ import { FamilyCache } from './family-cache.ts'
 import { askJudge } from './judge.ts'
 import { KeyInfo } from './key-info.ts'
 import { modelRoutingProjectionDefinition } from './projection.ts'
+import { DiagnosticsFile } from './diagnostics.ts'
 import { defaultMix, policyFor, rankWithRelaxation } from './select.ts'
 import type { EndpointLists } from './select.ts'
 import type { FreeUsage, ModelQuote, ModelRoutingControl } from './types.ts'
@@ -86,6 +87,11 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       apiKey: () => resolveApiKeyRef(ctx, config.apiKeyRef),
       headers: () => attributionHeaders(),
     })
+    const diagnostics = new DiagnosticsFile({
+      path: () => settings().diagnosticsPath,
+      maxBytes: () => settings().diagnosticsMaxBytes,
+      warn: (message) => { ctx.logger.warn(message) },
+    })
     this.adapter = new TiersAdapter({
       settings,
       dispatch: () => ctx.get('piAiDispatch'),
@@ -108,6 +114,8 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
         const info = await ctx.llm.resolveModelInfo(config.innerRoute, model, signal).catch(() => undefined)
         return info?.reasoning?.efforts.map(effort => String(effort.id))
       },
+      innerCanDispatch: (model, signal) =>
+        ctx.llm.resolveModelInfo(config.innerRoute, model, signal).then(() => true, () => false),
       endpoints: this.endpoints,
       catalog: this.catalog,
       keyInfo: this.keyInfo,
@@ -119,6 +127,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       apiKey: () => resolveApiKeyRef(ctx, config.apiKeyRef),
       headers: () => attributionHeaders(),
       now,
+      diagnostics: (record) => { diagnostics.record(record) },
       warn: (message) => { ctx.logger.warn(message) },
     }, {
       routeName: config.routeName,
@@ -175,11 +184,27 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
    * @param request - the tier to price under, and the model ids to price.
    * @returns one quote per resolved model, in tier order.
    * @throws RemoteError `model-routing/unknown-tier` for a tier no configuration names,
-   *   `model-routing/too-many-models` past the request limit.
+   *   `model-routing/too-many-models` past the request limit,
+   *   `model-routing/invalid-settings` for a settings document no request could act on.
    */
   @Remote('quote')
   async quote(request: { tier: string; models: string[] }): Promise<ModelQuote[]> {
     const settings = readSettings(this.config)
+    // A staged draft the settings card has not yet saved is validated only by
+    // the schema; an invalid value it would admit (e.g. `unknownQuantization:
+    // 'trusted'` with an emptied `trustedUnknownProviders`) must fail the same
+    // way a real request would, or the card keeps quoting prices for a tier
+    // that cannot actually be dispatched and hides the breakage from the person
+    // about to save it.
+    try {
+      validateSettings(settings)
+    } catch (error: unknown) {
+      throw new RemoteError(
+        'model-routing/invalid-settings',
+        error instanceof Error ? error.message : String(error),
+        {},
+      )
+    }
     const tier = settings.tiers.find(candidate => candidate.name === request.tier)
     if (tier === undefined) {
       throw new RemoteError(

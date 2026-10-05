@@ -362,7 +362,7 @@ class SubagentArgs(TypedDict):
     description: str
     # The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs.
     prompt: str
-    # Defaults to true. Set false only when your next action depends on the result.
+    # Always runs in the background; omit this parameter. `false` is refused, because only the background route runs the child inside the isolation this provider establishes.
     run_in_background: NotRequired[bool]
     # Additional keys beyond those declared are allowed.
 

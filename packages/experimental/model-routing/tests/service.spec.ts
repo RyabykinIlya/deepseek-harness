@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import SessionStore from '@deepseek-ai/dsh-session'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ModelRoutingService from '../src/index.ts'
+import type { RoutingDiagnosticsRecord } from '../src/types.ts'
 import type { ModelRoutingService as ModelRoutingServiceClass } from '../src/service.ts'
 
 const FLASH = {
@@ -132,6 +135,22 @@ describe('Remote quote', () => {
     await expect(routing.quote({ tier: 'flash', models }))
       .rejects.toMatchObject({ code: 'model-routing/too-many-models' })
   })
+
+  it('refuses to quote once a settings write leaves a tier unservable, instead of pricing it anyway', async () => {
+    // A settings write lands after mount without restarting the plugin — the
+    // same way the real Host settings document commits a card's save. Writing
+    // `trustedUnknownProviders` empty while `flash` still trusts unknown
+    // quantization (`unknownQuantization: 'trusted'`) is exactly the config
+    // the settings card could save without itself validating anything: every
+    // real request would now throw, and `quote` must throw too, or the card
+    // keeps showing prices for a tier that cannot actually be dispatched.
+    const { updateVolatile, createVolatile } = await import('../../../../vendor/cosmokit/src/volatile.ts')
+    const { service: routing } = await service()
+    const config = (routing as unknown as { config: { trustedUnknownProviders: Parameters<typeof updateVolatile>[0] } }).config
+    updateVolatile(config.trustedUnknownProviders, createVolatile([]))
+    await expect(routing.quote({ tier: 'flash', models: ['deepseek/deepseek-v4-flash'] }))
+      .rejects.toMatchObject({ code: 'model-routing/invalid-settings' })
+  })
 })
 
 describe('Remote freeUsage', () => {
@@ -143,5 +162,69 @@ describe('Remote freeUsage', () => {
   it('answers nothing while the account carries no free quota', async () => {
     const { service: routing } = await service({ data: {} })
     expect(await routing.freeUsage()).toBeNull()
+  })
+})
+
+describe('the diagnostics history', () => {
+  it('appends one line per decision to the configured file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'model-routing-history-'))
+    try {
+      const path = join(root, 'nested', 'history.jsonl')
+      const { ctx } = await service(undefined, { diagnosticsPath: path })
+      // A stub dispatch stands in for pi-ai, so the whole request path runs and
+      // only the transport is external.
+      const dispatched: GenerateOptions[] = []
+      ctx.provide('piAiDispatch', {
+        stream: (options: GenerateOptions) => {
+          dispatched.push(options)
+          return (async function* (): AsyncIterable<StreamChunk> {
+            yield { type: 'usage', usage: { inputTokens: 10, outputTokens: 1 } }
+            yield { type: 'finish', reason: { kind: 'stop' }, replayState: { response: { kind: 'pi-ai', version: 2 } } }
+          })()
+        },
+      })
+      const session = ctx.sessions.create(SessionId('s1'))
+      const prepared = await ctx.llm.prepareCall({ provider: 'tiers', model: 'flash' })
+      for await (const _chunk of prepared.stream({
+        ...prepared.config, messages: [], sessionId: session.id,
+      })) { /* draining */ }
+      await vi.waitFor(async () => {
+        expect((await readFile(path, 'utf8')).trimEnd().split('\n')).toHaveLength(1)
+      })
+      const record = JSON.parse((await readFile(path, 'utf8')).trimEnd()) as RoutingDiagnosticsRecord
+      expect(record).toMatchObject({
+        sessionId: 's1',
+        boundary: 'start',
+        requested: 'flash',
+        tier: 'flash',
+        model: 'deepseek/deepseek-v4-flash',
+        endpoint: { tag: 'streamlake/fp8' },
+        mix: { cached: 0.9, fresh: 0.08, output: 0.02, source: 'default' },
+      })
+      expect(record.candidates).toHaveLength(record.considered)
+      expect(record.candidates[0]).toMatchObject({ tag: 'streamlake/fp8', rank: 1 })
+      expect(dispatched).toHaveLength(1)
+      // The same decision is in the Session log, in its miniature form.
+      expect(session.ownEvents().some(event => event.type === 'model-routing/decision')).toBe(true)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('writes no file at all while no path is configured', async () => {
+    const { ctx } = await service()
+    let dispatched = 0
+    ctx.provide('piAiDispatch', {
+      stream: () => {
+        dispatched += 1
+        return (async function* (): AsyncIterable<StreamChunk> {
+          yield { type: 'finish', reason: { kind: 'stop' }, replayState: { response: { kind: 'pi-ai', version: 2 } } }
+        })()
+      },
+    })
+    const prepared = await ctx.llm.prepareCall({ provider: 'tiers', model: 'flash' })
+    for await (const _chunk of prepared.stream({ ...prepared.config, messages: [] })) { /* draining */ }
+    // The turn runs; a disabled history queues no write at all.
+    expect(dispatched).toBe(1)
   })
 })
