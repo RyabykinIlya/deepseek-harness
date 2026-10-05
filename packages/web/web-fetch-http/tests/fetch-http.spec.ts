@@ -352,6 +352,31 @@ describe('declared proxy address ranges', () => {
     }
   })
 
+  it('rejects inet_aton-style IPv4 shorthand instead of silently compiling a different network', () => {
+    // `ipaddr.parseCIDR` replicates BSD inet_aton: a short form fills in zero octets from the
+    // RIGHT, so "10/8" is "0.0.0.10/8" — network 0.0.0.0/8, not 10.0.0.0/8 — and "192.168/16" is
+    // network 192.0.0.0/16, not 192.168.0.0/16. Both parse without error, so an operator who
+    // copies the shorthand from a casual description (rather than a canonical CIDR) would trust
+    // the wrong block with no warning.
+    for (const shorthand of ['10/8', '127/8', '192.168/16', '169.254/16']) {
+      expect(() => compileTrustedAddressRanges([shorthand]), shorthand)
+        .toThrow(/must spell every IPv4 octet in decimal with no leading zero/)
+    }
+  })
+
+  it('rejects an octal or hex IPv4 octet instead of silently compiling a different network', () => {
+    // A leading zero reads as octal to the same inet_aton-style parser: "010.0.0.0" is
+    // "8.0.0.0", not "10.0.0.0". A "0x" prefix reads as hex.
+    for (const nonDecimal of ['010.0.0.0/8', '0x0a.0.0.0/8', '192.168.001.0/24']) {
+      expect(() => compileTrustedAddressRanges([nonDecimal]), nonDecimal)
+        .toThrow(/must spell every IPv4 octet in decimal with no leading zero/)
+    }
+  })
+
+  it('still accepts every IPv4 octet written in full decimal, including a bare "0"', () => {
+    expect(compileTrustedAddressRanges(['10.0.0.0/8', '0.0.0.0/0', '198.18.0.0/15'])).toHaveLength(3)
+  })
+
   it('retains a synthetic DNS answer only when its pool is declared', async () => {
     const resolver = vi.fn(async () => [{ address: '198.18.3.178', family: 4 }])
     await expect(resolvePublicAddresses('cursor.test', new AbortController().signal, resolver))
@@ -599,6 +624,31 @@ describe('HttpFetchProvider invalid URLs and abort', () => {
     restoreResolution()
     await expect(provider().fetch({ url: base }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+  })
+
+  it('reaches a loopback destination once its range is declared', async () => {
+    // Same real request as the block above, through the real resolver over a
+    // real socket on 127.0.0.1 — only the declared range differs. This is what
+    // the `trustedProxyAddressRanges` setting buys a deployment.
+    restoreResolution()
+    handler = (_req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('local') }
+    const result = await provider({
+      trustedProxyAddressRanges: compileTrustedAddressRanges(['127.0.0.0/8']),
+    }).fetch({ url: base })
+    expect(result.statusCode).toBe(200)
+    expect(result.body).toEqual({ kind: 'text', content: 'local' })
+  })
+
+  it('keeps a private destination blocked when only loopback is declared', async () => {
+    // A declared block widens reach to exactly that block: declaring loopback
+    // must not also admit RFC1918, so a `192.168` literal stays refused.
+    restoreResolution()
+    const privateAddress = provider({
+      trustedProxyAddressRanges: compileTrustedAddressRanges(['127.0.0.0/8']),
+    })
+    await expect(async () => {
+      await privateAddress.fetch({ url: 'http://192.168.1.1:1/' })
+    }).rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
   })
 
   it('rejects a non-http scheme before any network access', async () => {

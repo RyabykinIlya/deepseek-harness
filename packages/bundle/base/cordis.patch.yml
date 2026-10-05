@@ -502,13 +502,25 @@
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
       config:
-        # Only for a host whose DNS answers proxied domains with a synthetic
-        # fake-IP pool (transparent proxy in `fake-ip` mode). `198.18.0.0/15`
-        # is IANA benchmarking space and hosts no legitimate service, so
-        # trusting it does not reach the LAN: 10/8, 172.16/12, 192.168/16,
-        # 100.64/10, loopback, link-local and unique-local stay blocked.
-        # Preferred remedy: switch the proxy to `redir-host`/`real-ip` and
-        # delete this list, so DNS returns real addresses.
+        # Only for a host whose system DNS answers every domain with a synthetic
+        # fake-IP address (a transparent proxy client in `fake-ip`/TUN mode),
+        # which this package would otherwise refuse to connect to as non-public.
+        # `198.18.0.0/15` is IANA benchmarking space and hosts no legitimate
+        # service of its own.
+        #
+        # This does NOT mean 10/8, 172.16/12, 192.168/16, 100.64/10, loopback,
+        # link-local and unique-local stay independently blocked for a domain
+        # this flow actually fetches: this package only ever validates the
+        # synthetic address it was handed, never the domain's real destination.
+        # For a domain the transparent client routes "direct" (its own real DNS
+        # lookup, not through a remote relay), nothing here sees that real
+        # address, and a DNS-rebinding domain pointed at a private IP would
+        # reach it exactly as it would with no fetch guard at all — the guard's
+        # safety for that request now rests entirely on the external transparent
+        # client's own routing, which this package cannot see or validate.
+        # Preferred remedy: switch the transparent client to `redir-host`/`real-ip`
+        # mode and delete this list, so DNS returns real addresses and this
+        # package's own guard governs every destination again.
         trustedProxyAddressRanges:
           - 198.18.0.0/15
 

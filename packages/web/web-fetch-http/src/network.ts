@@ -66,21 +66,57 @@ interface Nat64Prefix {
  * This runs once, at plugin construction, so a malformed block is a configuration error rather
  * than a request-time surprise — and so the hot path never re-parses the operator's strings.
  *
+ * `ipaddr.parseCIDR` replicates BSD `inet_aton`'s historical shorthand: `10/8` parses as
+ * `0.0.0.10/8` (network `0.0.0.0/8`, not `10.0.0.0/8`), `192.168/16` as `192.0.0.168/16`
+ * (network `192.0.0.0/16`, not `192.168.0.0/16`), and a leading `0` on an octet reads as octal
+ * (`010.0.0.0` is `8.0.0.0`). Every one of those parses successfully and silently names a
+ * different block than the operator typed — exactly the "misconfiguration fails loud" case this
+ * package is supposed to refuse. Once a parse resolves to an IPv4 network, the original text is
+ * re-checked against the one canonical spelling: four decimal octets, each with no leading zero.
+ * IPv6 carries no such shorthand ambiguity and is not re-checked.
+ *
  * @param entries - CIDR blocks exactly as configured, e.g. `['198.18.0.0/15', 'fd00::/8']`.
  * @returns the compiled ranges in declaration order.
- * @throws when an entry is not an IPv4 or IPv6 CIDR block `ipaddr.parseCIDR` accepts.
+ * @throws when an entry is not an IPv4 or IPv6 CIDR block in canonical form.
  */
 export function compileTrustedAddressRanges(entries: readonly string[]): TrustedAddressRange[] {
   return entries.map((entry, index) => {
+    let parsed: [ipaddr.IPv4 | ipaddr.IPv6, number]
     try {
-      const [network, prefixLength] = ipaddr.parseCIDR(entry)
-      return { network, prefixLength }
+      parsed = ipaddr.parseCIDR(entry)
     } catch (error: unknown) {
       throw new Error(
         `web-fetch-http: trustedProxyAddressRanges[${index}] "${entry}" is not a valid IPv4 or IPv6 CIDR block`,
         { cause: error },
       )
     }
+    const [network, prefixLength] = parsed
+    if (network instanceof ipaddr.IPv4) {
+      const slash = entry.lastIndexOf('/')
+      const address = slash === -1 ? entry : entry.slice(0, slash)
+      if (!isCanonicalIPv4(address)) {
+        throw new Error(
+          `web-fetch-http: trustedProxyAddressRanges[${index}] "${entry}" must spell every IPv4 octet`
+          + ' in decimal with no leading zero (e.g. "10.0.0.0/8", not "10/8" or "010.0.0.0/8") —'
+          + ` that spelling parses as network "${network.toString()}/${String(prefixLength)}" instead`,
+        )
+      }
+    }
+    return { network, prefixLength }
+  })
+}
+
+/**
+ * Whether a string is an IPv4 address in the one canonical spelling this package accepts: four
+ * decimal octets, 0-255, each with no leading zero (which `parseInt`-style parsers, including
+ * `ipaddr.parseCIDR`, read as octal) and no `0x` hex form.
+ */
+function isCanonicalIPv4(address: string): boolean {
+  const octets = address.split('.')
+  if (octets.length !== 4) return false
+  return octets.every((octet) => {
+    if (!/^(0|[1-9]\d{0,2})$/.test(octet)) return false
+    return Number(octet) <= 255
   })
 }
 

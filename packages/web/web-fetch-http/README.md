@@ -47,6 +47,7 @@ Load the web service and the provider; configurable limits have safe defaults an
 | `timeoutMs` | `30,000` | Fetch timeout — a resource backstop, not the model-facing tool budget |
 | `maxRedirects` | `5` | Maximum same-origin redirect hops (`0` follows none) |
 | `userAgent` | `deepseek-harness/…` | `User-Agent` header sent on every request |
+| `trustedProxyAddressRanges` | `[]` | CIDR blocks admitted as reachable despite being non-public (see below) |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-web-fetch-http) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -61,7 +62,13 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 
 ### Transport behavior
 
-The provider keeps requests anonymous and bounded: it accepts only `http:` and `https:` URLs without embedded credentials and rejects URLs over 2,048 characters. It resolves each hostname once, rejects the complete result if any IPv4 or IPv6 address is not public unicast, and pins the connection to that validated set. IPv6 checks discover the active DNS64 prefix and reject translations to non-public IPv4. Each same-origin redirect repeats resolution and pinning; cross-origin redirects fail and require a fresh call. The provider also enforces byte, character, hop, and time caps, rejects unsupported content types, and sends an explicit product `User-Agent`.
+The provider keeps requests anonymous and bounded: it accepts only `http:` and `https:` URLs without embedded credentials and rejects URLs over 2,048 characters. It resolves each hostname once, rejects the complete result if any IPv4 or IPv6 address is not public unicast and outside every declared `trustedProxyAddressRanges` block, and pins the connection to that validated set. IPv6 checks discover the active DNS64 prefix and reject translations to non-public, untrusted IPv4. Each same-origin redirect repeats resolution and pinning; cross-origin redirects fail and require a fresh call. The provider also enforces byte, character, hop, and time caps, rejects unsupported content types, and sends an explicit product `User-Agent`.
+
+### Local and LAN reachability
+
+`trustedProxyAddressRanges` admits addresses inside declared CIDR blocks as reachable even though they are not publicly routable — the default `[]` refuses every private and loopback address, exactly as if the field did not exist. A declared block stops being a barrier for that exact range only: declaring `127.0.0.0/8` does not also admit `192.168.0.0/16`, and every undeclared private, loopback, and link-local range stays refused. Every IPv4 entry must spell its octets in full decimal (`10.0.0.0/8`, never `10/8` or `010.0.0.0/8` — both parse as a different, smaller network than written, and the plugin refuses to load rather than silently trust the wrong one).
+
+The field has two distinct uses, and they carry different trust: declaring a literal block of real services (loopback for a local dev server, a LAN's `192.168.0.0/16`) keeps this package's own guard as the authority on every request — every destination still passes through `isPublicIpAddress` against addresses this process itself resolved. Declaring a transparent proxy's synthetic `fake-ip` pool (e.g. `198.18.0.0/15`) is different: this package only ever validates the synthetic address it was handed, and the real destination is decided entirely by the external transparent proxy's own resolution and routing, which this package cannot see. A domain that external proxy routes "direct" — its own real DNS lookup — is validated by nothing here; a DNS-rebinding attack against such a domain succeeds exactly as if no guard existed. Prefer running the proxy in `redir-host`/`real-ip` mode (so DNS returns real, routable addresses) over trusting its fake-ip pool, and reserve the fake-ip trust for a deployment that cannot change the proxy's mode.
 
 ### Failures and recovery
 
@@ -95,7 +102,7 @@ The package is built on one separation and one layered timeout:
 
 ### Read path
 
-A fetch validates the URL, resolves the hostname once, rejects the complete answer set when any address is not public, and pins the connection to the accepted addresses. It repeats that check for each same-origin redirect; a cross-origin redirect or non-public target fails before response bytes are accepted. The final response is classified by `Content-Type`, decoded from its declared charset, and read under the byte cap; the decoded text is then truncated to the character cap.
+A fetch validates the URL, resolves the hostname once, rejects the complete answer set when any address is not public and outside every declared trusted range, and pins the connection to the accepted addresses. It repeats that check for each same-origin redirect; a cross-origin redirect or a rejected target fails before response bytes are accepted. The final response is classified by `Content-Type`, decoded from its declared charset, and read under the byte cap; the decoded text is then truncated to the character cap.
 
 </details>
 

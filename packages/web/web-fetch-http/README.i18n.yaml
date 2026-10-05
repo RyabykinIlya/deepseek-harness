@@ -21,14 +21,17 @@
   en: eb52e77279c21d6f
   zh: 0560e89caa377bfc
 /deepseek-ai-dsh-web-fetch-http/use-this-package/minimal-configuration:
-  en: e4534189d5230861
-  zh: 5905731d7b5d9c60
+  en: 19ff674760c983af
+  zh: e9c7ce4d5cb25eab
 /deepseek-ai-dsh-web-fetch-http/use-this-package/what-a-fetch-returns:
   en: 2d18cdcc9b53dd0f
   zh: 3bc6ca7c5933ee5d
 /deepseek-ai-dsh-web-fetch-http/use-this-package/transport-behavior:
-  en: c432147daf2877cf
-  zh: c14d507dd66e124a
+  en: 9c0240260c8818af
+  zh: 0dadc045462158b0
+/deepseek-ai-dsh-web-fetch-http/use-this-package/local-and-lan-reachability:
+  en: 31b64007af699783
+  zh: 6e17c5b78742d123
 /deepseek-ai-dsh-web-fetch-http/use-this-package/failures-and-recovery:
   en: 35407f106dc65deb
   zh: 02118072fba68b8f
@@ -42,8 +45,8 @@
   en: 023ca0c9a9ef4968
   zh: 74a5785a493f5111
 /deepseek-ai-dsh-web-fetch-http/understand-the-implementation/read-path:
-  en: 749c0ffeac145807
-  zh: 1468821a33a9518a
+  en: 1439079c26de8f9e
+  zh: 30f0d7ed166e4244
 /deepseek-ai-dsh-web-fetch-http/further-exploration:
   en: eeaaf0b455673a1c
   zh: 0874f9f44ff9a220
