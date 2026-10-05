@@ -52,7 +52,10 @@ describe('ThreadsCard', () => {
   it('renders one labelled control for every field of the Host row the page edits', () => {
     renderCard()
 
-    for (const label of [en.checkIn, en.spawn, en.mergePolicy, en.threadProvider, en.threadModel, en.threadReasoningEffort, en.threadMaxTokens]) {
+    for (const label of [
+      en.checkIn, en.spawn, en.mergePolicy,
+      en.threadProvider, en.threadModel, en.threadReasoningEffort, en.threadMaxTokens,
+    ]) {
       expect(screen.getByLabelText(label)).toBeDefined()
     }
   })
@@ -122,7 +125,10 @@ describe('ThreadsCard', () => {
 
     renderCard({ writable: false })
     expect(screen.getAllByRole('status').map(node => node.textContent)).toContain(en.readOnly)
-    for (const label of [en.checkIn, en.spawn, en.mergePolicy, en.threadProvider, en.threadModel, en.threadReasoningEffort, en.threadMaxTokens]) {
+    for (const label of [
+      en.checkIn, en.spawn, en.mergePolicy,
+      en.threadProvider, en.threadModel, en.threadReasoningEffort, en.threadMaxTokens,
+    ]) {
       expect(screen.getByLabelText(label)).toHaveProperty('disabled', true)
     }
   })

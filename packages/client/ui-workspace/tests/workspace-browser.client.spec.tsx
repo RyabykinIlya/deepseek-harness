@@ -928,7 +928,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([project, child], {
         projectionsBySession: {
           [project.id]: { state: 'idle', error: null, values: { threads: [] } },
-        } as SessionListState['projectionsBySession'],
+        },
       })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
     })

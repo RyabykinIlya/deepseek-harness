@@ -1277,19 +1277,19 @@ describe('scrubToolSchemas', () => {
   })
 })
 
+/** One header-only log, so a test states the role cwds it is about. */
+const headerLog = (id: string, cwd: string, parentSession?: string): string => JSON.stringify({
+  type: 'session',
+  id,
+  createdAt: 1,
+  cwd,
+  ...(parentSession === undefined ? {} : { parentSession }),
+})
+
 describe('sessionRoleCwds', () => {
   const parentCwd = '/tmp/acp-snap-cwd-abc123'
   const parentId = '11111111-1111-4111-8111-111111111111'
   const childId = '22222222-2222-4222-8222-222222222222'
-
-  /** One header-only log, so a test states the role cwds it is about. */
-  const headerLog = (id: string, cwd: string, parentSession?: string): string => JSON.stringify({
-    type: 'session',
-    id,
-    createdAt: 1,
-    cwd,
-    ...(parentSession === undefined ? {} : { parentSession }),
-  })
 
   /** One text tool result a test asserts against. */
   const resultLog = (text: string): string => JSON.stringify({
@@ -1506,13 +1506,6 @@ describe('tokenizeSessionFixtureCwd with relocated roles', () => {
 describe('relocated role edge cases', () => {
   const parentId = '11111111-1111-4111-8111-111111111111'
   const childId = '22222222-2222-4222-8222-222222222222'
-  const headerLog = (id: string, cwd: string, parentSession?: string): string => JSON.stringify({
-    type: 'session',
-    id,
-    createdAt: 1,
-    cwd,
-    ...(parentSession === undefined ? {} : { parentSession }),
-  })
 
   it.each([
     { name: 'the same cwd', parent: '/tmp/ws', child: '/tmp/ws' },

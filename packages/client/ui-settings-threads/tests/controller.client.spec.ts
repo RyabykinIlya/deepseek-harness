@@ -79,7 +79,7 @@ function ready(section: ThreadsSettings = SERVED, user: ThreadsSettings = {}) {
 
 /** The write ops one save sent, as `path[0]` names in the order the Host received them. */
 function writtenFields(host: StubConfigForm<ThreadsSettings>): (string | undefined)[] {
-  return (host.mutate.mock.calls[0]![0] as readonly SettingsPathOpView[]).map(op => op.path[0])
+  return host.mutate.mock.calls[0]![0].map(op => op.path[0])
 }
 
 describe('ThreadsCardController', () => {
