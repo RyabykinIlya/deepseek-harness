@@ -106,6 +106,7 @@
     { "path": "./packages/client/ui-reference" },
     { "path": "./packages/client/ui-subagent" },
     { "path": "./packages/experimental/client-ui-threads" },
+    { "path": "./packages/experimental/client-ui-project-memory" },
     { "path": "./packages/experimental/client-ui-model-routing" },
     { "path": "./packages/experimental/model-routing-profile" },
     { "path": "./packages/experimental/client-ui-agent-team" },

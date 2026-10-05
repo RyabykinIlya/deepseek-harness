@@ -52,6 +52,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/experimental/client-ui-voice-input': { kind: 'none', reason: 'Inserts reviewable text into the unsent draft without submitting to the Agent.' },
   'packages/experimental/model-routing': { kind: 'none', reason: 'LLM route adapter; registers no model-facing tool.' },
   'packages/experimental/client-ui-model-routing': { kind: 'none', reason: 'Browser-side settings surface and composer chip; registers no model surface.' },
+  'packages/experimental/client-ui-project-memory': { kind: 'none', reason: 'Browser-side settings surface; registers no model surface.' },
   'packages/experimental/model-routing-profile': { kind: 'none', reason: 'Bundle that inserts the model-routing rows; registers no model-facing surface of its own.' },
   'packages/experimental/voice-input-bundle': { kind: 'none', reason: 'Composes dictation and preparation plugins without adding any model-facing contribution.' },
   'packages/telemetry/otel': { kind: 'none', reason: 'The service delivers caller-selected records without changing model context.' },

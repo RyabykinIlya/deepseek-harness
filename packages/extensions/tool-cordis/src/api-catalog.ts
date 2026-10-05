@@ -1843,6 +1843,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Shared per-Project memory over the `project_memory` storage domain.\n\nEvery mutation is serialized, so the per-Project entry cap holds under concurrent writers. Reads return the in-memory view of durable state.',
     methods: [
       {
+        signature: 'readonly config: Config',
+        description: 'The validated configuration, whose two caps are re-read on every write.',
+        parameters: [],
+      },
+      {
         signature: 'async list(projectId: ProjectId): Promise<MemoryEntry[]>',
         description: 'Read a Project\'s entries.',
         parameters: [{ name: 'projectId', description: 'Project whose memory is read.' }],

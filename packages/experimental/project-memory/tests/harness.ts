@@ -15,34 +15,19 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import ProjectMemoryService from '../src/index.ts'
-import type { Config } from '../src/index.ts'
+import type { ConfigInput } from '../src/index.ts'
 import * as tools from '../src/tools.ts'
 
-/** Mount the service (and optionally the tools) in a fresh Context.
- * @param options - shared media pool for restart simulation, service config, tool config, and whether the tools mount.
- * @returns The Context, pool, and the service and tool fibers.
+/**
+ * Mount what the memory service injects — `sessions` and `storageDomain` — over
+ * the in-memory storage backend. Separated from {@link harness} so a Loader-backed
+ * fixture can mount the service itself behind its own entry.
+ * @param ctx - Context to mount into.
+ * @param pool - Shared media pool, reused to simulate a restart.
  */
-export async function harness(options: {
-  pool?: MemoryMediaPool
-  config?: Config
-  tools?: false | tools.Config
-  service?: false
-  /** Headers served by a fake `sessionPersistence.stat`, by Session id; the service is absent when omitted. */
-  persisted?: Readonly<Record<string, { agentPreset?: string; parentSession?: string }>>
-  /** Mount the projection registry with the real `agentPreset` unit; absent by default so the header stays the only answer. */
-  projections?: boolean
-} = {}) {
-  const ctx = new Context()
+export async function memoryBacking(ctx: Context, pool: MemoryMediaPool): Promise<void> {
   await ctx.plugin(SessionStore)
-  await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SystemPrompt, {})
-  await ctx.plugin(ToolRuntime)
   await ctx.plugin(Storage)
-  if (options.projections === true) {
-    await ctx.plugin(SessionProjectionRegistry)
-    ctx.effect(() => ctx.sessionProjections.register(agentPresetProjectionDefinition))
-  }
-  const pool = options.pool ?? new MemoryMediaPool()
   const backend = new MemoryStorageBackend(pool)
   ctx.effect(() => ctx.storage.backend.register('fixture', backend))
   ctx.effect(() => async () => { await backend.close() })
@@ -52,6 +37,32 @@ export async function harness(options: {
     ctx.provide('storageDomain', facility)
     return async () => { await facility.closeAll(); unmount() }
   })
+}
+
+/** Mount the service (and optionally the tools) in a fresh Context.
+ * @param options - shared media pool for restart simulation, service config, tool config, and whether the tools mount.
+ * @returns The Context, pool, and the service and tool fibers.
+ */
+export async function harness(options: {
+  pool?: MemoryMediaPool
+  config?: ConfigInput
+  tools?: false | tools.Config
+  service?: false
+  /** Headers served by a fake `sessionPersistence.stat`, by Session id; the service is absent when omitted. */
+  persisted?: Readonly<Record<string, { agentPreset?: string; parentSession?: string }>>
+  /** Mount the projection registry with the real `agentPreset` unit; absent by default so the header stays the only answer. */
+  projections?: boolean
+} = {}) {
+  const ctx = new Context()
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SystemPrompt, {})
+  await ctx.plugin(ToolRuntime)
+  const pool = options.pool ?? new MemoryMediaPool()
+  await memoryBacking(ctx, pool)
+  if (options.projections === true) {
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.effect(() => ctx.sessionProjections.register(agentPresetProjectionDefinition))
+  }
   if (options.persisted !== undefined) {
     const persisted = options.persisted
     const stat: Partial<SessionPersistence>['stat'] = async (id) => {

@@ -1066,15 +1066,24 @@ export interface InspectorOptions {
 ## `@deepseek-ai/dsh-experimental-project-memory`
 
 - `inject`: `storageDomain` · `sessions`
-- `source`: [`packages/experimental/project-memory/src/index.ts:48`](../packages/experimental/project-memory/src/index.ts)
+- `refs`: `Volatile` (`@deepseek-ai/cordis`)
+- `source`: [`packages/experimental/project-memory/src/index.ts:77`](../packages/experimental/project-memory/src/index.ts)
 
 ```ts config-catalog
-/** Configuration of the Project memory service. */
+/**
+ * Validated configuration of the Project memory service.
+ *
+ * The two caps are live: the settings form edits them, and the next write reads
+ * the stored value, so a Project coordinator that outgrew a bound can widen it
+ * without restarting the Host. The Project-identity fields stay boot composition
+ * — which presets are coordinators and how far lineage is followed are decided
+ * when the Profile is composed, not by a person mid-session.
+ */
 export interface Config {
   /** Entries kept per Project; adding beyond it fails until one is removed. */
-  maxEntries?: number
+  maxEntries?: Volatile<number>
   /** Longest entry text in Unicode code points. */
-  maxEntryChars?: number
+  maxEntryChars?: Volatile<number>
   /** Agent preset ids whose Sessions are Project coordinators. */
   projectPresets?: string[]
   /** Parent hops followed from a calling Session while looking for its Project. */
@@ -4888,6 +4897,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | — | [`packages/experimental/client-ui-claude-code-mods/src/index.ts`](../packages/experimental/client-ui-claude-code-mods/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-model-routing` | — | [`packages/experimental/client-ui-model-routing/src/index.ts`](../packages/experimental/client-ui-model-routing/src/index.ts) |
+| `@deepseek-ai/dsh-experimental-client-ui-project-memory` | — | [`packages/experimental/client-ui-project-memory/src/index.ts`](../packages/experimental/client-ui-project-memory/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-threads` | — | [`packages/experimental/client-ui-threads/src/index.ts`](../packages/experimental/client-ui-threads/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |

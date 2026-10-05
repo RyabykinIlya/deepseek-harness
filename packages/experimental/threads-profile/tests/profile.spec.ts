@@ -18,6 +18,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
+import * as ClientUiProjectMemory from '@deepseek-ai/dsh-experimental-client-ui-project-memory'
 import * as ClientUiThreads from '@deepseek-ai/dsh-experimental-client-ui-threads'
 import * as Threads from '@deepseek-ai/dsh-experimental-threads'
 import * as ThreadsPreset from '@deepseek-ai/dsh-experimental-threads-preset'
@@ -81,7 +82,8 @@ describe('Threads profile bundle', () => {
     expect(patches.some(patch => patch.id !== undefined || patch.disabled !== undefined)).toBe(false)
     const ids = inserted.map(row => row.id)
     expect(ids).toEqual([
-      'worktree-manager', 'threads', 'subagent-thread-worktree', 'ui-threads', 'project-memory', 'threads-preset',
+      'worktree-manager', 'threads', 'subagent-thread-worktree', 'ui-threads', 'ui-project-memory',
+      'project-memory', 'threads-preset',
     ])
     expect(ids).toHaveLength(new Set(ids).size)
   })
@@ -104,6 +106,7 @@ describe('Threads profile bundle', () => {
     })
     // A client row's config never reaches the browser, so the row carries none.
     expect(byId('ui-threads')).toEqual({ id: 'ui-threads', name: '@deepseek-ai/dsh-experimental-client-ui-threads' })
+    expect(byId('ui-project-memory')).toEqual({ id: 'ui-project-memory', name: '@deepseek-ai/dsh-experimental-client-ui-project-memory' })
     const preset = byId('threads-preset')
     expect(preset.name).toBe('@deepseek-ai/dsh-experimental-threads-preset')
     expect(preset.config).toMatchObject({
@@ -218,6 +221,7 @@ async function compose(withBundle: boolean): Promise<{ ctx: Context; providers: 
     ['@deepseek-ai/dsh-experimental-threads', Threads],
     ['@deepseek-ai/dsh-subagent-thread-worktree', ThreadProviderStandIn],
     ['@deepseek-ai/dsh-experimental-client-ui-threads', ClientUiThreads],
+    ['@deepseek-ai/dsh-experimental-client-ui-project-memory', ClientUiProjectMemory],
     ['@deepseek-ai/dsh-experimental-threads-preset', ThreadsPreset],
     ['@deepseek-ai/dsh-experimental-threads-tool', ThreadsTool],
   ])

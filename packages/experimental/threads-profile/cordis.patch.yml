@@ -41,6 +41,12 @@
     - id: ui-threads
       name: '@deepseek-ai/dsh-experimental-client-ui-threads'
 
+    # The Plugins-page card for the two Project memory caps, registered into the
+    # same `plugins.item` slot while the Host serves the `project-memory`
+    # namespace the row above owns.
+    - id: ui-project-memory
+      name: '@deepseek-ai/dsh-experimental-client-ui-project-memory'
+
     # The Project memory service, plus the tools rows the presets mount from it. It
     # takes `storageDomain` and `sessions` from the base layers and adds no tool of its
     # own; `memory_read` and `memory_write` exist only in the two Threads presets.

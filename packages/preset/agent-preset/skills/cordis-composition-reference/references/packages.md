@@ -189,6 +189,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | no | Web Agent Teams roster, task board, and teammate navigation |
 | `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | no | Web band above the prompt for Claude Code mods: draws each session's mod tree and sends button presses back to the bridge |
 | `@deepseek-ai/dsh-experimental-client-ui-model-routing` | no | Composer chip, settings page, and Thread roster entry for the tiers model route on the dsh web client |
+| `@deepseek-ai/dsh-experimental-client-ui-project-memory` | no | Settings page of the Project memory caps on the dsh web client's Plugins page: how many entries a Project keeps and how long each one may be |
 | `@deepseek-ai/dsh-experimental-client-ui-threads` | no | Session-header Thread roster for a Project Session, and the addressed Thread chat resource |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | no | Record speech and insert editable text into the conversation draft |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp` | yes | Experimental computer use through an installed Cua Driver MCP executable |

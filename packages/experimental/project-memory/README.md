@@ -38,12 +38,12 @@ Mount the Host service once, and the tool plugin in each preset whose agents sho
     maxReadBytes: 8192
 ```
 
-The service needs `storageDomain` and `sessions`. Service settings, all optional:
+The service needs `storageDomain` and `sessions`. The two caps are live fields: the Threads profile's Project memory page on the Plugins screen edits them, and the next write reads the stored value without a restart. The remaining fields are boot composition — which presets are coordinators, and how far a lineage is followed — decided when the Profile is composed.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `maxEntries` | `200` | Entries kept per Project; adding beyond it fails until one is removed |
-| `maxEntryChars` | `500` | Longest entry text in Unicode code points |
+| `maxEntries` | `200` | Entries kept per Project; adding beyond it fails until one is removed. Editable live (1 through 10000) |
+| `maxEntryChars` | `2000` | Longest entry text in Unicode code points. Editable live (1 through 100000) |
 | `projectPresets` | `['project']` | Agent preset ids whose Sessions are Project coordinators |
 | `maxLineageDepth` | `4` | Parent hops followed while looking for the Project |
 

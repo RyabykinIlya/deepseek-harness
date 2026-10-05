@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/experimental/client-ui-project-memory/README.md
+/:
+  en: 99ae3ebfb06cecc4
+  zh: 99ae3ebfb06cecc4
+/deepseek-ai-dsh-experimental-client-ui-project-memory:
+  en: 815be7c8629760e7
+  zh: ecfedc157c70d5d5
+/deepseek-ai-dsh-experimental-client-ui-project-memory/summary:
+  en: 1357eb7a1acca62e
+  zh: 8174b3337b32cefd
+/deepseek-ai-dsh-experimental-client-ui-project-memory/table-of-contents:
+  en: 76368b6b1da79c80
+  zh: 52384aee991ac542
+/deepseek-ai-dsh-experimental-client-ui-project-memory/use-this-package:
+  en: 7bc0900d08497642
+  zh: 1d33341bc36f88ad
+/deepseek-ai-dsh-experimental-client-ui-project-memory/use-this-package/when-to-choose-it:
+  en: 9d2f44be5fe468c9
+  zh: 3dfd3c2cc4938673
+/deepseek-ai-dsh-experimental-client-ui-project-memory/use-this-package/the-settings-page:
+  en: 9c621ed420345051
+  zh: fa08bfe00185caf6
+/deepseek-ai-dsh-experimental-client-ui-project-memory/understand-the-implementation:
+  en: 12e50a47625c8dff
+  zh: 1368c767e32dd6e6
+/deepseek-ai-dsh-experimental-client-ui-project-memory/understand-the-implementation/source-map:
+  en: 319facb121ae57c7
+  zh: b8bb63024ce0e445
+/deepseek-ai-dsh-experimental-client-ui-project-memory/understand-the-implementation/conditional-registration:
+  en: 602b6545e293e035
+  zh: 3c118ebbb857a142
+/deepseek-ai-dsh-experimental-client-ui-project-memory/model-experience:
+  en: 17359ec2a8de4d83
+  zh: 080013849987a9fa
+/deepseek-ai-dsh-experimental-client-ui-project-memory/model-experience/kv-cache-effect:
+  en: ca75c51c89c2c9b0
+  zh: 2064958b0754647e
+/deepseek-ai-dsh-experimental-client-ui-project-memory/known-limitations-and-deferred-work:
+  en: 146d94ec1b30aa6b
+  zh: c189db3da15fcab3
+/deepseek-ai-dsh-experimental-client-ui-project-memory/known-limitations-and-deferred-work/dev-note:
+  en: 0a1253c6f7b5e8b9
+  zh: 9f56528562c7c914

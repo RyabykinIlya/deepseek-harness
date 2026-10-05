@@ -30,9 +30,9 @@ describe('direct construction without loader defaults', () => {
     tools.apply(ctx)
     const project = agentFor(ctx, 'p', { agentPreset: 'project' })
     expect(await service.resolveProject(project.session)).toBe('p')
-    const added = await run(ctx, project, 'memory_write', { action: 'add', text: 'x'.repeat(500) })
+    const added = await run(ctx, project, 'memory_write', { action: 'add', text: 'x'.repeat(2000) })
     expect(added.result.isError).toBe(false)
-    expect((await run(ctx, project, 'memory_write', { action: 'add', text: 'x'.repeat(501) })).result.isError).toBe(true)
+    expect((await run(ctx, project, 'memory_write', { action: 'add', text: 'x'.repeat(2001) })).result.isError).toBe(true)
     expect((await run(ctx, project, 'memory_read', {})).result.isError).toBe(false)
     const schema = ctx.tools.schemas().find(entry => entry.name === 'memory_read')!
     expect(JSON.stringify(schema.parameters)).toContain('Defaults to 20')

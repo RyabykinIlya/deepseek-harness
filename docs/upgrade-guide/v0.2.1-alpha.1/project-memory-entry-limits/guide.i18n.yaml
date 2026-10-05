@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/project-memory-entry-limits/guide.md
+/:
+  en: a4cfa1c8c137dcfa
+  zh: a4cfa1c8c137dcfa
+/project-memory-caps-are-wider-and-editable-in-settings:
+  en: 3269dce6bff07034
+  zh: f2587c9c9ef073c7
+/project-memory-caps-are-wider-and-editable-in-settings/change:
+  en: c7ee3c35292719dd
+  zh: 5bf4d85a351ff0d9
+/project-memory-caps-are-wider-and-editable-in-settings/migration:
+  en: fecd2095fb27b008
+  zh: 653ce15e209283c8

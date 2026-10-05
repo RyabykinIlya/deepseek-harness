@@ -33,6 +33,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-experimental-client-ui-project-memory": "workspace:*",
     "@deepseek-ai/dsh-experimental-client-ui-threads": "workspace:*",
     "@deepseek-ai/dsh-experimental-project-memory": "workspace:*",
     "@deepseek-ai/dsh-experimental-threads": "workspace:*",

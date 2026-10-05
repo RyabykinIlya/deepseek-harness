@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import { Service } from '@deepseek-ai/cordis'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -44,12 +44,41 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Configuration of the Project memory service. */
-export interface Config {
-  /** Entries kept per Project; adding beyond it fails until one is removed. */
+/** Entries kept per Project before an add is refused. */
+const DEFAULT_MAX_ENTRIES = 200
+
+/** Unicode code points an entry text may hold before a write is refused. */
+const DEFAULT_MAX_ENTRY_CHARS = 2_000
+
+/**
+ * Configuration a profile row or a direct `ctx.plugin` call supplies, before the
+ * schema resolves defaults and wraps the caps in live references.
+ */
+export interface ConfigInput {
+  /** Entries kept per Project. */
   maxEntries?: number
   /** Longest entry text in Unicode code points. */
   maxEntryChars?: number
+  /** Agent preset ids whose Sessions are Project coordinators. */
+  projectPresets?: string[]
+  /** Parent hops followed from a calling Session while looking for its Project. */
+  maxLineageDepth?: number
+}
+
+/**
+ * Validated configuration of the Project memory service.
+ *
+ * The two caps are live: the settings form edits them, and the next write reads
+ * the stored value, so a Project coordinator that outgrew a bound can widen it
+ * without restarting the Host. The Project-identity fields stay boot composition
+ * — which presets are coordinators and how far lineage is followed are decided
+ * when the Profile is composed, not by a person mid-session.
+ */
+export interface Config {
+  /** Entries kept per Project; adding beyond it fails until one is removed. */
+  maxEntries?: Volatile<number>
+  /** Longest entry text in Unicode code points. */
+  maxEntryChars?: Volatile<number>
   /** Agent preset ids whose Sessions are Project coordinators. */
   projectPresets?: string[]
   /** Parent hops followed from a calling Session while looking for its Project. */
@@ -61,6 +90,20 @@ function codePoints(text: string): number {
   let count = 0
   for (const _ of text) count++
   return count
+}
+
+/**
+ * Read one live cap at the moment it is enforced.
+ *
+ * The Loader always supplies the field; the fallback covers direct construction
+ * (`new ProjectMemoryService(ctx, {})`), which reaches the same enforcement path
+ * with no schema having resolved the defaults.
+ * @param field - The validated cap, or undefined under direct construction.
+ * @param fallback - Documented default for the absent field.
+ * @returns The cap a write is checked against right now.
+ */
+function capOf(field: Volatile<number> | undefined, fallback: number): number {
+  return field?.get() ?? fallback
 }
 
 /** Convert a refusal to the Remote failure carrying the same message. */
@@ -79,15 +122,15 @@ function toRemote(error: unknown): unknown {
 export class ProjectMemoryService extends TypertRemoteService {
   static inject = ['storageDomain', 'sessions']
 
-  static Config: z<Config> = z.object({
-    maxEntries: z.number().step(1).min(1).max(10_000).default(200),
-    maxEntryChars: z.number().step(1).min(1).max(100_000).default(500),
+  static Config: z<ConfigInput, Config> = z.object({
+    maxEntries: z.number().step(1).min(1).max(10_000).default(DEFAULT_MAX_ENTRIES).volatile(),
+    maxEntryChars: z.number().step(1).min(1).max(100_000).default(DEFAULT_MAX_ENTRY_CHARS).volatile(),
     projectPresets: z.array(z.string()).default(['project']),
     maxLineageDepth: z.number().step(1).min(0).max(32).default(4),
   })
 
-  private readonly maxEntries: number
-  private readonly maxEntryChars: number
+  /** The validated configuration, whose two caps are re-read on every write. */
+  readonly config: Config
   private readonly projectPresets: ReadonlySet<string>
   private readonly maxLineageDepth: number
   private readonly initialized: Promise<Domain<typeof projectMemoryDomain>>
@@ -99,8 +142,7 @@ export class ProjectMemoryService extends TypertRemoteService {
    */
   constructor(private readonly host: Context, config: Config) {
     super(host, 'projectMemory')
-    this.maxEntries = config.maxEntries ?? 200
-    this.maxEntryChars = config.maxEntryChars ?? 500
+    this.config = config
     this.projectPresets = new Set(config.projectPresets ?? ['project'])
     this.maxLineageDepth = config.maxLineageDepth ?? 4
     this.initialized = host.storageDomain.open(projectMemoryDomain)
@@ -149,9 +191,10 @@ export class ProjectMemoryService extends TypertRemoteService {
       throw new ProjectMemoryError('empty-text', 'The memory text is empty. Write one self-contained fact or decision.')
     }
     const length = codePoints(text)
-    if (length > this.maxEntryChars) {
+    const maxEntryChars = capOf(this.config.maxEntryChars, DEFAULT_MAX_ENTRY_CHARS)
+    if (length > maxEntryChars) {
       throw new ProjectMemoryError('text-too-long',
-        `The memory text is ${length} characters; the limit is ${this.maxEntryChars}. Shorten it or split it into separate entries.`)
+        `The memory text is ${length} characters; the limit is ${maxEntryChars}. Shorten it or split it into separate entries.`)
     }
     return text
   }
@@ -175,9 +218,10 @@ export class ProjectMemoryService extends TypertRemoteService {
       const clean = this.checkText(text)
       const table = (await this.domain()).table('entries')
       const held = [...table.entries()].filter(([, entry]) => entry.projectId === projectId).length
-      if (held >= this.maxEntries) {
+      const maxEntries = capOf(this.config.maxEntries, DEFAULT_MAX_ENTRIES)
+      if (held >= maxEntries) {
         throw new ProjectMemoryError('entry-limit',
-          `This Project already holds ${this.maxEntries} memory entries. Remove or merge outdated entries with memory_write before adding more.`)
+          `This Project already holds ${maxEntries} memory entries. Remove or merge outdated entries with memory_write before adding more.`)
       }
       let id = brandString<MemoryEntryId>(`m${randomUUID().slice(0, 8)}`)
       while (table.get(id) !== undefined) id = brandString<MemoryEntryId>(`m${randomUUID().slice(0, 8)}`)

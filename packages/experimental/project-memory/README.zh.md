@@ -38,12 +38,12 @@ Host 服务只需挂载一次；工具插件挂载到每个需要访问记忆的
     maxReadBytes: 8192
 ```
 
-服务依赖 `storageDomain` 与 `sessions`。服务配置项均为可选：
+服务依赖 `storageDomain` 与 `sessions`。两个上限是 live 字段：Threads profile 在插件页上的 Project 记忆页面可以编辑它们，下一次写入会直接读到新值，无需重启。其余字段属于启动期组合 —— 哪些 preset 是协调者、向上追溯多少层 —— 在组合 Profile 时决定。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `maxEntries` | `200` | 每个 Project 保留的条目数；超出后添加失败，直到删除一条 |
-| `maxEntryChars` | `500` | 条目文本的最大长度，按 Unicode 码点计 |
+| `maxEntries` | `200` | 每个 Project 保留的条目数；超出后添加失败，直到删除一条。可在线编辑（1 至 10000） |
+| `maxEntryChars` | `2000` | 条目文本的最大长度，按 Unicode 码点计。可在线编辑（1 至 100000） |
 | `projectPresets` | `['project']` | 其 Session 为 Project 协调者的 agent preset id |
 | `maxLineageDepth` | `4` | 查找 Project 时向上追溯的父级跳数 |
 

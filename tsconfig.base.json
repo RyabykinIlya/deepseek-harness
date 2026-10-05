@@ -317,6 +317,7 @@
       "@deepseek-ai/dsh-experimental-client-ui-model-routing": ["./packages/experimental/client-ui-model-routing/src"],
       "@deepseek-ai/dsh-experimental-model-routing-profile": ["./packages/experimental/model-routing-profile/src"],
       "@deepseek-ai/dsh-experimental-client-ui-threads": ["./packages/experimental/client-ui-threads/src"],
+      "@deepseek-ai/dsh-experimental-client-ui-project-memory": ["./packages/experimental/client-ui-project-memory/src"],
       "@deepseek-ai/dsh-experimental-agent-team": ["./packages/experimental/agent-team/src"],
       "@deepseek-ai/dsh-experimental-auto-review": ["./packages/experimental/auto-review/src"],
       "@deepseek-ai/dsh-experimental-claude-code-mods": ["./packages/experimental/claude-code-mods/src"],
