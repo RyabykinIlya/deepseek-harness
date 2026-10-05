@@ -15,7 +15,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsFormScope, SettingsFormShell } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SettingsFormPathOp, SettingsFormScope, SettingsFormShell } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelQuote, Quantization, TierSettings } from '@deepseek-ai/dsh-experimental-model-routing/client'
 
 export type { TierSettings }
@@ -45,6 +45,10 @@ export interface TierRow extends TierSettings {
   filter: string
   /** Whether this tier has unsaved edits. */
   dirty: boolean
+  /** `contextWindow` as the numeric control's raw staged text, mid-edit included. */
+  contextWindowText: string
+  /** `maxTokens` as the numeric control's raw staged text, mid-edit included. */
+  maxTokensText: string
 }
 
 /** One catalog model the draft may check. */
@@ -78,7 +82,22 @@ export interface ModelRoutingCardState extends SettingsFormShell {
   catalogStatus: 'idle' | 'loading' | 'ready' | 'error'
   freeUsage: { used: number; limit: number } | undefined
   freeUsageKnown: boolean
+  /** Whether the judge picks the tier, or the session stays on one model. */
+  judgeEnabled: boolean
+  /** Tier a session starts on before the judge speaks. */
+  defaultTier: string
+  /** Idle interval in minutes, as the numeric control edits it. */
+  cacheIdleMinutes: number
+  /** `cacheIdleMinutes` as the numeric control's raw staged text, mid-edit included. */
+  cacheIdleMinutesText: string
+  /** Whether subagents may use free endpoints. */
+  freeForSubagents: boolean
+  /** The trusted unknown-quantization provider slugs, space-separated for the text control. */
+  trustedProvidersText: string
 }
+
+/** Tier fields the card's controls stage, and the coercions they apply. */
+export type TierField = 'label' | 'minQuantization' | 'unknownQuantization' | 'free' | 'contextWindow' | 'maxTokens'
 
 /** Registration-side face for the model-routing card. */
 export interface ModelRoutingCardFace {
@@ -89,11 +108,11 @@ export interface ModelRoutingCardFace {
   selectTier: (index: number) => void
   setFilter: (index: number, filter: string) => void
   toggleModel: (index: number, model: string) => void
-  setTierField: (index: number, field: 'label' | 'minQuantization' | 'unknownQuantization' | 'free', value: string) => void
+  setTierField: (index: number, field: TierField, value: string) => void
   setTrustedProviders: (value: string) => void
   setJudgeEnabled: (value: boolean) => void
   setDefaultTier: (value: string) => void
-  setCacheIdleMinutes: (value: number) => void
+  setCacheIdleMinutes: (value: string) => void
   setFreeForSubagents: (value: boolean) => void
   retryCatalog: () => void
   save: () => void
@@ -133,6 +152,36 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+/** Key one tier's staged numeric-field raw text is stored under. */
+function numberDraftKey(index: number, field: 'contextWindow' | 'maxTokens'): string {
+  return `${index}:${field}`
+}
+
+/**
+ * Parse a positive integer a numeric control staged.
+ *
+ * The rounded value, not the raw parse, is what must be positive: `0.4` is a
+ * finite number greater than zero, but rounds to `0`, which every numeric
+ * field here treats as empty rather than as a stored value.
+ * @param text - the control's raw staged text.
+ * @returns the rounded positive integer, or `undefined` while the text is not one.
+ */
+function parsePositiveInteger(text: string): number | undefined {
+  const parsed = Number(text)
+  const rounded = Math.round(parsed)
+  return Number.isFinite(parsed) && rounded > 0 ? rounded : undefined
+}
+
+/**
+ * Parse a positive minute count into milliseconds.
+ * @param text - the control's raw staged text.
+ * @returns the rounded millisecond value, or `undefined` while the text is not a positive number.
+ */
+function parsePositiveMinutesMs(text: string): number | undefined {
+  const parsed = Number(text)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 60_000) : undefined
+}
+
 /** Bridges the `model-routing` configuration form and the live catalog onto a staged card. */
 export class ModelRoutingCardController {
   private catalogGroups: readonly ModelProviderGroup[] = []
@@ -143,6 +192,12 @@ export class ModelRoutingCardController {
   private draftTiers: TierSettings[] | undefined
   private draftExtra: Partial<ModelRoutingSettings> | undefined
   private draftRevision: number | undefined
+  /** Raw text staged for the trusted-providers control; `undefined` while unedited. */
+  private trustedProvidersDraft: string | undefined
+  /** Raw text staged for the cache-idle-minutes control; `undefined` while unedited. */
+  private cacheIdleText: string | undefined
+  /** Raw text staged per tier numeric field, keyed by {@link numberDraftKey}. */
+  private readonly tierNumberDrafts = new Map<string, string>()
   private quotes: Record<string, QuoteRow> = {}
   private freeUsage: { used: number; limit: number } | undefined
   private freeUsageKnown = false
@@ -206,8 +261,7 @@ export class ModelRoutingCardController {
       setTierField: (index, field, value) => { this.setTierField(index, field, value) },
       setTrustedProviders: (value) => {
         this.beginDraft()
-        this.draftExtra = { ...this.draftExtra, trustedUnknownProviders: splitList(value) }
-        void this.price()
+        this.trustedProvidersDraft = value
         this.publish()
       },
       setJudgeEnabled: (value) => {
@@ -222,7 +276,7 @@ export class ModelRoutingCardController {
       },
       setCacheIdleMinutes: (value) => {
         this.beginDraft()
-        this.draftExtra = { ...this.draftExtra, cacheIdleMs: Math.round(value * 60_000) }
+        this.cacheIdleText = value
         this.publish()
       },
       setFreeForSubagents: (value) => {
@@ -250,7 +304,20 @@ export class ModelRoutingCardController {
 
   private desired(): ModelRoutingSettings {
     const current = this.current()
-    return { ...current, ...this.draftExtra, tiers: this.draftTiers ?? current.tiers }
+    return {
+      ...current,
+      ...this.draftExtra,
+      tiers: this.draftTiers ?? current.tiers,
+      // Parsed from staged raw text, not re-derived from it: the raw text is
+      // what the control shows, and re-joining a parsed value back into text
+      // would normalize whatever separators the person is still typing.
+      cacheIdleMs: this.cacheIdleText === undefined
+        ? current.cacheIdleMs
+        : (parsePositiveMinutesMs(this.cacheIdleText) ?? current.cacheIdleMs),
+      trustedUnknownProviders: this.trustedProvidersDraft === undefined
+        ? current.trustedUnknownProviders
+        : splitList(this.trustedProvidersDraft),
+    }
   }
 
   private matches(): boolean {
@@ -279,6 +346,9 @@ export class ModelRoutingCardController {
     this.draftTiers = undefined
     this.draftExtra = undefined
     this.draftRevision = undefined
+    this.trustedProvidersDraft = undefined
+    this.cacheIdleText = undefined
+    this.tierNumberDrafts.clear()
     this.failed = false
     this.conflicted = false
   }
@@ -304,7 +374,7 @@ export class ModelRoutingCardController {
 
   private setTierField(
     index: number,
-    field: 'label' | 'minQuantization' | 'unknownQuantization' | 'free',
+    field: TierField,
     value: string,
   ): void {
     const tiers = this.beginDraft()
@@ -314,8 +384,19 @@ export class ModelRoutingCardController {
     else if (field === 'minQuantization') tier.minQuantization = value as Quantization
     else if (field === 'unknownQuantization') {
       tier.unknownQuantization = value as TierSettings['unknownQuantization']
-    } else tier.free = value as TierSettings['free']
-    void this.price()
+    } else if (field === 'free') tier.free = value as TierSettings['free']
+    else {
+      // The raw text is staged unconditionally, so the control shows exactly
+      // what was typed — including empty, a leading zero, or a value that
+      // hasn't become positive yet. Only a value that parses to a positive
+      // integer updates the tier the draft will save.
+      this.tierNumberDrafts.set(numberDraftKey(index, field), value)
+      const parsed = parsePositiveInteger(value)
+      if (parsed !== undefined) {
+        if (field === 'contextWindow') tier.contextWindow = parsed
+        else tier.maxTokens = parsed
+      }
+    }
     this.publish()
   }
 
@@ -334,14 +415,34 @@ export class ModelRoutingCardController {
     this.failed = false
     this.conflicted = false
     this.publish()
-    await this.scope.mutate([
-      { op: 'set', path: ['tiers'], value: desired.tiers.map(tier => ({ ...tier })) },
-      { op: 'set', path: ['judgeEnabled'], value: desired.judgeEnabled },
-      { op: 'set', path: ['defaultTier'], value: desired.defaultTier },
-      { op: 'set', path: ['cacheIdleMs'], value: desired.cacheIdleMs },
-      { op: 'set', path: ['freeForSubagents'], value: desired.freeForSubagents },
-      { op: 'set', path: ['trustedUnknownProviders'], value: [...desired.trustedUnknownProviders] },
-    ], this.draftRevision)
+    // Only a field the person actually staged is written, each as its own `set`
+    // into the user layer — writing every field unconditionally (the prior
+    // behavior) would pin the other five as user overrides on every save,
+    // including ones the person never touched, and a later change to one of
+    // them in the base or profile layer would then silently stop applying.
+    const ops: SettingsFormPathOp[] = []
+    // `draftTiers` is seeded with a copy of the current tiers the moment ANY
+    // field is first edited (`beginDraft()`), so its mere presence does not
+    // mean the tiers themselves changed — only a value difference does.
+    if (this.draftTiers !== undefined && !sameJson(this.draftTiers, this.current().tiers)) {
+      ops.push({ op: 'set', path: ['tiers'], value: desired.tiers.map(tier => ({ ...tier })) })
+    }
+    if (this.draftExtra?.judgeEnabled !== undefined) {
+      ops.push({ op: 'set', path: ['judgeEnabled'], value: desired.judgeEnabled })
+    }
+    if (this.draftExtra?.defaultTier !== undefined) {
+      ops.push({ op: 'set', path: ['defaultTier'], value: desired.defaultTier })
+    }
+    if (this.cacheIdleText !== undefined && parsePositiveMinutesMs(this.cacheIdleText) !== undefined) {
+      ops.push({ op: 'set', path: ['cacheIdleMs'], value: desired.cacheIdleMs })
+    }
+    if (this.draftExtra?.freeForSubagents !== undefined) {
+      ops.push({ op: 'set', path: ['freeForSubagents'], value: desired.freeForSubagents })
+    }
+    if (this.trustedProvidersDraft !== undefined) {
+      ops.push({ op: 'set', path: ['trustedUnknownProviders'], value: [...desired.trustedUnknownProviders] })
+    }
+    await this.scope.mutate(ops, this.draftRevision)
     if (generation !== this.generation) return
     const landed = this.matches()
     this.saving = false
@@ -407,7 +508,9 @@ export class ModelRoutingCardController {
 
   private projection(): ModelRoutingCardState {
     const snapshot = this.scope.getSnapshot()
-    const tiers = this.desired().tiers
+    const current = this.current()
+    const desired = this.desired()
+    const tiers = desired.tiers
     const dirty = !this.matches()
     const filter = this.filters[this.selectedTier] ?? ''
     const candidates = this.catalogGroups.flatMap(group => group.models)
@@ -423,7 +526,15 @@ export class ModelRoutingCardController {
       // A draft that outlived its revision cannot be written as one mutation.
       invalid: dirty && this.conflicted,
       view: this.view,
-      tiers: tiers.map((tier, index) => ({ ...tier, index, filter: this.filters[index] ?? '', dirty })),
+      tiers: tiers.map((tier, index) => ({
+        ...tier,
+        index,
+        filter: this.filters[index] ?? '',
+        dirty,
+        contextWindowText: this.tierNumberDrafts.get(numberDraftKey(index, 'contextWindow'))
+          ?? String(tier.contextWindow),
+        maxTokensText: this.tierNumberDrafts.get(numberDraftKey(index, 'maxTokens')) ?? String(tier.maxTokens),
+      })),
       candidates,
       quotes: this.quotes,
       selectedTier: this.selectedTier,
@@ -434,6 +545,14 @@ export class ModelRoutingCardController {
       catalogStatus: this.catalogStatus,
       freeUsage: this.freeUsage,
       freeUsageKnown: this.freeUsageKnown,
+      judgeEnabled: desired.judgeEnabled,
+      defaultTier: desired.defaultTier,
+      cacheIdleMinutes: Math.round(desired.cacheIdleMs / 60_000),
+      cacheIdleMinutesText: this.cacheIdleText ?? String(Math.round(current.cacheIdleMs / 60_000)),
+      freeForSubagents: desired.freeForSubagents,
+      // The raw staged text, not the parsed-and-rejoined list: rejoining would
+      // normalize separators out from under whatever the person is still typing.
+      trustedProvidersText: this.trustedProvidersDraft ?? current.trustedUnknownProviders.join(' '),
     }
   }
 

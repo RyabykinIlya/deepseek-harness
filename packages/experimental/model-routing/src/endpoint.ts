@@ -31,6 +31,7 @@ export function routingEndpointOf(endpoint: OpenRouterEndpoint): RoutingEndpoint
     promptUsd: endpoint.promptPrice ?? 0,
     completionUsd: endpoint.completionPrice ?? 0,
     ...endpoint.inputCacheReadPrice === undefined ? {} : { cacheReadUsd: endpoint.inputCacheReadPrice },
+    ...endpoint.discount === undefined ? {} : { discount: endpoint.discount },
     ...endpoint.contextLength === undefined ? {} : { contextLength: endpoint.contextLength },
     ...endpoint.maxCompletionTokens === undefined ? {} : { maxCompletionTokens: endpoint.maxCompletionTokens },
   }

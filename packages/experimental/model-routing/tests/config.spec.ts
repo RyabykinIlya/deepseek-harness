@@ -146,4 +146,11 @@ describe('model-routing settings validation', () => {
     expect(() =>{  validateSettings(settings({ maxReroutes: 1.5 })) })
       .toThrow('model-routing: maxReroutes must be a non-negative integer')
   })
+
+  it('refuses a diagnostics budget that is zero or fractional', () => {
+    expect(() =>{  validateSettings(settings({ diagnosticsMaxBytes: 0 })) })
+      .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')
+    expect(() =>{  validateSettings(settings({ diagnosticsMaxBytes: 1.5 })) })
+      .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')
+  })
 })

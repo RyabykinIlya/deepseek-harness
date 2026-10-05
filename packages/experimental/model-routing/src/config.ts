@@ -149,6 +149,8 @@ export interface Config {
   snapshotPolicy: Volatile<SnapshotPolicy>
   catalogTtlMs: Volatile<number>
   catalogTimeoutMs: Volatile<number>
+  diagnosticsPath: Volatile<string>
+  diagnosticsMaxBytes: Volatile<number>
 }
 
 /**
@@ -205,6 +207,10 @@ export interface RoutingSettings {
   readonly snapshotPolicy: SnapshotPolicy
   readonly catalogTtlMs: number
   readonly catalogTimeoutMs: number
+  /** File the decision diagnostics are appended to; empty writes no history. */
+  readonly diagnosticsPath: string
+  /** The largest one diagnostics line may reach, in bytes. */
+  readonly diagnosticsMaxBytes: number
 }
 
 const tierSettings: z<TierSettings> = z.object({
@@ -326,6 +332,14 @@ export const Config = z.object({
   // A catalog read transfers the whole list, which is an order of magnitude more
   // than one model's endpoint list, so it is given more of the caller's budget.
   catalogTimeoutMs: z.number().default(15000).volatile(),
+  // The diagnostics history is an operator artefact rather than product state:
+  // it records the candidate table of every decision, so it is off until a
+  // deployment names a file to keep it in.
+  diagnosticsPath: z.string().default('').volatile(),
+  // One decision line is bounded in bytes rather than in candidate count,
+  // because a candidate's size is decided by what the wire sent, not by the
+  // number of rows.
+  diagnosticsMaxBytes: z.number().default(262144).volatile(),
 })
 
 /**
@@ -381,6 +395,8 @@ export function readSettings(config: Config): RoutingSettings {
     snapshotPolicy: config.snapshotPolicy.get(),
     catalogTtlMs: config.catalogTtlMs.get(),
     catalogTimeoutMs: config.catalogTimeoutMs.get(),
+    diagnosticsPath: config.diagnosticsPath.get(),
+    diagnosticsMaxBytes: config.diagnosticsMaxBytes.get(),
   }
 }
 
@@ -457,5 +473,8 @@ export function validateSettings(settings: RoutingSettings): void {
   }
   if (!Number.isInteger(settings.maxReroutes) || settings.maxReroutes < 0) {
     invalid('maxReroutes must be a non-negative integer')
+  }
+  if (!Number.isInteger(settings.diagnosticsMaxBytes) || settings.diagnosticsMaxBytes < 1) {
+    invalid('diagnosticsMaxBytes must be a positive integer')
   }
 }

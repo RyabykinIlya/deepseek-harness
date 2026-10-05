@@ -10612,7 +10612,7 @@
       "kind": "event",
       "event": "model-routing/decision",
       "surface": false,
-      "digest": "a9dfa40309b88aa7bf4f8ea47f97a6ebb46e92d0096ae2d07d72c40fa671c623",
+      "digest": "c363ac97e1e21dda433390f84a7f732f4b7ea5020a0f169c8e9b66cb024f4876",
       "schema": {
         "root": 0,
         "nodes": [
@@ -10626,7 +10626,7 @@
               },
               {
                 "name": "ignorable",
-                "type": 23,
+                "type": 65,
                 "optional": true
               },
               {
@@ -10641,7 +10641,7 @@
               },
               {
                 "name": "type",
-                "type": 26,
+                "type": 68,
                 "optional": false
               }
             ],
@@ -10661,53 +10661,73 @@
                 "optional": false
               },
               {
+                "name": "cheapestRejected",
+                "type": 9,
+                "optional": true
+              },
+              {
                 "name": "considered",
                 "type": 2,
                 "optional": false
               },
               {
                 "name": "endpoint",
-                "type": 9,
+                "type": 24,
                 "optional": true
               },
               {
                 "name": "excludedTags",
-                "type": 11,
+                "type": 25,
                 "optional": false
               },
               {
+                "name": "filters",
+                "type": 26,
+                "optional": true
+              },
+              {
                 "name": "judge",
-                "type": 12,
+                "type": 49,
+                "optional": true
+              },
+              {
+                "name": "mix",
+                "type": 60,
                 "optional": true
               },
               {
                 "name": "model",
-                "type": 10,
+                "type": 11,
                 "optional": false
               },
               {
+                "name": "rejections",
+                "type": 64,
+                "optional": true
+              },
+              {
                 "name": "relaxedUptime",
-                "type": 23,
+                "type": 65,
                 "optional": true
               },
               {
                 "name": "requested",
-                "type": 10,
+                "type": 11,
                 "optional": false
               },
               {
                 "name": "runnersUp",
-                "type": 24,
+                "type": 66,
                 "optional": false
               },
               {
                 "name": "tier",
-                "type": 10,
+                "type": 11,
                 "optional": false
               },
               {
                 "name": "unpinnedReason",
-                "type": 10,
+                "type": 11,
                 "optional": true
               }
             ],
@@ -10729,15 +10749,7 @@
           },
           {
             "kind": "literal",
-            "value": "failure"
-          },
-          {
-            "kind": "literal",
             "value": "compaction"
-          },
-          {
-            "kind": "literal",
-            "value": "idle"
           },
           {
             "kind": "literal",
@@ -10746,6 +10758,163 @@
           {
             "kind": "literal",
             "value": "start"
+          },
+          {
+            "kind": "literal",
+            "value": "failure"
+          },
+          {
+            "kind": "literal",
+            "value": "idle"
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "blendedUsdPerToken",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "cacheReadUsd",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "completionUsd",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "contextLength",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "discount",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "maxCompletionTokens",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 11,
+                "optional": false
+              },
+              {
+                "name": "promptUsd",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "providerName",
+                "type": 11,
+                "optional": true
+              },
+              {
+                "name": "quantization",
+                "type": 11,
+                "optional": true
+              },
+              {
+                "name": "rank",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "rejection",
+                "type": 12,
+                "optional": true
+              },
+              {
+                "name": "status",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "tag",
+                "type": 11,
+                "optional": false
+              },
+              {
+                "name": "uptimeLast30m",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "union",
+            "types": [
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "modality"
+          },
+          {
+            "kind": "literal",
+            "value": "paid"
+          },
+          {
+            "kind": "literal",
+            "value": "quantization"
+          },
+          {
+            "kind": "literal",
+            "value": "status"
+          },
+          {
+            "kind": "literal",
+            "value": "context"
+          },
+          {
+            "kind": "literal",
+            "value": "tools"
+          },
+          {
+            "kind": "literal",
+            "value": "unpriced"
+          },
+          {
+            "kind": "literal",
+            "value": "untrusted-unknown"
+          },
+          {
+            "kind": "literal",
+            "value": "uptime"
+          },
+          {
+            "kind": "literal",
+            "value": "excluded"
+          },
+          {
+            "kind": "literal",
+            "value": "free"
           },
           {
             "kind": "object",
@@ -10766,6 +10935,11 @@
                 "optional": true
               },
               {
+                "name": "discount",
+                "type": 2,
+                "optional": true
+              },
+              {
                 "name": "maxCompletionTokens",
                 "type": 2,
                 "optional": true
@@ -10777,17 +10951,72 @@
               },
               {
                 "name": "providerName",
-                "type": 10,
+                "type": 11,
                 "optional": true
               },
               {
                 "name": "quantization",
-                "type": 10,
+                "type": 11,
                 "optional": true
               },
               {
                 "name": "tag",
-                "type": 10,
+                "type": 11,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "array",
+            "element": 11
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "allowFree",
+                "type": 27,
+                "optional": false
+              },
+              {
+                "name": "contextWindow",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "free",
+                "type": 28,
+                "optional": false
+              },
+              {
+                "name": "minQuantization",
+                "type": 32,
+                "optional": false
+              },
+              {
+                "name": "minUptime",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "requireNormalStatus",
+                "type": 27,
+                "optional": false
+              },
+              {
+                "name": "requiredInput",
+                "type": 44,
+                "optional": true
+              },
+              {
+                "name": "trustedUnknownProviders",
+                "type": 25,
+                "optional": false
+              },
+              {
+                "name": "unknownQuantization",
+                "type": 45,
                 "optional": false
               }
             ],
@@ -10795,18 +11024,118 @@
           },
           {
             "kind": "primitive",
-            "type": "string"
+            "type": "boolean"
           },
           {
-            "kind": "array",
-            "element": 10
+            "kind": "union",
+            "types": [
+              29,
+              30,
+              31
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "off"
+          },
+          {
+            "kind": "literal",
+            "value": "only"
+          },
+          {
+            "kind": "literal",
+            "value": "prefer"
+          },
+          {
+            "kind": "union",
+            "types": [
+              33,
+              34,
+              35,
+              36,
+              37,
+              38,
+              39,
+              40,
+              41,
+              42,
+              43
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "int4"
+          },
+          {
+            "kind": "literal",
+            "value": "int8"
+          },
+          {
+            "kind": "literal",
+            "value": "bf16"
+          },
+          {
+            "kind": "literal",
+            "value": "mxfp4"
+          },
+          {
+            "kind": "literal",
+            "value": "mxfp8"
+          },
+          {
+            "kind": "literal",
+            "value": "nvfp4"
+          },
+          {
+            "kind": "literal",
+            "value": "fp4"
+          },
+          {
+            "kind": "literal",
+            "value": "fp6"
+          },
+          {
+            "kind": "literal",
+            "value": "fp8"
+          },
+          {
+            "kind": "literal",
+            "value": "fp16"
+          },
+          {
+            "kind": "literal",
+            "value": "fp32"
+          },
+          {
+            "kind": "literal",
+            "value": "image"
+          },
+          {
+            "kind": "union",
+            "types": [
+              46,
+              47,
+              48
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "reject"
+          },
+          {
+            "kind": "literal",
+            "value": "accept"
+          },
+          {
+            "kind": "literal",
+            "value": "trusted"
           },
           {
             "kind": "object",
             "properties": [
               {
                 "name": "answeredBy",
-                "type": 10,
+                "type": 11,
                 "optional": true
               },
               {
@@ -10826,7 +11155,7 @@
               },
               {
                 "name": "error",
-                "type": 10,
+                "type": 11,
                 "optional": true
               },
               {
@@ -10836,7 +11165,7 @@
               },
               {
                 "name": "model",
-                "type": 10,
+                "type": 11,
                 "optional": false
               },
               {
@@ -10851,7 +11180,7 @@
               },
               {
                 "name": "rule",
-                "type": 13,
+                "type": 50,
                 "optional": false
               }
             ],
@@ -10860,15 +11189,15 @@
           {
             "kind": "union",
             "types": [
-              14,
-              15,
-              16,
-              17,
-              18,
-              19,
-              20,
-              21,
-              22
+              51,
+              52,
+              53,
+              54,
+              55,
+              56,
+              57,
+              58,
+              59
             ]
           },
           {
@@ -10908,12 +11237,114 @@
             "value": "to-pro"
           },
           {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "cached",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "fresh",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "output",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "source",
+                "type": 61,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              62,
+              63
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "usage"
+          },
+          {
+            "kind": "literal",
+            "value": "default"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "context",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "excluded",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "free",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "modality",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "paid",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "quantization",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "status",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "unpriced",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "untrusted-unknown",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "uptime",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
             "kind": "literal",
             "value": true
           },
           {
             "kind": "array",
-            "element": 25
+            "element": 67
           },
           {
             "kind": "object",
@@ -10924,13 +11355,23 @@
                 "optional": false
               },
               {
+                "name": "discount",
+                "type": 2,
+                "optional": true
+              },
+              {
                 "name": "model",
-                "type": 10,
+                "type": 11,
                 "optional": false
               },
               {
+                "name": "quantization",
+                "type": 11,
+                "optional": true
+              },
+              {
                 "name": "tag",
-                "type": 10,
+                "type": 11,
                 "optional": false
               }
             ],
@@ -22491,6 +22932,11 @@
       "sources": []
     },
     {
+      "digest": "0153dda067303a1b14b0a48ce062ca302f6016ce507b5d5c5a75088377046fbe",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "0203243b72fc867afc81aff5f4cf2167e564ed342534eb612fc92f295cf07789",
       "names": [],
       "sources": []
@@ -22508,6 +22954,11 @@
       ]
     },
     {
+      "digest": "02922dfc7c2c9cd02253db99ca57c8b85551b0be3af6fca8def12eaaf54ce5cd",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "02b2c23f2d94b028c9588a8faace3fce1217405db346da3389368b495457bf79",
       "names": [],
       "sources": [
@@ -22518,6 +22969,15 @@
       "digest": "0341d4c3dfcd53253cdc1e789d9130d3cd848b6f8b0706bf92f313a68b39ff23",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "0409e325fe7802d05743c62948c03177f1a72d7f586df1c982db5cef27de4fd9",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingDecision"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:119"
+      ]
     },
     {
       "digest": "05a2796621b1ee6c03ef7abe560b25116bb4da4d592312117242a78415a32b04",
@@ -22571,6 +23031,11 @@
       "sources": [
         "packages/llm/llm/src/message.ts:151"
       ]
+    },
+    {
+      "digest": "09f6a86ce422e98e0c737649739ebc0c071c43b3de6099121f7609a5a8098c54",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "0a30c3be336cdd4f8f34e66543a3d46d611c43986edd9b3ce6cbb9b721d3b5d3",
@@ -22717,6 +23182,11 @@
     },
     {
       "digest": "112da3cb0a7e1358446e6ab177f15fac38d9f49606c4c217e5d563629344afe9",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "11354fe1429941e76ba81d811914af1c2f500e1c1e4f11ce56ecadba50d82720",
       "names": [],
       "sources": []
     },
@@ -22893,6 +23363,11 @@
     },
     {
       "digest": "1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "1af0ddc4e4c4f8e5ca0535769d94ad9210e12fcb1550a005c7f3010de7db0dcc",
       "names": [],
       "sources": []
     },
@@ -23157,9 +23632,25 @@
       "sources": []
     },
     {
+      "digest": "29f8e828cb9894fce92e935f143f78ad2c8e8bb4bc97e6d8bf37cb8c37ef4cdc",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "2a7f53dabacdd909d7e01569642d29ca0da3865c77041fef5992c56cbdfc3939",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "2a845226538bfd7553397b67c0e168d60620067521d9004d52e2424fc3be0db4",
+      "names": [
+        "packages/experimental/model-routing/lib/types/config.d.ts#Quantization",
+        "packages/experimental/model-routing/src/config.ts#Quantization"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/lib/types/config.d.ts:23",
+        "packages/experimental/model-routing/src/config.ts:28"
+      ]
     },
     {
       "digest": "2aad1179f957631477b582e57cd8f538cb82618fc3fb816bde1171154235b065",
@@ -23180,6 +23671,11 @@
     },
     {
       "digest": "2aed07493b1c65b6d00de5586da1e743cf501684b9ad43a1765fb4007d4ea456",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "2c27ca68e2a2e99d6b4242760c0791a6d58ae5a3b71d0432313d4f1cb564c10d",
       "names": [],
       "sources": []
     },
@@ -23284,6 +23780,11 @@
       ]
     },
     {
+      "digest": "3273aa8d0323c4966385be89c23eaf142322de36688d5f2cc103d310407dc616",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "3305a4bb6b6c29b482ba91d59c60b47e8f98282d3dacc8c29e4a4c2712209bdd",
       "names": [],
       "sources": []
@@ -23317,6 +23818,15 @@
       "sources": []
     },
     {
+      "digest": "3604813706ece7b5fcf867d9b84cfafabf77a803c6eef00d94a5fa51e0c8bd54",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingEndpoint"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:26"
+      ]
+    },
+    {
       "digest": "36d6a9a871d949ea4f3edd919d81d66aa69218bebef38899d2a1282c39420a1f",
       "names": [],
       "sources": []
@@ -23327,7 +23837,7 @@
         "packages/experimental/model-routing/src/types.ts#JudgeVerdict"
       ],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:48"
+        "packages/experimental/model-routing/src/types.ts:52"
       ]
     },
     {
@@ -23372,6 +23882,11 @@
       "sources": [
         "packages/feedback/message-feedback/src/types.ts:17"
       ]
+    },
+    {
+      "digest": "39c2eddaced8034efac46f4316463da14dc046a3716d4e47d53987fdf1d6f1f8",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "3abae7324356f155cb42450c00b806d134ec93bd6439d2063b8d724162d58604",
@@ -23509,6 +24024,21 @@
       "sources": []
     },
     {
+      "digest": "4345c8bd13b8e7b5ba04ceed90108a1f5d6b480ec7cb6bf9b09e0663081e8dcf",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "43c5dd4e3ee4f9782276ee4899b218ed9bba16241dec81538062792713d3c131",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "43d850705544ef6a24c4529732207b02e7020f4ba917a31a9762fef19717e187",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "43e311235aa537df1bacdd92d144df8a952337a76e9ac892cdf670f1a797bad8",
       "names": [
         "packages/llm/llm/src/types.ts#ToolRemovalBlock"
@@ -23533,11 +24063,30 @@
       "sources": []
     },
     {
+      "digest": "4540ad0a33fa1fcaa4eb9217791e5bf59b8e512dc7e04fd937ac7b70c19fae27",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "45b20a8720a92bdd2307e1e1f9032667d6ae37af3a09e0f3d1379e875b7c61de",
+      "names": [
+        "packages/experimental/model-routing/src/select.ts#MixSource"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/select.ts:37"
+      ]
+    },
+    {
       "digest": "45f2a07ea94573123b6ae14db787a40062dec3834f36d8be92c523d40ba28448",
       "names": [],
       "sources": [
         "packages/interaction/user-approval/src/types.ts:44"
       ]
+    },
+    {
+      "digest": "460a44bfc847ba78d4df77ed5d1d438f5d3412eb8c9e1fafd97f5a56966b1dbb",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "477614bca595a9e7adb5a1870be446b9a8684f3ba8950259d6289f2d3b74f028",
@@ -23566,6 +24115,11 @@
       "sources": [
         "packages/llm/llm/src/assistant-stream.ts:44"
       ]
+    },
+    {
+      "digest": "48afb9ebc9ec5fe87592a70caa35fb7da4adb05cada0eb9dabeb3a7dce35e421",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3",
@@ -23697,6 +24251,15 @@
       ]
     },
     {
+      "digest": "4d66e5e769fdf9804d9c41b2a5d37cc2228e5ea2ff3c68d30c63295861fefc6d",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingCandidate"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:68"
+      ]
+    },
+    {
       "digest": "4e011753f8263f436efaabfbb3b4db53a98fc55342c5ded2daf7208b217be159",
       "names": [],
       "sources": []
@@ -23745,13 +24308,6 @@
       "names": [],
       "sources": [
         "packages/context/session-reference/src/types.ts:18"
-      ]
-    },
-    {
-      "digest": "4fb35521863051e215a640a764f812b627bf0758bdf152417427724e9a51e8c8",
-      "names": [],
-      "sources": [
-        "packages/experimental/model-routing/src/types.ts:66"
       ]
     },
     {
@@ -24067,12 +24623,26 @@
       "sources": []
     },
     {
+      "digest": "644372d91524ec5dc3930fc987bf01e6f5568bd2d0d470eba236a826fe7bc512",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "6487b10ba7542f3c447b1e41a1c6a590b7bfafe0b9b66b49f34028da85bb970f",
       "names": [
         "packages/subagent/subagent/src/descriptor.ts#ContinuableSubagentDescriptorData"
       ],
       "sources": [
         "packages/subagent/subagent/src/descriptor.ts:72"
+      ]
+    },
+    {
+      "digest": "650e173b8de4b7688ee9798b5c29a29f50d109abff9be43720b5da2bc62d402d",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingRunnerUp"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:109"
       ]
     },
     {
@@ -24136,7 +24706,7 @@
         "packages/experimental/model-routing/src/types.ts#JudgeRule"
       ],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:36"
+        "packages/experimental/model-routing/src/types.ts:40"
       ]
     },
     {
@@ -24158,6 +24728,11 @@
     },
     {
       "digest": "69d238a6e9b08d67f601b1825962963d8d3523cb69ebf6208c697dc5d058c199",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "6a04bdf050e7deea709f730b0b6b7778e3b4b3efde881b348985ee8d6cffc3a2",
       "names": [],
       "sources": []
     },
@@ -24229,6 +24804,11 @@
       "sources": []
     },
     {
+      "digest": "6e3454dc2fc00b25aeb4c3052af86650e4e1d6bb79220f88a6ffbe295fdf49b9",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "6e52dd55a1d48954ed5464ec46fe34d9eb65f709baabc9561e7a279910b0c406",
       "names": [],
       "sources": [
@@ -24289,6 +24869,11 @@
       "sources": []
     },
     {
+      "digest": "6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "70b082fe78991edf13cf66e1b4d06cd2dcff9cacfd76f8cfb996bfb61939e7b2",
       "names": [],
       "sources": []
@@ -24326,6 +24911,11 @@
     },
     {
       "digest": "7382c4fc95fe8c5db65ca4d9da572b115d0dbb818b7f32c22ab040318ffbb4bc",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "73a0ca433e43fdb3cd5fdcebf7ab91ca034fd7e1f6ca6e2d7f5316008793d676",
       "names": [],
       "sources": []
     },
@@ -24385,6 +24975,11 @@
     },
     {
       "digest": "7af85bf70d4eafce63e739adae38ea85501e68df3a0e22f97f3a0be90fd9e4cb",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "7bf136510fc76ff425107a5527bffbd2c58c61a4bfb6990a852d0c32e778b43d",
       "names": [],
       "sources": []
     },
@@ -24559,6 +25154,11 @@
       "sources": [
         "packages/workflow/workflow/src/types.ts:63"
       ]
+    },
+    {
+      "digest": "8485faa709c09804ce2dbbf5f91f8a54cecabba029463f8b9cc09f6783d4e9f8",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "84ac8c1a66ffc697262e181f42e851259eae14038c113ca329fb4700ccdb1f7c",
@@ -24813,11 +25413,6 @@
       "sources": []
     },
     {
-      "digest": "96b86920af6be76b1f79f9330d25ae44bd2147ff97abd13c2aa4ae83cd795b7b",
-      "names": [],
-      "sources": []
-    },
-    {
       "digest": "96bfb916a727cd4445a594df264c523fc039749a31bfed924b8cc7bb308a5bb0",
       "names": [],
       "sources": []
@@ -24916,7 +25511,26 @@
       "sources": []
     },
     {
+      "digest": "9c7bba70285d8ec5a756bd25ac81724bfad7bd4fe5627bf73a281c4f041e0ede",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "9c90ec832cc1c0c03c4a31eea68835e00e617d593c8a8a3c17ca97ce1bafc3d6",
+      "names": [
+        "packages/experimental/model-routing/src/config.ts#FreeMode"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/config.ts:31"
+      ]
+    },
+    {
       "digest": "9d80129e13edfb6feb03ed327e6085c6ef60b97ad074244b2f5fd4667424a6a4",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "9dc0a4f10e4ca5ca0aff006f58af18e205cf0bc62965ef79f8b6d26907147943",
       "names": [],
       "sources": []
     },
@@ -25123,11 +25737,6 @@
       ]
     },
     {
-      "digest": "a9dfa40309b88aa7bf4f8ea47f97a6ebb46e92d0096ae2d07d72c40fa671c623",
-      "names": [],
-      "sources": []
-    },
-    {
       "digest": "aa0957eca50aeb28bcd2e6930b95809926edacb550c8c340ba526ba6b861b3d8",
       "names": [],
       "sources": []
@@ -25238,6 +25847,15 @@
       "digest": "af6e173f7be819bcd0a5c8d77918649c10ce761d8a184ff472f2e01ce64eb2e0",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "af8a21ffeb42b4986cb41127d286b302c6574928a08e86e11484ccb71b4aae4e",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingFilters"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:93"
+      ]
     },
     {
       "digest": "aff60ef947c18b012644852bdd0d5bfe72065e061dd563787c76c646b4a10f6b",
@@ -25519,7 +26137,7 @@
       "digest": "c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce",
       "names": [],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:89"
+        "packages/experimental/model-routing/src/types.ts:167"
       ]
     },
     {
@@ -25530,6 +26148,11 @@
       "sources": [
         "packages/workflow/tool-workflow/src/types.ts:29"
       ]
+    },
+    {
+      "digest": "c16b2346010f1ae6b3bf3c07a45cdef754311bfdddd243b4c77a66092c3dac22",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c170da8ab7c37635b10867b2571811d9e317ac3ec394e8ff8efe53f902fc41c1",
@@ -25567,6 +26190,16 @@
       "sources": [
         "packages/workflow/workflow/src/types.ts:110"
       ]
+    },
+    {
+      "digest": "c33c6ac4722f70e5e4989cd127b01fec1c320a88dc15a9fb742374f1b0062012",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "c363ac97e1e21dda433390f84a7f732f4b7ea5020a0f169c8e9b66cb024f4876",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "c43b119ce579b3e9983a0d3adc4ba402ebb9ba773d89738a2dab01ecf5813943",
@@ -25651,6 +26284,11 @@
       "sources": []
     },
     {
+      "digest": "cd0e13f6dcafa1b4d42eb70fe1870d0afc3ef595c432cdf5507f9dee7d2329f4",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "cd186c309e2bef305705e1d324139240f5e681f4f6a957d6a25b0225f65560df",
       "names": [],
       "sources": []
@@ -25701,13 +26339,6 @@
       "sources": []
     },
     {
-      "digest": "d1880e1d5ed5b72d41bfd095bb62ce1c8a117c5f34a9597aab7e569df7012cbf",
-      "names": [],
-      "sources": [
-        "packages/experimental/model-routing/src/types.ts:84"
-      ]
-    },
-    {
       "digest": "d28765f87d6b6ab408e0b2f3e7e297791b004b806d8e302c49903ebae815feb2",
       "names": [],
       "sources": []
@@ -25736,6 +26367,11 @@
     },
     {
       "digest": "d63b8b8ffad9c02fd80c43a17df4f240c1fe8118ecca9de34f9d5871838ab5b9",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "d66ba5eb62ddba9fc264067c47d1152ca3bd8c2bdf2ededb66695e04ab588550",
       "names": [],
       "sources": []
     },
@@ -25855,12 +26491,26 @@
       "sources": []
     },
     {
+      "digest": "e0d39b7fb4c2ef8d91fb1a6439a9fcc9957c01c70880fe50d6adb732e4b8e9e8",
+      "names": [
+        "packages/experimental/model-routing/src/select.ts#MeasuredMix"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/select.ts:40"
+      ]
+    },
+    {
       "digest": "e238196159cea23646c49d82be9fa532f7618e2d47082286d1c549ce2c451b3a",
       "names": [],
       "sources": []
     },
     {
       "digest": "e2ad8f5bcd813f268ffef1b10a12d7ddd2b8ced8b9b6d0275b3f6b7ed094a187",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "e2b303a2ee986bca3aa85c9d5fa3a27688a62dd8690fbce75f0c7a2e66f853c0",
       "names": [],
       "sources": []
     },
@@ -25946,6 +26596,11 @@
     },
     {
       "digest": "e6411b09c1d982f789bf741ca74e2bea69df56029847f86a6148e722039ee732",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "e704da6218847dab56255c1a19baf53ed1bb1ee88df9f829c84c1884076348d4",
       "names": [],
       "sources": []
     },
@@ -26069,6 +26724,11 @@
       ]
     },
     {
+      "digest": "f0aa28f35047dde4bf5c1a77e1e5d2b27d396d2e58057bd2f29193c41a577bdd",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "f1687f982fa3d41ef29e159feed154ecd13af4dd209acaee16038f223f2e9402",
       "names": [
         "packages/core/session/src/types.ts#TurnEndReason"
@@ -26099,13 +26759,9 @@
       ]
     },
     {
-      "digest": "f20f72a63cf970fc44ef7af9ac924efe1c6d0e6f376dc349f0b29d599d49f45a",
-      "names": [
-        "packages/experimental/model-routing/src/types.ts#RoutingEndpoint"
-      ],
-      "sources": [
-        "packages/experimental/model-routing/src/types.ts:24"
-      ]
+      "digest": "f2304c7e31b0d139e4f5573ce1726880097d4db27268cb8100ca9174f56471e6",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f230c0b583e23b25ee0a61dbe4c05e95c1e2ae44b27939501eb9e03696f0c278",
@@ -26134,6 +26790,11 @@
       "sources": [
         "packages/llm/llm/src/types.ts:396"
       ]
+    },
+    {
+      "digest": "f34c05667f9ac688fc4bd6cd3d3c698d8e1236d157744a853d1a7fdc5d5052d1",
+      "names": [],
+      "sources": []
     },
     {
       "digest": "f4a66f654996c093aae700ea4c434ff2ee3569fea9c0e5813ccf6afdccabd163",
@@ -26185,7 +26846,7 @@
         "packages/experimental/model-routing/src/types.ts#RoutingBoundary"
       ],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:21"
+        "packages/experimental/model-routing/src/types.ts:23"
       ]
     },
     {
@@ -26256,8 +26917,14 @@
     },
     {
       "digest": "fb8b6a2e53cb9cf44c551176de0fb77d1ddc60037b99a891ff8a860b6d5c29a0",
-      "names": [],
-      "sources": []
+      "names": [
+        "packages/experimental/model-routing/lib/types/select.d.ts#RequiredInput",
+        "packages/experimental/model-routing/src/select.ts#RequiredInput"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/lib/types/select.d.ts:46",
+        "packages/experimental/model-routing/src/select.ts:53"
+      ]
     },
     {
       "digest": "fbd2c74b346a1595b376139c587fadd23e4a21acc9c0abce342975b6cfc60986",
@@ -26318,6 +26985,11 @@
     },
     {
       "digest": "fee1caf8ab6a65c1bc981f5a1730164490f22a2a89ffa3d0b76f1f432c44c8b5",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84",
       "names": [],
       "sources": []
     }

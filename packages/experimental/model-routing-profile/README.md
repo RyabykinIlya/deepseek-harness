@@ -70,6 +70,8 @@ The tiers live in the `model-routing` settings namespace, which is written as `c
 
 The second row belongs to `dsh-experimental-threads-preset`, a different bundle. Its patch id is `threads-preset` — the row id that bundle inserts, not the `project` preset id its own `config.id` carries; a patch naming `project` matches no row, and the loader warns and skips it. Because `config:` replaces, that row repeats the preset keys `dsh-experimental-threads-profile` ships alongside the four routing keys. Installing this bundle alone leaves the block inert; installing both is what makes a Project coordinator start on `tiers/pro`.
 
+`input` states what each tier advertises, and a decision enforces it per model against the OpenRouter model catalog. The `input: [text]` above therefore serves text requests only. To serve images, declare `image` on the tier and list a model the catalog shows accepting image input; a tier that declares `image` without such a model fails an image request with `MODEL_ROUTING_NO_ENDPOINT`.
+
 <a id="credential"></a>
 ### Store the OpenRouter credential
 

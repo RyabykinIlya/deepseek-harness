@@ -95,14 +95,26 @@ describe('staging a tier', () => {
     await Promise.resolve()
     await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
     const ops = host.mutate.mock.calls[0]![0]
-    expect(ops.map(op => op.path.join('.'))).toEqual([
-      'tiers', 'judgeEnabled', 'defaultTier', 'cacheIdleMs', 'freeForSubagents', 'trustedUnknownProviders',
-    ])
+    // Only the field actually staged is written; the other five are untouched,
+    // so a later change to any of them in the base or profile layer keeps applying.
+    expect(ops.map(op => op.path.join('.'))).toEqual(['tiers'])
     const tiers = (ops[0] as { value: unknown }).value as ModelRoutingSettings['tiers']
     expect(tiers[0]?.models).toEqual(['deepseek/deepseek-v4-flash', 'z-ai/glm-5.3-flash'])
     expect(host.mutate.mock.calls[0]![1]).toBe(0)
     // Every tier with models is priced, so the page shows a price per selection.
     expect(quote).toHaveBeenCalledWith({ tier: 'flash', models: ['deepseek/deepseek-v4-flash', 'z-ai/glm-5.3-flash'] })
+  })
+
+  it('writes every staged field, and no more, when several are edited at once', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setJudgeEnabled(false)
+    face.setCacheIdleMinutes('15')
+    face.save()
+    await Promise.resolve()
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
+    const ops = host.mutate.mock.calls[0]![0]
+    expect(ops.map(op => op.path.join('.')).sort()).toEqual(['cacheIdleMs', 'judgeEnabled'])
   })
 
   it('refuses to write a draft the Host changed underneath', async () => {
@@ -136,6 +148,113 @@ describe('staging a tier', () => {
     card.dispose()
     card.inject().setJudgeEnabled(false)
     expect(host.mutate).not.toHaveBeenCalled()
+  })
+
+  it('stages a tier numeric field and writes the rounded value', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setTierField(0, 'contextWindow', '2000000')
+    face.setTierField(0, 'maxTokens', '65536')
+    face.save()
+    await Promise.resolve()
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
+    const tiers = (host.mutate.mock.calls[0]![0][0] as { value: unknown }).value as ModelRoutingSettings['tiers']
+    expect(tiers[0]?.contextWindow).toBe(2_000_000)
+    expect(tiers[0]?.maxTokens).toBe(65_536)
+  })
+
+  it('leaves a numeric field alone while the control is mid-edit, without snapping the shown text back', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setTierField(0, 'contextWindow', '')
+    const state = face.hooks.modelRoutingCard.getSnapshot()
+    expect(state.tiers[0]?.contextWindow).toBe(1_000_000)
+    // The control must keep showing exactly what was typed — an empty field —
+    // rather than the committed value, or a person clearing it to retype could
+    // never see the field go blank.
+    expect(state.tiers[0]?.contextWindowText).toBe('')
+    expect(state.dirty).toBe(false)
+    expect(host.mutate).not.toHaveBeenCalled()
+  })
+
+  it('rejects a tier number that rounds to zero, keeping the prior value and the typed text', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setTierField(0, 'contextWindow', '0.4')
+    const state = face.hooks.modelRoutingCard.getSnapshot()
+    // 0.4 is positive, but Math.round(0.4) is 0 — the stored value must not
+    // become 0, which validateSettings would refuse at save.
+    expect(state.tiers[0]?.contextWindow).toBe(1_000_000)
+    expect(state.tiers[0]?.contextWindowText).toBe('0.4')
+    expect(host.mutate).not.toHaveBeenCalled()
+  })
+
+  it('stages the trusted-providers text as typed, without re-joining it on every keystroke', async () => {
+    const { card } = controller()
+    const face = card.inject()
+    // A naive implementation re-derives the control's value from
+    // `splitList(...).join(' ')`, which strips the separator the instant it is
+    // typed — a second provider could never be entered.
+    face.setTrustedProviders('stealth ')
+    expect(face.hooks.modelRoutingCard.getSnapshot().trustedProvidersText).toBe('stealth ')
+    face.setTrustedProviders('stealth streamlake')
+    expect(face.hooks.modelRoutingCard.getSnapshot().trustedProvidersText).toBe('stealth streamlake')
+  })
+
+  it('parses the staged trusted-providers text only at save', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setTrustedProviders('stealth, streamlake')
+    face.save()
+    await Promise.resolve()
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
+    const ops = host.mutate.mock.calls[0]![0]
+    const written = ops.find(op => op.path.join('.') === 'trustedUnknownProviders') as { value: unknown }
+    expect(written.value).toEqual(['stealth', 'streamlake'])
+  })
+
+  it('stages cache-idle-minutes text without resetting on an empty or non-positive value', async () => {
+    const { card, host } = controller()
+    const face = card.inject()
+    face.setCacheIdleMinutes('')
+    let state = face.hooks.modelRoutingCard.getSnapshot()
+    expect(state.cacheIdleMinutesText).toBe('')
+    expect(state.cacheIdleMinutes).toBe(10) // 600_000ms stored, unchanged
+    face.setCacheIdleMinutes('-5')
+    state = face.hooks.modelRoutingCard.getSnapshot()
+    expect(state.cacheIdleMinutesText).toBe('-5')
+    expect(state.cacheIdleMinutes).toBe(10)
+    expect(host.mutate).not.toHaveBeenCalled()
+    face.setCacheIdleMinutes('2.5')
+    face.save()
+    await Promise.resolve()
+    await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
+    const ops = host.mutate.mock.calls[0]![0]
+    const written = ops.find(op => op.path.join('.') === 'cacheIdleMs') as { value: unknown }
+    expect(written.value).toBe(150_000)
+  })
+
+  it('projects the route-wide settings the card renders', async () => {
+    const { card } = controller({
+      value: {
+        tiers: TIERS, judgeEnabled: false, defaultTier: 'flash', cacheIdleMs: 300_000,
+        freeForSubagents: true, trustedUnknownProviders: ['stealth', 'streamlake'],
+      },
+    })
+    const state = card.inject().hooks.modelRoutingCard.getSnapshot()
+    expect(state.judgeEnabled).toBe(false)
+    expect(state.defaultTier).toBe('flash')
+    expect(state.cacheIdleMinutes).toBe(5)
+    expect(state.freeForSubagents).toBe(true)
+    expect(state.trustedProvidersText).toBe('stealth streamlake')
+  })
+
+  it('switches the selected tier without marking the form dirty', async () => {
+    const { card } = controller()
+    const face = card.inject()
+    face.selectTier(1)
+    expect(face.hooks.modelRoutingCard.getSnapshot().selectedTier).toBe(1)
+    expect(face.hooks.modelRoutingCard.getSnapshot().dirty).toBe(false)
   })
 })
 

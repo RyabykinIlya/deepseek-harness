@@ -24,6 +24,8 @@ export type ModelRoutingLocaleKey =
   | 'boundary.failure'
   | 'tier.pro'
   | 'tier.flash'
+  | 'routeSettings'
+  | 'tierTabsLabel'
   | 'tierName'
   | 'tierLabel'
   | 'tierModels'
@@ -76,6 +78,8 @@ export const en: LocaleDictOf<typeof NS> = {
   'boundary.failure': 'after a provider failure',
   'tier.pro': 'pro',
   'tier.flash': 'flash',
+  routeSettings: 'Route',
+  tierTabsLabel: 'Tier',
   tierName: 'Tier name',
   tierLabel: 'Tier label',
   tierModels: 'Models',
@@ -122,6 +126,8 @@ export const zh: LocaleDictOf<typeof NS> = {
   'boundary.failure': '服务商失败之后',
   'tier.pro': 'pro',
   'tier.flash': 'flash',
+  routeSettings: '路由',
+  tierTabsLabel: '层级',
   tierName: '层级名称',
   tierLabel: '层级标签',
   tierModels: '模型',

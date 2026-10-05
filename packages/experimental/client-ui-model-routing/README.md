@@ -38,7 +38,7 @@ The chip reads one projection and shows `<tier> · <model>`, with the model stri
 <a id="page"></a>
 ### The settings page
 
-The page stages a draft and writes it as one revision-fenced mutation, which is what stops two editors from interleaving two half-applied tier lists. Prices are read through `modelRouting.quote` per tier and are never stored: a price is a live fact and a stored one is stale on arrival. The page shows one tier at a time, with the other tiers' model counts still visible, because a tier list read as three separate forms is three separate mistakes.
+The page stages a draft and writes it as one revision-fenced mutation, which is what stops two editors from interleaving two half-applied tier lists. Prices are read through `modelRouting.quote` per tier and are never stored: a price is a live fact and a stored one is stale on arrival. A tab strip switches between tiers, one editable at a time, because a tier list read as several separate forms at once is several separate mistakes.
 
 -----
 
@@ -86,8 +86,7 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Adding or removing a tier is not offered here. A tier is a policy, and the plan's §5 keeps that a configuration decision; only its membership, filters, and label are editable.
-- `contextWindow` and `maxTokens` are shown read-only. They bound what compaction believes the model can hold, and a wrong value fails later and further away than this page.
+- Adding or removing a tier is not offered here. A tier is a policy, not a per-session preference, so reshaping the policy itself stays a configuration-file decision; membership, filters, label, context window, output cap, and the route-wide judge and cache settings are all editable.
 - The page prices through one live read per tier per draft. A tier with many models therefore costs one endpoint read per model on every edit; a debounced, shared price cache would be the next step.
 
 <a id="dev-note"></a>

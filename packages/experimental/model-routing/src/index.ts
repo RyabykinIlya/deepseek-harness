@@ -51,12 +51,17 @@ export {
 export type {
   EndpointLists,
   EndpointRejection,
+  MeasuredMix,
+  MixSource,
   RankedEndpoint,
+  RejectedEndpoint,
   SelectionPolicy,
   SelectionResult,
   TurnMix,
   UsageTotals,
 } from './select.ts'
+export { DiagnosticsFile, candidatesOf, cheapestRejectedOf, diagnosticsLine } from './diagnostics.ts'
+export type { DiagnosticsFileDeps, DiagnosticsLine } from './diagnostics.ts'
 export {
   applyModelRoutingEvent,
   emptyModelRoutingState,

@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-05-model-routing-decision-diagnostics.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-05-model-routing-decision-diagnostics.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-05-model-routing-decision-diagnostics:
+  en: a5354b60d6a5c717
+  zh: 992e34c56bea89ab
+/2026-10-05-model-routing-decision-diagnostics/summary:
+  en: d7f66f90503ab24d
+  zh: cf38b2d62a9a49bc
+/2026-10-05-model-routing-decision-diagnostics/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-05-model-routing-decision-diagnostics/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-05-model-routing-decision-diagnostics/compatibility:
+  en: 058b089b908584f8
+  zh: 6053a0cd927bdc80
+/2026-10-05-model-routing-decision-diagnostics/verification:
+  en: e6d446ad12248636
+  zh: 2212d5bfde965ea0
+/2026-10-05-model-routing-decision-diagnostics/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

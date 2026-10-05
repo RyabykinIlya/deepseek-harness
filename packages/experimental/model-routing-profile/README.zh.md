@@ -70,6 +70,8 @@ kind: "package-bundle"
 
 第二行属于另一个组合包 `dsh-experimental-threads-preset`。它的 patch id 是 `threads-preset` —— 即该组合包插入的行 id，而不是其 `config.id` 所带的 `project` 预设 id；指向 `project` 的 patch 匹配不到任何行，加载器会警告并跳过。因为 `config:` 是整体替换，该行除四个路由键外还要重写 `dsh-experimental-threads-profile` 随包发出的预设键。只安装本组合包会让这一块保持惰性；把两者都安装，才会让 Project 协调者以 `tiers/pro` 启动。
 
+`input` 声明每个 tier 对外公布什么，而决策会依据 OpenRouter 模型目录按模型强制执行它。因此上文的 `input: [text]` 只服务文本请求。要服务图片，请在 tier 上声明 `image`，并列出目录中证明接受图片输入的模型；声明了 `image` 却没有这样模型的 tier，会让图片请求以 `MODEL_ROUTING_NO_ENDPOINT` 失败。
+
 <a id="credential"></a>
 ### 存储 OpenRouter 凭据
 
