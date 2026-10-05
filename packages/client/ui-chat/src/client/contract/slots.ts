@@ -167,6 +167,13 @@ export interface ChatNodeOwnerProps {
   inspectCall: ((callId: ToolCallId) => void) | undefined
   forkAt: (seq: number) => void
   /**
+   * Continue the conversation in a new Session that ends before this event,
+   * with the message text back in the composer.
+   * @param seq - durable seq of the message whose text is restored.
+   * @param text - that message's body, placed in the new composer's draft.
+   */
+  restoreAt: (seq: number, text: string) => void
+  /**
    * Session-authorized image loader, down-threaded from the Chat view so a
    * chat-node renderer can render the attachment presentation slot directly
    * with only the durable references plus this loader, instead of receiving a
@@ -256,6 +263,13 @@ export interface ChatViewInjected {
     read: () => ChatScrollPosition | null
   }
   forkAt: (seq: number) => void
+  /**
+   * Continue the conversation in a new Session that ends before this event,
+   * with the message text back in the composer.
+   * @param seq - durable seq of the message whose text is restored.
+   * @param text - that message's body, placed in the new composer's draft.
+   */
+  restoreAt: (seq: number, text: string) => void
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
 }
 

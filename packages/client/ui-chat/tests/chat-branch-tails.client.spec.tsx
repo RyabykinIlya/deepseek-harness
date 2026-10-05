@@ -7,6 +7,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type {
   ChatConversationViewNode, ConversationNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import {
   formatMessageClock, msUntilNextLocalMidnight, startOfLocalDay,
@@ -43,10 +44,11 @@ interface MessageItemProps {
   readonly t: ChatNodeViewProps['t']
   readonly referenceLabels?: readonly string[]
   readonly skillNames?: readonly string[]
+  readonly restoreAt?: ChatNodeViewProps['restoreAt']
 }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
-function MessageItem({ node, t: translate, referenceLabels, skillNames }: MessageItemProps) {
+function MessageItem({ node, t: translate, referenceLabels, skillNames, restoreAt }: MessageItemProps) {
   const kind = node.kind === 'assistant' ? 'assistant-step' : node.kind
   const viewNode: ChatConversationViewNode = {
     key: `fixture:${node.kind}:${node.seq}`,
@@ -67,7 +69,8 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames }: Messag
         : node,
   }
   const props = {
-    node: viewNode, t: translate, renderMessageImages, openFile: vi.fn(), openSkill: vi.fn(), useChat: useDetachedChat,
+    node: viewNode, t: translate, renderMessageImages, openFile: vi.fn(), openSkill: vi.fn(),
+    useChat: useDetachedChat, restoreAt: restoreAt ?? vi.fn(),
   } as unknown as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
@@ -181,6 +184,61 @@ describe('MessageItem arms', () => {
     expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
     expect(writeText).toHaveBeenCalledWith('hello bubble')
+  })
+
+  it('user bubbles hand their own seq and body to restore, and keep branch absent', () => {
+    const restoreAt = vi.fn()
+    render(
+      <MessageItem
+        t={t}
+        restoreAt={restoreAt}
+        node={{
+          kind: 'user', seq: 3, time: 1_000,
+          content: [{ type: 'text', text: 'restore me here' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    expect(screen.getByRole('button', { name: '恢复对话并编辑此消息' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '在新对话中分支' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '恢复对话并编辑此消息' }))
+    expect(restoreAt).toHaveBeenCalledExactlyOnceWith(3, 'restore me here')
+  })
+
+  it('a steering message restores its own seq and body too', () => {
+    const restoreAt = vi.fn()
+    render(
+      <MessageItem
+        t={t}
+        restoreAt={restoreAt}
+        node={{
+          kind: 'steering', messageId: 'm-1' as MessageId, seq: 5, time: 1_000,
+          content: [{ type: 'text', text: 'steer me back' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '恢复对话并编辑此消息' }))
+    expect(restoreAt).toHaveBeenCalledExactlyOnceWith(5, 'steer me back')
+  })
+
+  it('the transcript tail restores too, because the message returns for editing', () => {
+    const restoreAt = vi.fn()
+    render(
+      <MessageItem
+        t={t}
+        restoreAt={restoreAt}
+        node={{
+          kind: 'user', seq: 7, time: 1_000,
+          content: [{ type: 'text', text: 'the very last message' }] as never,
+          source: null,
+        }}
+      />,
+    )
+    const restore = screen.getByRole('button', { name: '恢复对话并编辑此消息' })
+    expect(restore.getAttribute('aria-disabled')).toBeNull()
+    fireEvent.click(restore)
+    expect(restoreAt).toHaveBeenCalledExactlyOnceWith(7, 'the very last message')
   })
 
   it('user copy falls back to execCommand when clipboard.writeText is unavailable', () => {

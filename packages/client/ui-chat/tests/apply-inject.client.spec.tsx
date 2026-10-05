@@ -205,6 +205,43 @@ describe('Chat inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('restores a message by cutting before it and handing the body to the new composer', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(b.rootReference)
+    const requestDraftInitialization = vi.spyOn(b.runtime.ctx.conversation.input, 'requestDraftInitialization')
+      .mockReturnValue('applied')
+    const fork = vi.spyOn(b.runtime.sessions, 'fork').mockImplementation(async (input) => {
+      input.onCreated?.(ROOT)
+      return ROOT
+    })
+    await b.runtime.sessions.replaceEvents(ROOT, [
+      { type: 'event', event: { type: 'user/message', seq: SessionSeq(4), time: 4, surfaceOp: 'append', data: {
+        id: MessageId('ask'), role: 'user', content: [{ type: 'text', text: 'restore me' }], source: { kind: 'user' },
+      } } },
+      { type: 'event', event: { type: 'turn/end', seq: SessionSeq(9), time: 9, data: { turn: 1, reason: { kind: 'completed' } } } },
+    ])
+    injected.restoreAt(4, 'restore me')
+    // The cut is inclusive, so the message's own event stays out of the child.
+    await vi.waitFor(() => {
+      expect(fork).toHaveBeenCalledWith({
+        sessionId: ROOT, atSeq: 3, increaseTitle: true, onCreated: expect.any(Function) as (childId: SessionId) => void,
+      })
+    })
+    expect(b.openSession).toHaveBeenCalledWith(ROOT)
+    expect(requestDraftInitialization).toHaveBeenCalledExactlyOnceWith(
+      expect.anything() as never,
+      { prompt: 'restore me', clearPreviousDraft: true },
+    )
+    fork.mockRestore()
+    injected.restoreAt(4, 'restore me')
+    await vi.waitFor(() => {
+      expect(b.runtime.sessions.calls).toContainEqual({
+        method: 'fork', args: [{ sessionId: ROOT, atSeq: 3, increaseTitle: true, onCreated: expect.any(Function) as (childId: SessionId) => void }],
+      })
+    })
+    await b.runtime.dispose()
+  })
+
   it('addresses file paths under the Session\'s scope and opens them in the right Sidebar', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)

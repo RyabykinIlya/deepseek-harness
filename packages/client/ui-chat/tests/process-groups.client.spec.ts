@@ -45,7 +45,7 @@ function separator(seq: number, inTurn: boolean): ChatNode<'user'> | ChatNode<'s
   const user: ChatNode<'user'> = {
     key: `user:${seq}`, id: `user:${seq}`, kind: 'user', target: 'chat', anchorSeq: seq,
     location: inTurn ? { kind: 'turn', turn } : { kind: 'session' }, visibility: 'visible',
-    data: { kind: 'user', seq, time: seq, content: [{ type: 'text', text: 'continue' }], source: null },
+    data: { kind: 'user', messageId: `ask:${seq}` as MessageId, seq, time: seq, content: [{ type: 'text', text: 'continue' }], source: null },
   }
   return inTurn ? { ...user, kind: 'steering', data: { ...user.data, kind: 'steering', messageId: 'steer' as MessageId } } : user
 }

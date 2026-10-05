@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type {
   ContextMessageNode, ConversationNodeDefinition, SteeringMessageNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -8,6 +9,8 @@ import { chatNode } from './common.ts'
 import { contextForm, contextProducer } from './event-projection.ts'
 
 interface ReferencedUserMessageNode extends UserMessageNode {
+  /** Stable message identity, as the steering node already carries. */
+  readonly messageId: MessageId
   /** Labels cited by the immediately following session-reference context. */
   readonly referenceLabels?: readonly string[]
   /** Skill names the same step's `skill-invocation` injections loaded. */
@@ -103,6 +106,7 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
       }
       : {
         kind: 'user',
+        messageId: event.data.id,
         seq: event.seq,
         time: event.time,
         content: event.data.content,

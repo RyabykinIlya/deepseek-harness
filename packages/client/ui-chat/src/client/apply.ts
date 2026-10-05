@@ -5,6 +5,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { GroupKey } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -24,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
   ChatNodeInjected, ChatScrollPosition, ChatViewInjected, QuotaNoticeInjected, QuotaNoticeState, TurnTailOwnerProps,
 } from './contract/slots.ts'
+import type { ChatNode } from './contract/chat-nodes.ts'
 import type { ChatSnapshot } from './contract/snapshot.ts'
 import { EMPTY_CHAT_SNAPSHOT } from './contract/snapshot.ts'
 import { ApprovalCommand } from './chat/ApprovalCommand.tsx'
@@ -51,6 +53,20 @@ const CHAT_NODE_INJECT: ChatNodeInjected = {
     },
     disclosure: (_standard, { disclosureReset }) => bindDisclosure(disclosureReset),
   },
+}
+
+/**
+ * Durable identity of the sent message a restore cut addresses.
+ * @param snapshot - current Chat snapshot.
+ * @param seq - the `user/message` event seq the control sits on.
+ * @returns the message id, or `undefined` when the loaded window no longer holds that message.
+ */
+function userMessageIdAt(snapshot: ChatSnapshot, seq: number): MessageId | undefined {
+  for (const entry of snapshot.nodes.values()) {
+    const node = entry as ChatNode
+    if (node.kind === 'user' && node.data.seq === seq) return node.data.messageId
+  }
+  return undefined
 }
 
 /** Services required by the Chat target and its presentation registrations. */
@@ -193,6 +209,49 @@ export function apply(ctx: Context): void {
         const session = binding.session
         const chat = chatSource(binding)
         const conversation = ctx.uiConversation.binding(binding)
+        // Branch and restore cut the same prefix and open the same child. Each
+        // names the durable message its own control sits on and reports the
+        // action it performed.
+        const forkFrom = (
+          seq: number,
+          messageId: MessageId | undefined,
+          action: 'branch' | 'restore',
+          adoptDraft?: (childId: SessionId) => void,
+        ) => {
+          ctx.sessions.fork({
+            sessionId,
+            atSeq: seq,
+            increaseTitle: true,
+            onCreated: (childId) => {
+              const parent = messageId === undefined ? {} : { parent_message_id: messageId }
+              const analytics = ctx.get('productAnalytics')
+              if (action === 'branch') {
+                analytics?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, ...parent, click_position: 'footer' })
+              } else {
+                analytics?.track('restore_conversation_click', { session_id: childId, parent_session_id: sessionId, ...parent })
+              }
+            },
+          })
+            .then((childId) => {
+              ctx.uiWorkspace.openSession(childId)
+              adoptDraft?.(childId)
+            })
+            .catch(() => {
+              // Fork or child-title failure leaves the source view unchanged.
+            })
+        }
+        // Navigation retains the child before `adoptDraft` runs, so its binding
+        // is live and the draft is adopted before the composer first paints. A
+        // child that publishes no binding, or a deployment mounting no
+        // conversation plugin, leaves the new composer empty — the cut itself
+        // already succeeded either way.
+        const adoptDraft = (childId: SessionId, text: string): void => {
+          const conversation = ctx.get('conversation')
+          if (conversation === undefined) return
+          const child = ctx.sessions.binding(childId)
+          if (child === undefined) return
+          conversation.input.requestDraftInitialization(child, { prompt: text, clearPreviousDraft: true })
+        }
         return {
           hooks: { presentation },
           keyedHooks: {
@@ -247,14 +306,14 @@ export function apply(ctx: Context): void {
           },
           forkAt: (seq) => {
             const turn = [...chat.getSnapshot().timeline.turns.values()].find(turn => turn.end?.seq === seq)
-            const messageId = turn?.data.get('turn-tail')?.closing?.finalNode.messageId
-            ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true, onCreated: (childId) => {
-              ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, ...messageId === undefined ? {} : { parent_message_id: messageId }, click_position: 'footer' })
-            } })
-              .then((childId) => { ctx.uiWorkspace.openSession(childId) })
-              .catch(() => {
-                // Fork or child-title failure leaves the source view unchanged.
-              })
+            forkFrom(seq, turn?.data.get('turn-tail')?.closing?.finalNode.messageId, 'branch')
+          },
+          restoreAt: (seq, text) => {
+            // The cut is inclusive, so the message itself must stay out of the
+            // child: restoring it into the composer is what puts it back.
+            forkFrom(seq - 1, userMessageIdAt(chat.getSnapshot(), seq), 'restore', (childId) => {
+              adoptDraft(childId, text)
+            })
           },
         }
       },

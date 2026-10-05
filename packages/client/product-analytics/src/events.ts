@@ -35,6 +35,12 @@ export interface ProductEventMap {
     parent_message_id?: MessageId
     click_position: 'footer' | 'sidebar'
   }
+  /** Restore ended a new conversation at a sent message and opened it. */
+  restore_conversation_click: {
+    session_id: SessionId
+    parent_session_id: SessionId
+    parent_message_id?: MessageId
+  }
   sidebar_menu_click: { menu_name: 'plugin' | 'cron' }
   plugin_toggle: { plugin_name: string; plugin_type: 'plugin' | 'bundle'; is_enabled: boolean; is_builtin: boolean }
   plugin_add_button_click: Record<string, never>

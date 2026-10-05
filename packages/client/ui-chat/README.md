@@ -73,6 +73,19 @@ Artifact extensions can subscribe to one Turn and Node kind through `ChatNodeSto
 
 The completed-turn action footer follows the recorded Turn end. Its action row starts 20px below preceding prose or extension content. Actions remain visible only on the latest Turn when its final visible content is a reply; other endings and historical Turns reveal actions on hover or keyboard focus. Devices without hover keep actions visible.
 
+---
+
+<a id="restore-conversation"></a>
+## Restore conversation
+
+A sent user or steering message carries a restore control beside its copy action. It continues the conversation in a new Session whose log ends immediately **before** that message, opens it, and places the message body in the new composer, so the user can edit it, extend it, or resend it unchanged. Because the message itself falls outside the cut, the resent text takes its place instead of appearing as a second bubble. The source Session is unchanged and stays in the sidebar. This is the fork primitive the Host already offers, not a deletion — the append-only session log ([persistence](../../../docs/subsystems/persistence.md)) has no operation that removes committed events.
+
+A cut landing inside an open Turn inherits synthetic `forked` closers, so the new Session ends that Turn just before the message and the next prompt continues from there. The fork cut is inclusive, so a restore sends `seq - 1`; a message with no predecessor leaves the fork refused and the source view unchanged.
+
+The draft is adopted through the Conversation plugin's `input.requestDraftInitialization`, which replaces existing composer text. A deployment mounting no Conversation plugin, or a child that publishes no binding, still gets the cut and an empty composer. Attachments do not come back: a recorded message carries durable attachment references while a composer draft needs browser-owned attachments, so only the text is restored.
+
+Branch and restore share one fork call and differ in which message names the cut and which analytics action they report.
+
 -----
 
 <a id="turn-process-folding"></a>
