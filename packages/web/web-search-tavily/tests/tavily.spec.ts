@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
 import {
@@ -22,6 +23,7 @@ import {
 import type { TavilySearchProviderOptions } from '../src/provider.ts'
 import type { TavilySearchResponse } from '../src/types.ts'
 import * as tavilyPlugin from '../src/index.ts'
+import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
 
 /** Options for one provider under test; `searchProvider` overrides them per case. */
 const options: TavilySearchProviderOptions = {
@@ -630,6 +632,32 @@ describe('web-search-tavily plugin registration', () => {
 
   it('has no default export (namespace plugin export shape)', () => {
     expect('default' in tavilyPlugin).toBe(false)
+  })
+
+  it('never lets a credential store rejection reach the Host as an unhandled rejection', async () => {
+    // `refresh()` runs unawaited from load, from a later credentials mount, and
+    // from a `credentials/reference-updated` event — any of those propagating a
+    // rejection would reach app-boot's fail-loud handler and exit the process
+    // over a credential read a real search would simply have retried.
+    class FailingResolveCredentials extends MemoryCredentials {
+      override resolve(_ref: CredentialRef): Promise<ResolvedCredential | undefined> {
+        return Promise.reject(new Error('credential store unavailable'))
+      }
+    }
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const ctx = new Context()
+      await ctx.plugin(WebRuntime, {})
+      await ctx.plugin(FailingResolveCredentials)
+      await ctx.plugin(tavilyPlugin, { apiKeyEnv: 'TAVILY_API_KEY' })
+      // Let every unawaited `refresh()` microtask settle.
+      await new Promise((resolve) => { setTimeout(resolve, 0) })
+      await ctx.fiber.dispose()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+    expect(unhandled).not.toHaveBeenCalled()
   })
 
   it('survives the real Loader unwrapExports path keeping name/inject/Config', () => {

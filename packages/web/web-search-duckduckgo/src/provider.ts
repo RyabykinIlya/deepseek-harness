@@ -53,11 +53,20 @@ export const DUCKDUCKGO_DEFAULT_TIMEOUT_MS = 15_000
  */
 export const DUCKDUCKGO_DEFAULT_MAX_RESPONSE_BYTES = 1_048_576
 
-/** One result anchor: its target attribute and its inner HTML. */
-const TITLE_ANCHOR = /<a\b[^>]*\bclass="[^"]*\bresult__a\b[^"]*"[^>]*>[\s\S]*?<\/a>/giu
+/**
+ * One result anchor: its target attribute and its inner HTML. The inner-HTML
+ * quantifier is bounded rather than an unbounded `[\s\S]*?`: an operator can
+ * configure `endpoint` to any host, and a page with many anchors that are
+ * never closed by a `</a>` makes an unbounded lazy scan quadratic in the
+ * number of such anchors — measured at 1.5s for 8k unterminated anchors
+ * inside the 1 MiB response cap. A real title or snippet anchor's inner HTML
+ * is well under this bound; one that exceeds it fails to match, which
+ * {@link extractResultLinks} already treats as "no href" for that anchor.
+ */
+const TITLE_ANCHOR = /<a\b[^>]*\bclass="[^"]*\bresult__a\b[^"]*"[^>]*>[\s\S]{0,4096}?<\/a>/giu
 
 /** The snippet anchor of one result block; it always follows its title anchor. */
-const SNIPPET_ANCHOR = /<a\b[^>]*\bclass="[^"]*\bresult__snippet\b[^"]*"[^>]*>[\s\S]*?<\/a>/iu
+const SNIPPET_ANCHOR = /<a\b[^>]*\bclass="[^"]*\bresult__snippet\b[^"]*"[^>]*>[\s\S]{0,4096}?<\/a>/iu
 
 /** The `href` attribute of a matched anchor tag. */
 const HREF_ATTRIBUTE = /\bhref="([^"]*)"/iu
@@ -245,14 +254,46 @@ function plainText(html: string): string {
  * targets on some blocks and wraps others, so a relative target is dropped rather
  * than guessed at and a non-http scheme is refused.
  *
+ * Every result anchor — ad and organic alike — points at DuckDuckGo's own
+ * `/l/?uddg=<encoded target>` click-redirect rather than the destination
+ * directly. Fetching that wrapper returns a 200 page whose only content is a
+ * JS redirect, so the model would see no content for every source unless the
+ * real target is unwrapped here. An ad's `uddg` value itself points at
+ * DuckDuckGo's `y.js` click-tracking endpoint rather than the advertiser's
+ * site — that remaining DuckDuckGo-hosted target, never a real destination,
+ * is what distinguishes an ad from an organic result at this layer, so it is
+ * dropped rather than surfaced as a citeable source. A wrapper this cannot
+ * unwrap is dropped too, rather than citing the useless wrapper URL itself.
+ *
  * @param href - the decoded `href` attribute value.
- * @returns the absolute http(s) URL, or `undefined` when the target is unusable.
+ * @returns the absolute http(s) URL, or `undefined` for an unusable, unwrappable, or ad target.
  */
 function absoluteHttpUrl(href: string): string | undefined {
   const candidate = href.startsWith('//') ? `https:${href}` : href
   if (!URL.canParse(candidate)) return undefined
   const url = new URL(candidate)
-  return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+  if (url.pathname !== '/l/' || !isDuckDuckGoHost(url.hostname)) return url.href
+  const unwrapped = unwrapRedirect(url)
+  return unwrapped === undefined || isDuckDuckGoHost(unwrapped.hostname) ? undefined : unwrapped.href
+}
+
+/**
+ * Unwrap DuckDuckGo's own `/l/?uddg=<encoded target>&rut=…` click-redirect to the
+ * URL it actually points at.
+ * @param url - a target already confirmed to be this redirect's path and host.
+ * @returns the unwrapped target, or `undefined` when `uddg` is absent or not an http(s) URL.
+ */
+function unwrapRedirect(url: URL): URL | undefined {
+  const target = url.searchParams.get('uddg')
+  if (target === null || !URL.canParse(target)) return undefined
+  const unwrapped = new URL(target)
+  return unwrapped.protocol === 'https:' || unwrapped.protocol === 'http:' ? unwrapped : undefined
+}
+
+/** Whether a hostname is DuckDuckGo's own domain or a subdomain of it. */
+function isDuckDuckGoHost(hostname: string): boolean {
+  return hostname === 'duckduckgo.com' || hostname.endsWith('.duckduckgo.com')
 }
 
 /**
@@ -290,9 +331,14 @@ async function readBoundedText(response: Response, maxBytes: number): Promise<st
   return text + decoder.decode()
 }
 
-/** True for a fetch/`AbortSignal` abort. */
+/**
+ * True for a fetch/`AbortSignal` abort. Node names the reason `AbortError` for an explicit
+ * `controller.abort()` and `TimeoutError` for `AbortSignal.timeout()` firing — this provider's
+ * own deadline is the latter, so both must count or every real timeout (as opposed to a test
+ * double that mocks the former) would fall through to the generic transport-failure message.
+ */
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
+  return error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')
 }
 
 /** True for a limit this provider can enforce (a positive whole number). */

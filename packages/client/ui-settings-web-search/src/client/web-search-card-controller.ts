@@ -66,6 +66,23 @@ export interface WebSearchProviderSpec {
 }
 
 /**
+ * The DeepSeek provider, named once because it is both the first entry of the
+ * list and the default a caller inherits when it names no provider.
+ *
+ * Naming it separately is what lets the callers below read a namespace and a
+ * default without indexing the list, whose element type is optional.
+ */
+const DEEPSEEK_PROVIDER: WebSearchProviderSpec = {
+  id: 'deepseek-official',
+  namespace: 'web-search-deepseek',
+  defaultApiKeyRef: 'DEEPSEEK_API_KEY',
+  sectionFields: [
+    { field: 'baseURL', numeric: false, label: 'baseUrl', hint: 'baseUrlHint' },
+    { field: 'maxUses', numeric: true, label: 'maxUses', hint: 'maxUsesHint' },
+  ],
+}
+
+/**
  * Every search provider the page knows how to configure.
  *
  * Namespaces and section fields are spelled here rather than imported: a client
@@ -77,15 +94,7 @@ export interface WebSearchProviderSpec {
  * no section field at all, so there is no credential block and nothing to edit.
  */
 export const WEB_SEARCH_PROVIDERS: readonly WebSearchProviderSpec[] = [
-  {
-    id: 'deepseek-official',
-    namespace: 'web-search-deepseek',
-    defaultApiKeyRef: 'DEEPSEEK_API_KEY',
-    sectionFields: [
-      { field: 'baseURL', numeric: false, label: 'baseUrl', hint: 'baseUrlHint' },
-      { field: 'maxUses', numeric: true, label: 'maxUses', hint: 'maxUsesHint' },
-    ],
-  },
+  DEEPSEEK_PROVIDER,
   {
     id: 'brave',
     namespace: 'web-search-brave',
@@ -119,7 +128,7 @@ function sectionSpec(declared: WebSearchSectionField): SettingsFieldSpec {
 }
 
 /** Namespace of the DeepSeek search provider, kept for callers that name one. */
-export const WEB_SEARCH_NS = WEB_SEARCH_PROVIDERS[0]!.namespace
+export const WEB_SEARCH_NS = DEEPSEEK_PROVIDER.namespace
 
 /** Form field the credential control stages under. */
 const API_KEY_FIELD = 'apiKey'
@@ -237,7 +246,7 @@ export class WebSearchCardController {
     private readonly scope: SettingsFormScope<WebSearchSettings>,
     private readonly ctx: ClientContext,
     /** Which provider's namespace this form edits. */
-    private readonly provider: WebSearchProviderSpec = WEB_SEARCH_PROVIDERS[0]!,
+    private readonly provider: WebSearchProviderSpec = DEEPSEEK_PROVIDER,
   ) {
     this.form = new SettingsFormModel(
       scope,

@@ -32,7 +32,10 @@ async function searchOnce(ctx: Context): Promise<string> {
     .mockImplementation(() => Promise.resolve(jsonResponse(ONE_RESULT)))
   fetchSpy.mockClear()
   await ctx.web.search({ query: 'anything' })
-  return String(fetchSpy.mock.calls.at(-1)?.[0] ?? '')
+  const target: unknown = fetchSpy.mock.calls.at(-1)?.[0]
+  if (target instanceof URL) return target.href
+  if (typeof target === 'string') return target
+  return target instanceof Request ? target.url : ''
 }
 
 afterEach(() => {

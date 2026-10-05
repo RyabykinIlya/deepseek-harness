@@ -79,7 +79,7 @@ describe('ui-settings-web-search apply', () => {
 
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(2) })
     const byId = new Map(slots.entries('plugins.item').map(entry => [
-      String((entry.options as { id: string }).id), resolveSlotLabel(entry.options.label),
+      (entry.options as { id: string }).id, resolveSlotLabel(entry.options.label),
     ]))
     // A provider the Host does not serve contributes nothing.
     expect(byId.has('web-search-deepseek-official')).toBe(false)
@@ -120,7 +120,7 @@ describe('ui-settings-web-search apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(3) })
-    const ids = slots.entries('plugins.item').map(entry => String((entry.options as { id: string }).id))
+    const ids = slots.entries('plugins.item').map(entry => (entry.options as { id: string }).id)
     expect(ids.filter(id => id === 'web-search-provider')).toHaveLength(1)
     expect(ids.sort()).toEqual(['web-search-brave', 'web-search-provider', 'web-search-tavily'])
   })

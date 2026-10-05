@@ -469,11 +469,9 @@ describe('BraveSearchProvider error handling', () => {
 
   it('maps an unparseable success body to WEB_PROVIDER_ERROR', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response('not json', { status: 200 })))
-    await expect(provider().search({ query: 'q' }))
-      .rejects.toThrow(expect.objectContaining({
-        code: 'WEB_PROVIDER_ERROR',
-        message: expect.stringContaining('Brave Search returned an unprocessable response body'),
-      }))
+    const failure = await rejectedWebError(provider().search({ query: 'q' }))
+    expect(failure.code).toBe('WEB_PROVIDER_ERROR')
+    expect(failure.message).toContain('Brave Search returned an unprocessable response body')
   })
 
   it('maps a success body that is not an object at all to WEB_PROVIDER_ERROR', async () => {

@@ -198,11 +198,26 @@ export function apply(ctx: Context, config: Config): void {
   // actually completed, together with the reference that resolution described.
   const answer: CredentialAnswer = { name: undefined, present: false }
 
-  /** Resolve the reference the current section names and record what came back. */
+  /**
+   * Resolve the reference the current section names and record what came back.
+   *
+   * A store that cannot answer — a locked backend, a network credential
+   * service that is briefly unreachable — is not evidence a key is missing,
+   * only that this probe could not tell; the caught failure answers "not
+   * configured" rather than letting the rejection reach the process. This
+   * runs unawaited from three sites (load, a later credential mount, a
+   * reference-updated event), and an unhandled rejection from any of them
+   * would reach the Host's fail-loud handler and exit the process over a
+   * credential read that a real search would have retried anyway.
+   */
   const refresh = async (): Promise<void> => {
     const ref = refOf(config.apiKeyEnv.get())
     answer.name = ref
-    answer.present = ref !== undefined && (await resolveKey(ctx, ref)) !== undefined
+    try {
+      answer.present = ref !== undefined && (await resolveKey(ctx, ref)) !== undefined
+    } catch {
+      answer.present = false
+    }
   }
 
   void refresh()

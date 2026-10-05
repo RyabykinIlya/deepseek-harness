@@ -14,7 +14,10 @@ afterEach(cleanup)
 
 /** The dictionary reader the renderer is handed, interpolating `{id}` the way the locale plugin does. */
 const t = (key: keyof typeof en, params?: Record<string, unknown>) =>
-  en[key].replace(/\{(\w+)\}/g, (_match, name: string) => String(params?.[name] ?? ''))
+  en[key].replace(/\{(\w+)\}/g, (_match, name: string) => {
+    const value = params?.[name]
+    return typeof value === 'string' ? value : ''
+  })
 
 const settled: SettingsFormShell = { available: true, writable: true, dirty: false, invalid: false, saving: false, failed: false }
 
@@ -67,14 +70,14 @@ describe('WebSearchSelectionCard', () => {
     renderSelector()
 
     // Unset is a real state, not an empty control: the seam auto-selects.
-    expect((screen.getByLabelText(en.searchProvider) as HTMLSelectElement).value).toBe('')
+    expect(screen.getByLabelText<HTMLSelectElement>(en.searchProvider).value).toBe('')
     expect(screen.getByText(en.searchProviderHint)).toBeTruthy()
   })
 
   it('opens on the pinned provider', () => {
     renderSelector({ searchProvider: field('brave') })
 
-    expect((screen.getByLabelText(en.searchProvider) as HTMLSelectElement).value).toBe('brave')
+    expect(screen.getByLabelText<HTMLSelectElement>(en.searchProvider).value).toBe('brave')
   })
 
   it('shows a pinned id this page does not know under its own literal, without rewriting it', () => {

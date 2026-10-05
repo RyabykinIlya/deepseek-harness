@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import WebRuntime from '@deepseek-ai/dsh-web'
+import WebRuntime, { WebError } from '@deepseek-ai/dsh-web'
 import {
   anchorHref,
   anchorInnerHtml,
@@ -149,6 +149,27 @@ describe('DuckDuckGo result extraction', () => {
   it('extracts nothing from a challenge page', () => {
     expect(extractResultLinks(CHALLENGE_PAGE)).toEqual([])
   })
+
+  it('stays roughly linear, not quadratic, on many anchors with no closing tag', () => {
+    // `endpoint` is operator-configurable, so a page the parser does not control
+    // can carry many `<a class="result__a" ...>` opens with no `</a>` ever
+    // following. An unbounded lazy `[\s\S]*?` scans to the end of the document
+    // on every such attempt, which is quadratic in the number of such anchors
+    // (measured ~1.5s for 8k before this test's bound was added). Two sizes
+    // eight times apart should differ by roughly 8x if linear, not ~64x.
+    const unterminated = (n: number): string => '<a class="result__a" href="x">'.repeat(n)
+    const small = unterminated(1000)
+    const large = unterminated(8000)
+    const timeOf = (html: string): number => {
+      const start = performance.now()
+      extractResultLinks(html)
+      return performance.now() - start
+    }
+    timeOf(small) // warm up the engine before timing either size
+    const smallMs = Math.max(timeOf(small), 0.1)
+    const largeMs = timeOf(large)
+    expect(largeMs / smallMs).toBeLessThan(20)
+  })
 })
 
 describe('DuckDuckGo result mapping', () => {
@@ -191,6 +212,35 @@ describe('DuckDuckGo result mapping', () => {
   it('refuses a target that is not absolute http(s)', () => {
     expect(mapResultLink({ href: 'javascript:alert(1)', titleHtml: 'A' })).toBeUndefined()
     expect(mapResultLink({ href: 'not a url', titleHtml: 'A' })).toBeUndefined()
+  })
+
+  it('unwraps DuckDuckGo\'s own click-redirect to the real target', () => {
+    // Every anchor on the real page — organic and ad alike — points at this
+    // wrapper rather than the destination directly; fetching the wrapper itself
+    // returns only a JS redirect page, so the model would see no content for
+    // any source without unwrapping it here.
+    const wrapped = 'https://duckduckgo.com/l/?uddg=https%3A%2F%2Fnodejs.org%2Flearn&rut=4947f4daf7638'
+    expect(mapResultLink({ href: wrapped, titleHtml: 'Node.js' })?.url).toBe('https://nodejs.org/learn')
+  })
+
+  it('unwraps a protocol-relative click-redirect too', () => {
+    const wrapped = '//duckduckgo.com/l/?uddg=https%3A%2F%2Fa.test%2Fx&rut=abc'
+    expect(mapResultLink({ href: wrapped, titleHtml: 'A' })?.url).toBe('https://a.test/x')
+  })
+
+  it('drops an ad whose click-redirect still points at DuckDuckGo\'s own click-tracking endpoint', () => {
+    // An ad's `uddg` value is DuckDuckGo's `y.js` click-tracking endpoint, not
+    // the advertiser's site — the real advertiser URL is itself wrapped a
+    // second time inside `y.js`'s own query string. That remaining
+    // DuckDuckGo-hosted target, after one unwrap, is what distinguishes an ad
+    // from an organic result at this layer.
+    const adWrapped = 'https://duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dexample.com&rut=abc'
+    expect(mapResultLink({ href: adWrapped, titleHtml: 'Sponsored' })).toBeUndefined()
+  })
+
+  it('drops a click-redirect with no uddg target rather than citing the wrapper itself', () => {
+    expect(mapResultLink({ href: 'https://duckduckgo.com/l/?rut=abc', titleHtml: 'A' })).toBeUndefined()
+    expect(mapResultLink({ href: 'https://duckduckgo.com/l/?uddg=not-a-url&rut=abc', titleHtml: 'A' })).toBeUndefined()
   })
 
   it('omits a blank title and a blank snippet rather than emitting them', () => {
@@ -361,6 +411,17 @@ describe('DuckDuckGoSearchProvider body bound', () => {
 })
 
 describe('DuckDuckGoSearchProvider error handling', () => {
+  /** Return the provider's rejected WebError, or propagate an unexpected outcome. */
+  async function rejectedWebError(operation: Promise<unknown>): Promise<WebError> {
+    try {
+      await operation
+    } catch (error: unknown) {
+      if (error instanceof WebError) return error
+      throw error
+    }
+    throw new Error('expected search operation to reject')
+  }
+
   it('maps a non-2xx response to WEB_PROVIDER_ERROR', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response('rate limited', { status: 429 })))
     await expect(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
@@ -381,8 +442,9 @@ describe('DuckDuckGoSearchProvider error handling', () => {
 
   it('maps a network failure to WEB_PROVIDER_ERROR', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(() => Promise.reject(new TypeError('connection refused'))))
-    await expect(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
-      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: expect.stringContaining('connection refused') }))
+    const failure = await rejectedWebError(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
+    expect(failure.code).toBe('WEB_PROVIDER_ERROR')
+    expect(failure.message).toContain('connection refused')
   })
 
   it('maps the caller aborting to WEB_ABORTED', async () => {
@@ -407,18 +469,35 @@ describe('DuckDuckGoSearchProvider error handling', () => {
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: 'DuckDuckGo search timed out after 5ms' }))
   })
 
+  it('maps the real AbortSignal.timeout() rejection — named TimeoutError, not AbortError', async () => {
+    // Node's own `AbortSignal.timeout()` aborts with a DOMException named
+    // `TimeoutError`, never `AbortError`. A double that only ever mocks
+    // `AbortError` (the test above) cannot catch a provider that checks for
+    // the wrong name — reproduce the real rejection the deadline actually fires.
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>((_url, init) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal ?? new AbortController().signal
+      // `AbortSignal.reason` types as `any` in lib.dom.d.ts; DOMException extends Error at
+      // runtime (Node and browsers both), so the rejection is a real Error, not an escape hatch.
+      signal.addEventListener('abort', () => { reject(signal.reason as DOMException) }, { once: true })
+    })))
+    await expect(new DuckDuckGoSearchProvider({ ...options, timeoutMs: 5 }).search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: 'DuckDuckGo search timed out after 5ms' }))
+  })
+
   it('maps a body read that aborts to the same timeout failure', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => abortedBodyResponse()))
-    await expect(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
-      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: expect.stringContaining('timed out') }))
+    const failure = await rejectedWebError(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
+    expect(failure.code).toBe('WEB_PROVIDER_ERROR')
+    expect(failure.message).toContain('timed out')
   })
 
   it('maps a body read that fails outright to WEB_PROVIDER_ERROR', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(new ReadableStream<Uint8Array>({
       start(controller) { controller.error(new TypeError('stream reset')) },
     }))))
-    await expect(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
-      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR', message: expect.stringContaining('stream reset') }))
+    const failure = await rejectedWebError(new DuckDuckGoSearchProvider(options).search({ query: 'q' }))
+    expect(failure.code).toBe('WEB_PROVIDER_ERROR')
+    expect(failure.message).toContain('stream reset')
   })
 })
 
@@ -428,7 +507,9 @@ describe('web-search-duckduckgo plugin registration', () => {
     const ctx = new Context()
     await ctx.plugin(WebRuntime, { searchProvider: DUCKDUCKGO_PROVIDER_ID })
     const fiber = await ctx.plugin(ddgPlugin, {})
-    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ sources: expect.any(Array), truncated: false })
+    const served = await ctx.web.search({ query: 'q' })
+    expect(served.sources.length).toBeGreaterThan(0)
+    expect(served.truncated).toBe(false)
     await fiber.dispose()
     await expect(ctx.web.search({ query: 'q' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }))
