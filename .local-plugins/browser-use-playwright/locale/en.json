@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Browser (Playwright MCP)",
+    "description": "Gives the agent its own headless Chromium per Session, driven through Playwright MCP: navigate, click, type, read pages, take screenshots."
+  }
+}

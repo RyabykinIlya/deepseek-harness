@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "浏览器（Playwright MCP）",
+    "description": "为每个 Session 提供独立的无头 Chromium，通过 Playwright MCP 操作：导航、点击、输入、读取页面、截图。"
+  }
+}

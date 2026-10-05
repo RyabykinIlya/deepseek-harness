@@ -1,0 +1,11 @@
+# Per-Session Chromium tools through Playwright MCP, launched headless by the
+# Harness. Switch to `mode: attach` with an `endpoint` to drive an existing
+# browser instead.
+- insert:
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+    - id: browser-use-playwright-mcp
+      name: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp'
+      config:
+        mode: launch
+        headless: true

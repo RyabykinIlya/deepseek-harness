@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "title": "OpenRouter 花费",
+    "description": "在输入框下方显示 OpenRouter 账户今天实际花费的金额。"
+  },
+  "today": "今天",
+  "last7": "7 天",
+  "last30": "30 天",
+  "requests": "请求",
+  "balance": "余额",
+  "lifetime": "累计",
+  "byModel": "模型",
+  "byKey": "API 密钥",
+  "allKeys": "全部密钥",
+  "unknownKey": "今天未出现",
+  "noCredential": "未配置管理密钥",
+  "loading": "读取中…",
+  "updated": "更新于",
+  "open": "OpenRouter 花费",
+  "countByKey": "只统计这个 API 密钥",
+  "refreshEvery": "刷新间隔",
+  "serverDefault": "插件默认",
+  "managementKey": "管理密钥",
+  "keyStored": "已保存为",
+  "keyHint": "需要 OpenRouter 管理密钥：Settings → API keys → Management。",
+  "keyReadOnly": "该引用被只读来源遮蔽，无法在设置中保存。",
+  "save": "保存",
+  "clear": "清除",
+  "reload": "刷新",
+  "saved": "已保存"
+}

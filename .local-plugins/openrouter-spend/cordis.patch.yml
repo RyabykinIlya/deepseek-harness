@@ -1,0 +1,7 @@
+- insert:
+    - id: openrouter-spend
+      name: '@local/openrouter-spend'
+      config:
+        credentialRef: OPENROUTER_MGMT_API_KEY
+        refreshSeconds: 60
+        historyDays: 30
