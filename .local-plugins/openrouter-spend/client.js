@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/openrouter-spend',
+  id: 'dsh-openrouter-spend',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
@@ -11,6 +11,7 @@ window.__ModuleLoader__.load({
     /** Preferences are viewing choices: a browser-local store, not host state. */
     const PREF_KEY_ID = 'ors.keyId';
     const PREF_INTERVAL = 'ors.intervalSeconds';
+    const PREF_CURRENCY = 'ors.currency';
     const PREFS_CHANGED = 'ors:prefs';
 
     const CSS = `
@@ -83,13 +84,33 @@ window.__ModuleLoader__.load({
 }
 `;
 
-    /** Money with the precision a sub-cent figure needs, and none it does not. */
-    function fmtUsd(value) {
+    /**
+     * Money with the precision a sub-cent figure needs, and none it does not.
+     * USD prints as an invoice writes it (`$1.23`), RUB as a receipt does
+     * (`1.23 ₽`).
+     */
+    function fmtMoney(value, currency) {
       const amount = Number(value) || 0;
-      if (amount === 0) return '$0.00';
-      if (amount < 0.01) return `$${amount.toFixed(4)}`;
-      if (amount < 1) return `$${amount.toFixed(3)}`;
-      return `$${amount.toFixed(2)}`;
+      const magnitude = Math.abs(amount);
+      const digits = magnitude === 0 ? 2 : magnitude < 0.01 ? 4 : magnitude < 1 ? 3 : 2;
+      return currency === 'RUB' ? `${amount.toFixed(digits)} ₽` : `$${amount.toFixed(digits)}`;
+    }
+
+    /**
+     * The display money for one currency choice. OpenRouter bills USD and the
+     * wire stays USD; RUB is that figure at the cbr.ru rate. Without a rate the
+     * USD presentation is kept — the caller adds the "check cbr.ru" note — so a
+     * dead cbr.ru costs the conversion, never the numbers.
+     */
+    function makeMoney(currency, perUsd) {
+      const rate = Number(perUsd);
+      const rub = currency === 'RUB' && Number.isFinite(rate) && rate > 0;
+      return {
+        rub,
+        perUsd: rub ? rate : undefined,
+        symbol: rub ? '₽' : '$',
+        fmt: value => fmtMoney(rub ? (Number(value) || 0) * rate : value, rub ? 'RUB' : 'USD'),
+      };
     }
 
     const fmtInt = value => Number(value || 0).toLocaleString('en-US');
@@ -109,6 +130,11 @@ window.__ModuleLoader__.load({
       } catch {
         return fallback;
       }
+    }
+
+    /** The display currency preference; anything else in storage reads as USD. */
+    function readCurrency() {
+      return readPref(PREF_CURRENCY, 'USD') === 'RUB' ? 'RUB' : 'USD';
     }
 
     /** Store one viewing preference and tell the other component about it. */
@@ -136,6 +162,7 @@ window.__ModuleLoader__.load({
       const [range, setRange] = useState('today');
       const [keyId, setKeyId] = useState(() => readPref(PREF_KEY_ID, ''));
       const [intervalSeconds, setIntervalSeconds] = useState(() => Number(readPref(PREF_INTERVAL, '0')));
+      const [currency, setCurrency] = useState(readCurrency);
       const rootRef = useRef(null);
 
       useEffect(() => { void fetchSummary().then(reply => { if (reply !== undefined) setData(reply); }); }, []);
@@ -153,6 +180,7 @@ window.__ModuleLoader__.load({
         const sync = () => {
           setKeyId(readPref(PREF_KEY_ID, ''));
           setIntervalSeconds(Number(readPref(PREF_INTERVAL, '0')));
+          setCurrency(readCurrency());
         };
         window.addEventListener(PREFS_CHANGED, sync);
         return () => window.removeEventListener(PREFS_CHANGED, sync);
@@ -196,6 +224,9 @@ window.__ModuleLoader__.load({
       const peak = bars.reduce((max, entry) => Math.max(max, entry.usd), 0);
       const balance = data?.credits ? data.credits.totalCredits - data.credits.totalUsage : undefined;
       const rangeLabel = range === 'today' ? t('today') : range === 'last7' ? t('last7') : t('last30');
+      const money = makeMoney(currency, data?.rate?.perUsd);
+      // RUB was chosen but cbr.ru answered no rate: figures stay in USD and say so.
+      const rubUnavailable = currency === 'RUB' && data !== null && !money.rub;
 
       if (data !== null && data.status === 'no-credential') {
         return h('span', { className: 'ors-root' },
@@ -216,16 +247,22 @@ window.__ModuleLoader__.load({
           onClick: () => setOpen(value => !value),
         },
         h('span', { className: 'ors-chip-dot', 'data-state': data?.status ?? 'loading' }),
-        h('span', { className: 'ors-chip-amount' }, data === null ? t('loading') : fmtUsd(view.usd))),
+        h('span', { className: 'ors-chip-amount' }, data === null ? t('loading') : money.fmt(view.usd))),
         open && h('div', { className: 'ors-panel' },
           h('div', { className: 'ors-head' },
             h('span', { className: 'ors-label' }, rangeLabel),
-            h('span', { className: 'ors-figure' }, fmtUsd(view.usd))),
+            h('span', { className: 'ors-figure' }, money.fmt(view.usd))),
           h('div', { className: 'ors-sub' },
             `${fmtInt(view.requests)} ${t('requests')}`
             + (data?.refreshedAt === undefined
               ? ''
               : ` · ${t('updated')} ${new Date(data.refreshedAt).toLocaleTimeString()}`)),
+          money.rub && h('div', { className: 'ors-sub' },
+            `${t('cbrRate')}: 1 USD = ${money.perUsd.toFixed(2)} ₽`),
+          rubUnavailable && h('div', { className: 'ors-note' }, t('rubFallback')),
+          rubUnavailable && data?.rateError !== undefined
+            ? h('div', { className: 'ors-sub' }, data.rateError)
+            : null,
           h('div', { className: 'ors-range' },
             ['today', 'last7', 'last30'].map(id => h('button', {
               key: id,
@@ -234,7 +271,7 @@ window.__ModuleLoader__.load({
               onClick: () => setRange(id),
             }, id === 'today' ? t('today') : id === 'last7' ? t('last7') : t('last30')))),
           balance === undefined ? null : h('div', { className: 'ors-sub' },
-            `${t('balance')}: ${fmtUsd(balance)} · ${t('lifetime')}: ${fmtUsd(data.credits.totalUsage)}`),
+            `${t('balance')}: ${money.fmt(balance)} · ${t('lifetime')}: ${money.fmt(data.credits.totalUsage)}`),
           keys.length > 0 && h('div', null,
             h('div', { className: 'ors-sub' }, t('byKey')),
             h('div', { className: 'ors-keyrow' },
@@ -250,13 +287,13 @@ window.__ModuleLoader__.load({
           h('table', { className: 'ors-table' },
             h('thead', null, h('tr', null,
               h('th', null, t('byModel')),
-              h('th', null, '$'),
+              h('th', null, money.symbol),
               h('th', null, t('requests')))),
             h('tbody', null, rows.length === 0
               ? h('tr', null, h('td', { colSpan: 3, className: 'ors-label' }, '—'))
               : rows.map(entry => h('tr', { key: entry.id },
                 h('td', null, entry.id),
-                h('td', { className: 'ors-num' }, fmtUsd(entry.usd)),
+                h('td', { className: 'ors-num' }, money.fmt(entry.usd)),
                 h('td', { className: 'ors-num' }, fmtInt(entry.requests)))))),
           bars.length > 0 && peak > 0 && h('div', { className: 'ors-bars' },
             bars.map(entry => h('div', {
@@ -264,7 +301,7 @@ window.__ModuleLoader__.load({
               className: 'ors-bar',
               'data-today': entry.date === data.today,
               style: { height: `${Math.max(2, Math.round((entry.usd / peak) * 34))}px` },
-              title: `${entry.date} · ${fmtUsd(entry.usd)}`,
+              title: `${entry.date} · ${money.fmt(entry.usd)}`,
             }))),
           data?.error === undefined ? null : h('div', { className: 'ors-note' }, data.error)));
     }
@@ -274,6 +311,7 @@ window.__ModuleLoader__.load({
       const [data, setData] = useState(null);
       const [keyId, setKeyId] = useState(() => readPref(PREF_KEY_ID, ''));
       const [intervalSeconds, setIntervalSeconds] = useState(() => readPref(PREF_INTERVAL, '0'));
+      const [currency, setCurrency] = useState(readCurrency);
       const [draft, setDraft] = useState('');
       const [notice, setNotice] = useState(null);
 
@@ -308,6 +346,9 @@ window.__ModuleLoader__.load({
 
       const credential = data?.credential;
       const keys = data?.byKey ?? [];
+      const money = makeMoney(currency, data?.rate?.perUsd);
+      // RUB was chosen but cbr.ru answered no rate: figures stay in USD and say so.
+      const rubUnavailable = currency === 'RUB' && data !== null && !money.rub;
       const selectKey = value => {
         setKeyId(value);
         writePref(PREF_KEY_ID, value);
@@ -316,6 +357,10 @@ window.__ModuleLoader__.load({
         setIntervalSeconds(value);
         writePref(PREF_INTERVAL, value);
       };
+      const selectCurrency = value => {
+        setCurrency(value);
+        writePref(PREF_CURRENCY, value);
+      };
 
       return h('div', { className: 'ors-settings' },
         h('style', null, CSS),
@@ -323,19 +368,31 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ors-head' },
             h('span', { className: 'ors-label' }, t('today')),
             h('span', { className: 'ors-figure' },
-              fmtUsd(data?.todaySpend?.usd ?? 0))),
+              money.fmt(data?.todaySpend?.usd ?? 0))),
           h('div', { className: 'ors-sub' },
             `${fmtInt(data?.todaySpend?.requests ?? 0)} ${t('requests')}`
             + (data?.credits === undefined
               ? ''
-              : ` · ${t('balance')}: ${fmtUsd(data.credits.totalCredits - data.credits.totalUsage)}`)),
+              : ` · ${t('balance')}: ${money.fmt(data.credits.totalCredits - data.credits.totalUsage)}`)),
           data?.error === undefined ? null : h('div', { className: 'ors-note' }, data.error)),
+        h('div', { className: 'ors-field' },
+          h('label', { className: 'ors-sub' }, t('currency')),
+          h('select', { value: currency, onChange: event => selectCurrency(event.target.value) },
+            h('option', { value: 'USD' }, t('currencyUsd')),
+            h('option', { value: 'RUB' }, t('currencyRub'))),
+          money.rub
+            ? h('div', { className: 'ors-sub' }, `${t('cbrRate')}: 1 USD = ${money.perUsd.toFixed(2)} ₽`)
+            : null,
+          rubUnavailable ? h('div', { className: 'ors-note' }, t('rubFallback')) : null,
+          rubUnavailable && data?.rateError !== undefined
+            ? h('div', { className: 'ors-sub' }, data.rateError)
+            : null),
         h('div', { className: 'ors-field' },
           h('label', { className: 'ors-sub' }, t('countByKey')),
           h('select', { value: keyId, onChange: event => selectKey(event.target.value) },
             h('option', { value: '' }, t('allKeys')),
             keys.map(entry => h('option', { key: entry.id, value: entry.id },
-              `${entry.id} · ${fmtUsd(entry.todayUsd)} ${t('today')}`)),
+              `${entry.id} · ${money.fmt(entry.todayUsd)} ${t('today')}`)),
             keyId !== '' && keys.every(entry => entry.id !== keyId)
               ? h('option', { value: keyId }, `${keyId} · ${t('unknownKey')}`)
               : null)),
@@ -400,6 +457,11 @@ window.__ModuleLoader__.load({
             countByKey: 'Count only this API key',
             refreshEvery: 'Refresh every',
             serverDefault: 'Plugin default',
+            currency: 'Display currency',
+            currencyUsd: 'USD (billed by OpenRouter)',
+            currencyRub: 'RUB (converted at the CBR rate)',
+            cbrRate: 'CBR rate',
+            rubFallback: 'RUB is unavailable: the rate could not be fetched from cbr.ru. Amounts are shown in USD — check that cbr.ru is reachable.',
             managementKey: 'Management API key',
             keyStored: 'Stored as',
             keyHint: 'Needs an OpenRouter management key: Settings → API keys → Management.',
@@ -427,6 +489,11 @@ window.__ModuleLoader__.load({
             countByKey: '只统计这个 API 密钥',
             refreshEvery: '刷新间隔',
             serverDefault: '插件默认',
+            currency: '显示货币',
+            currencyUsd: 'USD（OpenRouter 计费货币）',
+            currencyRub: 'RUB（按俄罗斯央行汇率换算）',
+            cbrRate: '央行汇率',
+            rubFallback: 'RUB 不可用：无法从 cbr.ru 获取汇率。金额以 USD 显示——请检查到 cbr.ru 的连接。',
             managementKey: '管理密钥',
             keyStored: '已保存为',
             keyHint: '需要 OpenRouter 管理密钥：Settings → API keys → Management。',
@@ -435,6 +502,38 @@ window.__ModuleLoader__.load({
             clear: '清除',
             reload: '刷新',
             saved: '已保存',
+          },
+          ru: {
+            today: 'Сегодня',
+            last7: '7 дней',
+            last30: '30 дней',
+            requests: 'запросов',
+            balance: 'Баланс',
+            lifetime: 'Всего',
+            byModel: 'Модель',
+            byKey: 'API-ключ',
+            allKeys: 'Все ключи',
+            unknownKey: 'сегодня не было',
+            noCredential: 'Ключ не настроен',
+            loading: 'Загрузка…',
+            updated: 'Обновлено',
+            open: 'Расходы OpenRouter',
+            countByKey: 'Учитывать только этот API-ключ',
+            refreshEvery: 'Обновлять каждые',
+            serverDefault: 'По умолчанию',
+            currency: 'Валюта',
+            currencyUsd: 'USD (как списывает OpenRouter)',
+            currencyRub: 'RUB (по курсу ЦБ РФ)',
+            cbrRate: 'Курс ЦБ',
+            rubFallback: 'RUB недоступен: не удалось получить курс с cbr.ru. Суммы показаны в USD — проверьте подключение к cbr.ru.',
+            managementKey: 'Управляющий API-ключ',
+            keyStored: 'Сохранён как',
+            keyHint: 'Нужен управляющий ключ OpenRouter: Settings → API keys → Management.',
+            keyReadOnly: 'Эта ссылка перекрыта источником только для чтения, настройки не могут её сохранить.',
+            save: 'Сохранить',
+            clear: 'Очистить',
+            reload: 'Обновить',
+            saved: 'Сохранено',
           },
         });
           tr = ctx.locale.bind(NS);

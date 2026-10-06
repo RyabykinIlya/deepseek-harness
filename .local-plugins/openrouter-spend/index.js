@@ -4,8 +4,12 @@
  * Reads what the OpenRouter account actually charged with a management key and
  * serves it to the browser half as one cached summary. Every figure comes from
  * OpenRouter's own analytics (`total_usage`), so it is billed money rather than
- * a token estimate priced from a local table.
+ * a token estimate priced from a local table. The one figure that is not
+ * OpenRouter's is the RUB rate, read from the CBR daily sheet so the browser
+ * can show the same money in rubles.
  */
+
+import Schema from 'schemastery'
 
 /** Loader row id; matches the `insert` in cordis.patch.yml. */
 export const name = 'openrouter-spend'
@@ -28,36 +32,31 @@ const MAX_REPLY_BYTES = 4 * 1024 * 1024
 /** Rows beyond this are refused rather than truncated: a partial split misreports cost. */
 const MAX_ANALYTICS_ROWS = 500
 
-/**
- * Deployment defaults. Every field is overridable from the patch row so a
- * deployment can retarget the API, the credential, or the cadence without an
- * edit to this file.
- */
-const DEFAULTS = {
-  credentialRef: 'OPENROUTER_MGMT_API_KEY',
-  apiBase: 'https://openrouter.ai/api/v1',
-  refreshSeconds: 60,
-  historyDays: 30,
-  timeoutMs: 15_000,
-}
+/** The CBR sheet is a dozen kilobytes; a larger reply is not a rate sheet. */
+const MAX_RATE_BYTES = 256 * 1024
 
-/** Bound each tunables field, naming the offending field when a row is wrong. */
-function resolveConfig(raw) {
-  const config = { ...DEFAULTS, ...(raw ?? {}) }
-  if (typeof config.credentialRef !== 'string' || config.credentialRef.length === 0) {
-    throw new Error('openrouter-spend: config.credentialRef must be a non-empty string')
-  }
-  if (typeof config.apiBase !== 'string' || !config.apiBase.startsWith('https://')) {
-    throw new Error('openrouter-spend: config.apiBase must be an https URL')
-  }
-  for (const [field, min, max] of [['refreshSeconds', 10, 3600], ['historyDays', 2, 366], ['timeoutMs', 1000, 120_000]]) {
-    const value = config[field]
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
-      throw new Error(`openrouter-spend: config.${field} must be an integer in [${min}, ${max}]`)
-    }
-  }
-  return config
-}
+/**
+ * The row's `config` schema: validated by the Loader before `apply`, so a
+ * wrong value fails the row at activation instead of misreporting spend later.
+ * Every field is overridable from the patch row so a deployment can retarget
+ * the API, the credential, or the cadence without an edit to this file.
+ */
+export const Config = Schema.object({
+  credentialRef: Schema.string().pattern(/^\S+$/).default('OPENROUTER_MGMT_API_KEY')
+    .description('Credentials reference holding the OpenRouter management API key.'),
+  apiBase: Schema.string().pattern(/^https:\/\//).default('https://openrouter.ai/api/v1')
+    .description('OpenRouter REST API root; https only.'),
+  refreshSeconds: Schema.number().step(1).min(10).max(3600).default(60)
+    .description('Seconds between OpenRouter refreshes; one poll serves every open tab.'),
+  historyDays: Schema.number().step(1).min(2).max(366).default(30)
+    .description('Days of history the summary window covers, today included.'),
+  cbrUrl: Schema.string().pattern(/^https:\/\//).default('https://www.cbr.ru/scripts/XML_daily.asp')
+    .description('CBR daily-rates sheet read for the RUB rate; https only.'),
+  rateRefreshSeconds: Schema.number().step(1).min(60).max(86_400).default(3600)
+    .description('Seconds between cbr.ru rate reads; the rate moves at most once a day.'),
+  timeoutMs: Schema.number().step(1).min(1000).max(120_000).default(15_000)
+    .description('Per-request deadline against the OpenRouter API and cbr.ru, in milliseconds.'),
+})
 
 /**
  * Read one analytics row. `request_count` arrives as a decimal string and the
@@ -122,6 +121,44 @@ async function queryCredits(config, credential, signal) {
     throw new Error('credits returned no total_credits/total_usage')
   }
   return { totalCredits: data.total_credits, totalUsage: data.total_usage }
+}
+
+/**
+ * Read one numeric tag (`<Value>`, `<Nominal>`) out of a `<Valute>` block.
+ * The sheet is windows-1251, but every tag read here is ASCII, so decoding the
+ * reply as UTF-8 cannot corrupt a rate; the garbled names are never touched.
+ */
+function readRateTag(block, tag) {
+  const match = block.match(new RegExp(`<${tag}>\\s*([\\d\\s,\\.]+)\\s*</${tag}>`))
+  return match === null ? undefined : match[1].replace(/\s/g, '').replace(',', '.')
+}
+
+/**
+ * Pull the USD rate out of a CBR daily-rates sheet.
+ * @returns rubles for one US dollar.
+ */
+function parseUsdRub(sheet) {
+  const blocks = sheet.match(/<Valute[\s\S]*?<\/Valute>/g) ?? []
+  const usd = blocks.find(block => /<CharCode>\s*USD\s*<\/CharCode>/.test(block))
+  if (usd === undefined) throw new Error('cbr daily sheet carries no USD row')
+  // `Value` is the price of `Nominal` dollars; the rate is their quotient.
+  const value = Number(readRateTag(usd, 'Value'))
+  const nominal = Number(readRateTag(usd, 'Nominal') ?? '1')
+  const perUsd = value / nominal
+  if (!Number.isFinite(perUsd) || perUsd <= 0) throw new Error('cbr daily sheet carries no usable USD rate')
+  return perUsd
+}
+
+/** Fetch today's USD rate from the CBR daily sheet; one number out of the XML. */
+async function queryUsdRub(config, signal) {
+  const response = await fetch(config.cbrUrl, {
+    headers: { accept: 'application/xml, text/xml' },
+    signal,
+  })
+  if (!response.ok) throw new Error(`cbr daily sheet answered ${response.status}`)
+  const sheet = await response.text()
+  if (sheet.length > MAX_RATE_BYTES) throw new Error(`cbr daily sheet exceeds ${MAX_RATE_BYTES} bytes`)
+  return parseUsdRub(sheet)
 }
 
 /** UTC calendar day of a timestamp, the bucket OpenRouter answers `date__day` with. */
@@ -227,14 +264,17 @@ function byModel(rows, today) {
 /**
  * Build the one summary the browser half renders: today's spend, trailing
  * windows, the daily series, per-model and per-key splits, and the balance.
+ * `rateInfo` answers the RUB rate (or the reason it is missing) on the same
+ * refresh, so RUB display costs no extra round trip.
  */
-async function collect(config, credential, signal) {
+async function collect(config, credential, signal, rateInfo) {
   const now = new Date()
   const end = new Date(now.getTime() + 60_000).toISOString()
   const start = startOfUtcDay(now, config.historyDays - 1)
-  const [rows, credits] = await Promise.all([
+  const [rows, credits, rate] = await Promise.all([
     queryAnalytics(config, credential, start, end, signal),
     queryCredits(config, credential, signal),
+    rateInfo(),
   ])
   const today = utcDay(now)
   const series = dailySeries(rows, config.historyDays, now)
@@ -250,6 +290,9 @@ async function collect(config, credential, signal) {
     byDay: series,
     byModel: byModel(rows, today),
     byKey: byKey(rows, today, series),
+    // `rate` is always present: rubles per dollar, or null when cbr.ru failed
+    // — then `rateError` carries the reason for the panel to show.
+    ...rate,
     credits,
   }
 }
@@ -305,6 +348,7 @@ function emptyPayload(config) {
     byDay: [],
     byModel: [],
     byKey: [],
+    rate: null,
   }
 }
 
@@ -312,10 +356,47 @@ function emptyPayload(config) {
  * Register the summary route. The reply is cached for `refreshSeconds` and one
  * refresh serves every concurrent caller, so several open tabs cost one poll.
  */
-export function apply(ctx, rawConfig) {
-  const config = resolveConfig(rawConfig)
+export function apply(ctx, config) {
   let cached = undefined
   let inFlight = undefined
+  let rateCached = undefined
+  let rateInFlight = undefined
+
+  /**
+   * The RUB rate, on its own clock: the CBR sheet moves at most once a day, so
+   * a good rate is kept for `rateRefreshSeconds`. A failure is kept for one
+   * refresh window only — a down cbr.ru is retried gently but recovers fast.
+   * Never throws: it answers `{ rate }`, or `{ rate: null, rateError }` for
+   * the payload to carry to the panel.
+   */
+  const rateInfo = async () => {
+    const fresh = rateCached !== undefined && Date.now() - rateCached.fetchedAt < rateCached.ttlMs
+    if (fresh) return rateCached.value
+    if (rateInFlight !== undefined) return rateInFlight
+    rateInFlight = (async () => {
+      const now = Date.now()
+      try {
+        const perUsd = await queryUsdRub(config, AbortSignal.timeout(config.timeoutMs))
+        rateCached = {
+          fetchedAt: now,
+          ttlMs: config.rateRefreshSeconds * 1000,
+          value: { rate: { perUsd, fetchedAt: new Date(now).toISOString() } },
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        ctx.logger.warn('openrouter-spend: cbr rate unavailable', reason)
+        rateCached = {
+          fetchedAt: now,
+          ttlMs: config.refreshSeconds * 1000,
+          value: { rate: null, rateError: reason },
+        }
+      } finally {
+        rateInFlight = undefined
+      }
+      return rateCached.value
+    })()
+    return rateInFlight
+  }
 
   const summary = async () => {
     const resolved = await ctx.credentials.resolve(config.credentialRef)
@@ -331,7 +412,7 @@ export function apply(ctx, rawConfig) {
     }
     const signal = AbortSignal.timeout(config.timeoutMs)
     try {
-      return { ...(await collect(config, resolved.value, signal)), credential }
+      return { ...(await collect(config, resolved.value, signal, rateInfo)), credential }
     } catch (error) {
       // A stale reply beats an empty panel: keep the last good figures and say why.
       const reason = error instanceof Error ? error.message : String(error)
