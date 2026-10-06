@@ -149,20 +149,21 @@ class ThreadWorktreeProvider implements SubagentProvider {
     const branch = this.config.branchPerThread
       ? this.config.branchTemplate.replace('{{id}}', slug)
       : undefined
-    // The service writes a durable `reserved` intent BEFORE `git worktree add`, so a
-    // crash mid-add is recoverable by reconcile. `create` rolls back on its own
+    // The service writes a durable `reserved` intent BEFORE it clones, so a crash
+    // mid-create is recoverable by reconcile. `create` rolls back on its own
     // failure and on abort.
     //
     // `baseRef` names the ref the snapshot is taken against and the fallback when
     // the working tree is clean; `base` is the policy that decides whether a
     // snapshot happens at all. The service owns both, so this provider runs no
-    // git of its own here.
+    // git of its own here. Exactly one of `branch` and `detached` travels: without
+    // a branch per Thread the checkout is detached and the record carries none.
     const record = await this.worktrees.create({
       repoRoot: parentCwd,
       threadId: request.sessionId,
       baseRef: 'HEAD',
       base: this.config.base,
-      ...branch === undefined ? {} : { branch },
+      ...branch === undefined ? { detached: true } : { branch },
     }, request.signal)
 
     try {

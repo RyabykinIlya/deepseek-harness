@@ -8,10 +8,10 @@
  * typed {@link WorktreeError}, never handed the parent checkout and told to carry on.
  *
  * Durability is the other half. `create` appends a `reserved` intent record
- * BEFORE spawning `git worktree add`, writes `ready` only after the add
- * succeeded, and undoes a failed or aborted add with `git worktree remove --force`
- * in a `finally`. That ordering is what lets {@link WorktreeService.reconcile}
- * tell "crashed before the add" from "crashed after it" on the next start.
+ * BEFORE cloning the repository, writes `ready` only after the clone and its
+ * checkout succeeded, and deletes the half-created clone in a `finally`. That
+ * ordering is what lets {@link WorktreeService.reconcile} tell "crashed before
+ * the clone" from "crashed after it" on the next start.
  *
  * The service deliberately does NOT know about sessions: the continuation manager
  * owns session persistence, so {@link WorktreeService.sessionExists} is the seam
@@ -22,18 +22,21 @@
 
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { WorktreeError } from './error.ts'
 import {
-  addWorktree,
-  addWorktreeAtExistingBranch,
   branchExists,
-  listWorktrees,
-  removeWorktree,
+  checkoutDetached,
+  checkoutExistingBranch,
+  checkoutNewBranch,
+  cloneLocal,
+  fetchBranchIntoParent,
+  fetchIntoClone,
+  isRepoTopLevel,
   resolveRepoTopLevel,
   runGit,
   runGitBounded,
@@ -159,9 +162,6 @@ const MAX_LISTED_THREADS = 50
 
 /** Longest commit subject returned by {@link WorktreeService.changes}. */
 const MAX_SUBJECT_CHARS = 200
-
-/** Git's own wording when a refused removal was caused by local changes. */
-const DIRTY_WORKTREE_PATTERN = /modified or untracked files|use --force to delete it/i
 
 /** Resolve the nearest existing ancestor of `path` through `realpath`. */
 function realPathOfNearestExisting(path: string): string {
@@ -445,22 +445,22 @@ export class WorktreeService extends Service {
    * Create (or re-attach to) the worktree for one Thread.
    *
    * The call is idempotent by `threadId`: a second `create` for a Thread whose
-   * worktree still exists returns the SAME record without a second `git worktree
-   * add`. An abort is honored at every boundary — before any git process is
-   * spawned, and again after the add resolves — and either way the reserved
-   * intent is rolled back with `git worktree remove --force`.
+   * worktree still exists returns the SAME record without a second clone. An abort
+   * is honored at every boundary — before any git process is spawned, and again
+   * after the checkout resolves — and either way the reserved intent is rolled
+   * back by deleting the half-created clone.
    * Each call first runs {@link WorktreeService.reconcile}, so abandoned worktrees do not hold limit slots.
    * The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured
    * `base` — and `head-with-uncommitted` snapshots the parent's tracked uncommitted changes with
    * `git stash create`, which leaves the parent's working tree untouched.
-   * @param spec - the repository, Thread, base ref and policy, and optional branch.
+   * @param spec - the repository, Thread, base ref and policy, and optional branch or `detached`.
    * @param signal - aborts the attempt; the worktree is rolled back, never left half-created.
    * @returns the `ready` record whose `path` may be used as a session cwd.
    */
   create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord> {
     // Concurrent creates for one Thread share a single attempt: two parallel
-    // `git worktree add` calls would race for the same path and the loser would
-    // leave a stray registration behind.
+    // clones would race for the same path and the loser would leave a stray
+    // half-created clone behind.
     const running = this.inFlight.get(spec.threadId)
     if (running !== undefined) return running
     const attempt = this.createWorktree(spec, signal)
@@ -475,8 +475,9 @@ export class WorktreeService extends Service {
    * Removal is explicit and never automatic: a settled Thread's worktree holds its
    * result, and deleting a turn's output silently is not acceptable. The order is
    * NOT the mirror of creation — the durable record goes to `removing` first, then
-   * git, then `removed` — so a failed git removal leaves a `removing` tombstone a
-   * later prune can finish, instead of claiming a deletion that never happened.
+   * the branch import and the directory deletion, then `removed` — so a failed
+   * removal leaves a `removing` tombstone a later sweep can finish, instead of
+   * claiming a deletion that never happened.
    * @param record - the record to remove (may come from an earlier session).
    * @param opts - `force` discards local modifications; without it a dirty worktree is refused.
    */
@@ -586,9 +587,12 @@ export class WorktreeService extends Service {
    * Predict whether merging the worktree's HEAD into `target` would conflict.
    *
    * `target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the
-   * main checkout's current commit and a branch name may be another Thread's branch.
-   * Uncommitted edits in either checkout are not part of the prediction. No ref,
-   * index, or working tree changes. Same `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
+   * main checkout's current commit and a branch name may be another Thread's branch,
+   * served from that Thread's clone. `merge-tree` compares two commits of one object
+   * store — the worktree's own clone — so a target commit the clone has not seen is
+   * fetched in first; that writes only objects and `FETCH_HEAD`, never a ref, index
+   * entry, or file. Uncommitted edits in either checkout are not part of the
+   * prediction. Same `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
    * @param record - the worktree whose HEAD would be merged.
    * @param options - the target ref.
    * @param maxConflicts - non-negative bound on the listed conflicting paths.
@@ -597,9 +601,7 @@ export class WorktreeService extends Service {
   async mergeCheck(record: WorktreeRecord, options: WorktreeMergeCheckOptions, maxConflicts: number): Promise<WorktreeMergeCheck> {
     assertBound('maxConflicts', maxConflicts)
     await this.requireLiveWorktree(record)
-    const target = await runGit(['rev-parse', '--verify', `${options.target}^{commit}`], record.repoRoot)
-    this.requireOk(target, record, `git rev-parse ${options.target}`)
-    const targetSha = target.stdout.trim()
+    const targetSha = await this.resolveMergeTarget(record, options.target)
     const headSha = await this.revParse(record, 'HEAD')
     const merge = await runGit(['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', targetSha, headSha], record.path)
     // Exit 0 is a clean merge and 1 a conflicted one; git before 2.38 rejects
@@ -617,6 +619,54 @@ export class WorktreeService extends Service {
       conflicts: conflicts.slice(0, maxConflicts),
       conflictsTotal: conflicts.length,
     }
+  }
+
+  /**
+   * Resolve a merge-check `target` to a commit present in the worktree's own clone.
+   *
+   * The parent resolves first, so `HEAD` and ordinary refs need no lookup elsewhere.
+   * A name the parent does not know is looked up as another Thread's branch: that
+   * Thread's clone is the authority for the name and the source its commits are
+   * fetched from, and the fetched name lands in `FETCH_HEAD` only — the clone gains
+   * no ref of its own.
+   */
+  private async resolveMergeTarget(record: WorktreeRecord, target: string): Promise<string> {
+    const inParent = await runGit(['rev-parse', '--verify', `${target}^{commit}`], record.repoRoot)
+    if (inParent.code === 0) return this.ensureCommitInClone(record, inParent.stdout.trim(), record.repoRoot)
+    const sibling = (await this.list(record.repoRoot)).find(entry => entry.branch === target)
+    if (sibling === undefined) {
+      throw new WorktreeError(
+        `worktree-manager: git rev-parse ${target} failed in ${record.path}: ${inParent.stderr.trim()}`,
+        'WORKTREE_OPERATION_FAILED',
+      )
+    }
+    const inSibling = await runGit(['rev-parse', '--verify', `${target}^{commit}`], sibling.path)
+    this.requireOk(inSibling, record, `git rev-parse ${target}`)
+    const fetched = await fetchIntoClone(record.path, sibling.path, target)
+    if (fetched.code !== 0) {
+      throw new WorktreeError(
+        `worktree-manager: git fetch ${target} failed in ${record.path}: ${fetched.stderr.trim()}`,
+        'WORKTREE_OPERATION_FAILED',
+      )
+    }
+    return this.ensureCommitInClone(record, inSibling.stdout.trim(), sibling.path)
+  }
+
+  /**
+   * Return `sha` once the clone resolves it, fetching it from `source` first when it does not.
+   * Both `merge-tree` inputs must live in the clone's object store.
+   */
+  private async ensureCommitInClone(record: WorktreeRecord, sha: string, source: string): Promise<string> {
+    const present = await runGit(['rev-parse', '--verify', `${sha}^{commit}`], record.path)
+    if (present.code === 0) return sha
+    const fetched = await fetchIntoClone(record.path, source, sha)
+    if (fetched.code !== 0) {
+      throw new WorktreeError(
+        `worktree-manager: git fetch ${sha} failed in ${record.path}: ${fetched.stderr.trim()}`,
+        'WORKTREE_OPERATION_FAILED',
+      )
+    }
+    return this.revParse(record, sha)
   }
 
   /**
@@ -643,7 +693,7 @@ export class WorktreeService extends Service {
     return { patch: output.stdout, truncated: output.truncated }
   }
 
-  /** Throw `WORKTREE_NOT_FOUND` unless the record's path is a registered git worktree on disk. */
+  /** Throw `WORKTREE_NOT_FOUND` unless the record's path is a live git checkout on disk. */
   private async requireLiveWorktree(record: WorktreeRecord): Promise<void> {
     if (!await isDirectory(record.path)) {
       throw new WorktreeError(
@@ -651,11 +701,11 @@ export class WorktreeService extends Service {
         'WORKTREE_NOT_FOUND',
       )
     }
-    // Git, not the filesystem, decides what a worktree is: a directory left behind
-    // by a crashed `worktree remove` is still on disk but is no longer registered.
-    if (!(await this.registeredWorktrees(record.repoRoot)).has(record.path)) {
+    // Git, not the filesystem, decides what a worktree is: a bare directory left
+    // behind by a crashed removal has no working `.git` and is not a checkout.
+    if (!await isRepoTopLevel(record.path)) {
       throw new WorktreeError(
-        `worktree-manager: worktree path for thread ${record.threadId} is not a registered git worktree: ${record.path}`,
+        `worktree-manager: worktree path for thread ${record.threadId} is not a git checkout: ${record.path}`,
         'WORKTREE_NOT_FOUND',
       )
     }
@@ -702,8 +752,8 @@ export class WorktreeService extends Service {
    *    is older than `adoptionGraceMs`.
    *
    * In-flight creations of this process are never swept. Each orphan is marked
-   * `orphaned`, removed with `git worktree remove --force`, and settled to
-   * `removed` (or `rolled-back` when nothing was ever on disk).
+   * `orphaned`, deleted from disk (and its branch imported into the parent where one
+   * exists), and settled to `removed` (or `rolled-back` when nothing was ever on disk).
    * @returns the records classified as orphans, in their `orphaned` state.
    */
   async reconcile(): Promise<WorktreeRecord[]> {
@@ -727,11 +777,12 @@ export class WorktreeService extends Service {
       // A young `reserved` record may belong to an add still running in another process.
       if (record.state === 'reserved' && Date.now() - (record.createdAt ?? 0) < this.adoptionGraceMs) continue
       const fields = recordFields(record)
-      // "Live" means git still registers this path AND the directory is there. A
-      // crash between the add and its bookkeeping, or between a removal and its
-      // bookkeeping, shows up on either side of that pair.
-      const live = (await this.registeredWorktrees(record.repoRoot)).has(record.path)
-        && await isDirectory(record.path)
+      // "Live" means the directory is there AND git reports it as a checkout top
+      // level. A crash between the clone and its bookkeeping, or between a removal
+      // and its bookkeeping, shows up on either side of that pair. The parent
+      // repository is never consulted, so an unreachable or renamed-away parent
+      // cannot kill the sweep for the other records.
+      const live = await isDirectory(record.path) && await isRepoTopLevel(record.path)
       // Rule 2 needs the probe; rule 1 does not. Asking is safe either way, so the
       // probe runs whenever one is installed and its answer is what decides a
       // worktree that IS still live.
@@ -758,18 +809,6 @@ export class WorktreeService extends Service {
   /** Fold the lines other processes appended since the last read; every operation goes through this gate. */
   private async loadRegistry(): Promise<WorktreeRegistry> {
     return this.registry.refresh()
-  }
-
-  /**
-   * Paths git itself currently registers as worktrees of a repository.
-   *
-   * Read through `git worktree list --porcelain` rather than inferred from the
-   * filesystem: a directory surviving a crashed removal is not a worktree, and
-   * treating it as one is exactly the silent degradation this package forbids.
-   */
-  private async registeredWorktrees(repoRoot: string): Promise<ReadonlySet<string>> {
-    const entries = await listWorktrees(repoRoot)
-    return new Set(entries.map(entry => entry.path))
   }
 
   /**
@@ -809,8 +848,14 @@ export class WorktreeService extends Service {
     const repoRoot = await this.requireRepoTopLevel(spec.repoRoot)
     // Free slots held by abandoned worktrees (no session after the grace period) before counting the limit.
     await this.reconcile()
-    const branch = spec.branch ?? defaultBranchName(spec.threadId)
-    if (ILLEGAL_REF_CHARACTERS.test(branch)) {
+    const branch = spec.detached === true ? undefined : spec.branch ?? defaultBranchName(spec.threadId)
+    if (spec.detached === true && spec.branch !== undefined) {
+      throw new WorktreeError(
+        'worktree-manager: a detached worktree carries no branch — pass either detached or branch, not both',
+        'WORKTREE_CREATE_FAILED',
+      )
+    }
+    if (branch !== undefined && ILLEGAL_REF_CHARACTERS.test(branch)) {
       throw new WorktreeError(`worktree-manager: unusable branch name ${JSON.stringify(branch)}`, 'WORKTREE_CREATE_FAILED')
     }
     if (/[/\\]/.test(spec.threadId) || spec.threadId === '.' || spec.threadId === '..') {
@@ -825,8 +870,14 @@ export class WorktreeService extends Service {
     // Resolved once, here, so the `reserved` intent line already states the policy this attempt
     // will follow — a crash mid-create then leaves a record that says what was being attempted.
     const base: WorktreeBasePolicy = spec.base ?? this.base
-    const fields: WorktreeRecordFields = { path, repoRoot, baseRef: spec.baseRef, branch, base }
-    /** Facts the lock-held check hands to the add below. */
+    const fields: WorktreeRecordFields = {
+      path,
+      repoRoot,
+      baseRef: spec.baseRef,
+      ...branch === undefined ? {} : { branch },
+      base,
+    }
+    /** Facts the lock-held check hands to the creation below. */
     const restart: RestartFacts = { ownBranch: false, baseSha: undefined, base: undefined }
     // The checks and the `reserved` append share one registry lock, so processes sharing the root
     // cannot both pass the limit, path, or branch check.
@@ -869,13 +920,14 @@ export class WorktreeService extends Service {
       // on `(threadId, path)`, not on the branch), so without this exemption a
       // re-created Thread would be refused by its own leftover branch. Any OTHER
       // pre-existing branch — another Thread's, or a human's — is still refused.
-      restart.ownBranch = existing !== undefined
+      restart.ownBranch = branch !== undefined
+        && existing !== undefined
         && TERMINAL_WORKTREE_STATES.includes(existing.state)
         && existing.branch === branch
       restart.baseSha = existing?.baseSha
       restart.base = existing?.base
-      const claimed = active.some(record => record.branch === branch)
-      if (claimed || !restart.ownBranch && await branchExists(repoRoot, branch)) {
+      const claimed = branch !== undefined && active.some(record => record.branch === branch)
+      if (branch !== undefined && (claimed || !restart.ownBranch && await branchExists(repoRoot, branch))) {
         throw new WorktreeError(`worktree-manager: branch already exists: ${branch}`, 'WORKTREE_BRANCH_EXISTS')
       }
       signal.throwIfAborted()
@@ -896,13 +948,32 @@ export class WorktreeService extends Service {
           'WORKTREE_CREATE_FAILED',
         )
       }
+      const baseRefSha = resolved.stdout.trim()
       // The policy decides the commit; a restart keeps the base its earlier lineage was
       // measured from rather than re-snapshotting the parent (see `resolveBase`).
-      const effective = await resolveBase(base, restart, resolved.stdout.trim(), repoRoot)
-      const added = restart.ownBranch
-        ? await addWorktreeAtExistingBranch(repoRoot, path, branch)
-        : await addWorktree(repoRoot, path, branch, effective.baseSha)
-      if (added.code !== 0) throw classifyAddFailure(added.stderr, added.stdout, path, branch)
+      const effective = await resolveBase(base, restart, baseRefSha, repoRoot)
+      const cloned = await cloneLocal(repoRoot, path)
+      if (cloned.code !== 0) throw classifyCloneFailure(cloned.stderr, cloned.stdout, path, branch, effective.baseSha)
+      // A stash snapshot is a dangling commit in the parent: fetch it into the clone so
+      // the Thread's base is present BY CONSTRUCTION, not because `--local` happens to
+      // hardlink the parent's whole object store today.
+      if (effective.base === 'head-with-uncommitted' && effective.baseSha !== baseRefSha) {
+        const delivered = await fetchIntoClone(path, repoRoot, effective.baseSha)
+        if (delivered.code !== 0) {
+          throw classifyCloneFailure(delivered.stderr, delivered.stdout, path, branch, effective.baseSha)
+        }
+      }
+      // A restart re-attaches to the branch removal imported back into the parent, so its
+      // earlier commits survive; a first attempt creates the branch at the base; a spec
+      // with no branch checks the base out detached and records none.
+      const checkedOut = branch === undefined
+        ? await checkoutDetached(path, effective.baseSha)
+        : restart.ownBranch
+          ? await checkoutExistingBranch(path, branch)
+          : await checkoutNewBranch(path, branch, effective.baseSha)
+      if (checkedOut.code !== 0) {
+        throw classifyCloneFailure(checkedOut.stderr, checkedOut.stdout, path, branch, effective.baseSha)
+      }
       // Checked while the record is still `reserved`, so an abort here rolls back
       // through the single legal `reserved → rolled-back` edge.
       signal.throwIfAborted()
@@ -922,27 +993,32 @@ export class WorktreeService extends Service {
   }
 
   /**
-   * Undo a failed or aborted add: `git worktree remove --force`, then `rolled-back`.
+   * Undo a failed or aborted creation: delete the half-created clone, then `rolled-back`.
    *
-   * Best effort by design. The add may never have created anything, in which case
-   * git's "not a working tree" complaint is the expected answer and must not mask
-   * the original failure. The `rolled-back` line is always written, so the
-   * reservation can never be mistaken for a live worktree.
+   * Best effort by design. The creation may never have cloned anything, in which case the
+   * missing directory is the expected answer (`force` absorbs it) and must not mask the
+   * original failure. The `rolled-back` line is always written, so the reservation can
+   * never be mistaken for a live worktree.
    */
   private async rollback(
     threadId: string,
     fields: WorktreeRecordFields,
     registry: WorktreeRegistry,
   ): Promise<void> {
-    if (await isDirectory(fields.path)) {
-      await removeWorktree(fields.repoRoot, fields.path, true)
+    try {
+      await rm(fields.path, { recursive: true, force: true })
+    } catch {
+      // A failing delete (the error is EBUSY, EACCES, …) must not replace the create
+      // failure or abort this `finally` is undoing; the `rolled-back` line below still
+      // settles the reservation.
     }
     await registry.transition(threadId, 'rolled-back', fields)
   }
 
   /**
-   * Run `git worktree remove` and settle the record, leaving a `removing`
-   * tombstone behind when git refuses (design §5).
+   * Settle a removal: refuse unsaved work without `force`, import the branch into the
+   * parent, delete the directory, then write the terminal state — leaving a `removing`
+   * tombstone behind when any step refuses (design §5).
    */
   private async runRemoval(
     record: WorktreeRecord,
@@ -951,17 +1027,43 @@ export class WorktreeService extends Service {
     force: boolean,
   ): Promise<void> {
     const registry = await this.loadRegistry()
-    const removed = await removeWorktree(record.repoRoot, record.path, force)
-    if (removed.code !== 0) {
-      if (!force && DIRTY_WORKTREE_PATTERN.test(removed.stderr)) {
+    // `git status` is the authority on dirt, not the deletion itself: losing unsaved
+    // work must never happen silently. A worktree that is already gone holds none.
+    if (!force && await isDirectory(record.path)) {
+      const status = await worktreeStatus(record.path)
+      if (status.code !== 0) {
         throw new WorktreeError(
-          `worktree-manager: worktree for thread ${record.threadId} has unsaved changes: ${removed.stderr.trim()}`,
+          `worktree-manager: git status failed for ${record.path}: ${status.stderr.trim()}`,
+          'WORKTREE_OPERATION_FAILED',
+        )
+      }
+      if (status.stdout.split('\n').some(line => line.trim() !== '')) {
+        throw new WorktreeError(
+          `worktree-manager: worktree for thread ${record.threadId} has unsaved changes: ${status.stdout.trim()}`,
           'REMOVE_DIRTY_WITHOUT_FORCE',
         )
       }
+    }
+    // The archive contract keeps the branch, and importing it into the parent is what
+    // makes that true after the clone is deleted — so an import that fails fails the
+    // whole removal instead of dropping the branch silently. A rolled-back Thread never
+    // produced a branch worth keeping, so it is deleted without an import.
+    if (terminal === 'removed' && record.branch !== undefined) {
+      const imported = await fetchBranchIntoParent(record.repoRoot, record.path, record.branch)
+      if (imported.code !== 0) {
+        throw new WorktreeError(
+          `worktree-manager: could not import branch ${record.branch} into ${record.repoRoot}: ${imported.stderr.trim()}`,
+          'WORKTREE_OPERATION_FAILED',
+        )
+      }
+    }
+    try {
+      await rm(record.path, { recursive: true, force: true })
+    } catch (cause) {
       throw new WorktreeError(
-        `worktree-manager: git worktree remove failed for ${record.path}: ${removed.stderr.trim()}`,
+        `worktree-manager: could not delete the worktree ${record.path}: ${cause instanceof Error ? cause.message : String(cause)}`,
         'WORKTREE_OPERATION_FAILED',
+        { cause },
       )
     }
     await registry.transition(record.threadId, terminal, fields)
@@ -993,30 +1095,36 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Map a failing `git worktree add` onto the typed taxonomy.
+ * Map a failing clone or checkout step onto the typed taxonomy.
  *
  * Git's wording is the only signal available, so the patterns are narrow and the
  * fallthrough is deliberately the generic `WORKTREE_CREATE_FAILED` — an
  * unclassified failure still fails loud, it just does not claim a more specific cause.
  */
-function classifyAddFailure(stderr: string, stdout: string, path: string, branch: string): WorktreeError {
+function classifyCloneFailure(
+  stderr: string,
+  stdout: string,
+  path: string,
+  branch: string | undefined,
+  baseSha: string,
+): WorktreeError {
   const detail = `${stderr}\n${stdout}`.trim()
-  if (/not a git repository/i.test(detail)) {
-    return new WorktreeError(`worktree-manager: not a git work tree while adding ${path}`, 'NOT_A_GIT_REPO')
-  }
-  if (new RegExp(`branch .*${escapeRegExp(branch)}.*already exists`, 'i').test(detail)
-    || /already exists/i.test(detail) && detail.includes(branch)) {
-    return new WorktreeError(`worktree-manager: branch already exists: ${branch}`, 'WORKTREE_BRANCH_EXISTS')
-  }
-  if (detail.includes(path) || /already (?:registered|used by worktree)|already exists/i.test(detail)) {
+  if (/already exists and is not an empty directory/i.test(detail) || /repository .* already exists/i.test(detail)) {
     return new WorktreeError(`worktree-manager: worktree path already in use: ${path}`, 'WORKTREE_PATH_IN_USE')
   }
-  return new WorktreeError(`worktree-manager: git worktree add failed for ${path}: ${detail}`, 'WORKTREE_CREATE_FAILED')
-}
-
-/** Escape a literal string for use inside a `RegExp`. */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  if (/not a git repository/i.test(detail)) {
+    return new WorktreeError(`worktree-manager: not a git work tree while creating ${path}`, 'NOT_A_GIT_REPO')
+  }
+  if (branch !== undefined && (/a branch named/i.test(detail) || detail.includes(branch) && /already exists/i.test(detail))) {
+    return new WorktreeError(`worktree-manager: branch already exists: ${branch}`, 'WORKTREE_BRANCH_EXISTS')
+  }
+  if (/invalid object name/i.test(detail)) {
+    return new WorktreeError(
+      `worktree-manager: base commit ${baseSha} is not a valid object while creating ${path}: ${detail}`,
+      'WORKTREE_CREATE_FAILED',
+    )
+  }
+  return new WorktreeError(`worktree-manager: git failed while creating ${path}: ${detail}`, 'WORKTREE_CREATE_FAILED')
 }
 
 export default WorktreeService

@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/subagent/subagent-thread-worktree/README.md
 /:
-  en: 2e3bb8af831ae2c5
-  zh: 2e3bb8af831ae2c5
+  en: dbbb126e2ffe9786
+  zh: dbbb126e2ffe9786
 /deepseek-ai-dsh-subagent-thread-worktree:
   en: 89535b382fa5285a
   zh: 4ac31a311ceb4c1c
 /deepseek-ai-dsh-subagent-thread-worktree/summary:
-  en: ee3cd071d8510d69
-  zh: 7f9984136c0f2340
+  en: fb7d866576eda328
+  zh: 7e71a8ce8f5ef4ac
 /deepseek-ai-dsh-subagent-thread-worktree/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -45,8 +45,8 @@
   en: ec9b8ef9b1768b67
   zh: 23bfabe59adb7cbe
 /deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work:
-  en: 0c528dd22e9de66e
-  zh: da68f93923d1e828
+  en: 7a3a5a7f416af511
+  zh: 12b21cec7fed96c6
 /deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work/dev-note:
   en: a493241f982ab547
   zh: 22cf96e18235c6ae

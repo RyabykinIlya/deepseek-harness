@@ -30,7 +30,7 @@ describe('renderDiff summary', () => {
 
     expect(renderDiff(summary({ headSha }), 4096)).toBe([
       'Thread thread-a',
-      `no branch (detached): merge commit ${headSha.slice(0, 12)} from /wt/thread-a`,
+      `no branch (detached): fetch commit ${headSha} from /wt/thread-a into the Project checkout and merge it`,
       `base , head ${headSha.slice(0, 12)}; 0 uncommitted in /wt/thread-a (not on the branch until committed)`,
       'commits: none',
       'committed files: none',
@@ -40,7 +40,7 @@ describe('renderDiff summary', () => {
   it('renders a result the worktree service cannot fill in', () => {
     expect(renderDiff(summary(), 4096)).toBe([
       'Thread thread-a',
-      'no branch (detached): merge commit  from /wt/thread-a',
+      'no branch (detached): fetch commit the head commit from /wt/thread-a into the Project checkout and merge it',
       'base , head ; 0 uncommitted in /wt/thread-a (not on the branch until committed)',
       'commits: none',
       'committed files: none',
@@ -55,7 +55,7 @@ describe('renderDiff summary', () => {
 
     expect(out).toBe([
       'Thread thread-a',
-      'branch dsh/thread-a: merge with `git merge --no-ff dsh/thread-a` in the Project checkout',
+      'branch dsh/thread-a: fetch it into the Project checkout with `git fetch /wt/thread-a dsh/thread-a`, then merge with `git merge --no-ff dsh/thread-a`',
       `base ${'b'.repeat(12)}, head ${'h'.repeat(12)}; 2 uncommitted in /wt/thread-a (not on the branch until committed)`,
       'commits: none',
       'committed files (3):',

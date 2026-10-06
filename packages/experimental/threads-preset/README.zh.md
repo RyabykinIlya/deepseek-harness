@@ -135,11 +135,11 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 
 #### 模型看到的内容
 
-Project 看到一个名为 `threads:contract` 的 runtime context。它说明：Project 负责协调工作；Thread 是在自己的 git worktree 和分支上工作的后台 agent，其改动只有经过合并才会进入检出目录；模型应重述目标、提出拆分方案，并用 `subagent` 工具启动 Thread，该调用是异步的，返回的是 id 而不是工作结果；Thread 完成时会自行回报，因此模型不得循环轮询；`thread_status` 有界且可能省略部分 Thread；`thread_diff` 用于审阅已完成的 Thread；整合方式是 `git merge --no-ff <branch>`，需解决冲突并运行测试，当多个 Thread 改了同一批文件时应先提出合并顺序；已合并 Thread 的归档由用户在界面上完成。Thread 看到的是一个名为 `threads:worker-contract` 的 runtime context。它说明：模型是 Project 的 Thread，负责一项被委派的任务；它的检出目录与分支属于自己；每个完成的步骤都要提交；除非被要求，不推送、不改动其他分支；完成后用 `send_message` 给父代理发送自包含的总结：改了什么、如何验证、剩余风险，以及来自 `git branch --show-current` 的分支名。该行的 `Config` 提供三种句子变体：汇报节奏（`milestones`、`each-thread`、`quiet`）、启动 Thread 前是否等待批准（`ask`、`auto`），以及合并前是否询问（`ask`、`auto`）；每个变体都是替换进契约的固定句子，其余文本完全相同。委派描述、schema 以及 `thread_status` 的 schema 属于这两个预设挂载的行，而不属于本包。
+Project 看到一个名为 `threads:contract` 的 runtime context。它说明：Project 负责协调工作；Thread 是在自己的 git worktree 和分支上工作的后台 agent，其改动只有经过合并才会进入检出目录；模型应重述目标、提出拆分方案，并用 `subagent` 工具启动 Thread，该调用是异步的，返回的是 id 而不是工作结果；Thread 完成时会自行回报，因此模型不得循环轮询；`thread_status` 有界且可能省略部分 Thread；`thread_diff` 用于审阅已完成的 Thread；整合方式是先用 `git fetch <worktree> <branch>` 从 Thread 的 worktree 取回其分支，再用 `git merge --no-ff <branch>` 合并，需解决冲突并运行测试；`thread_status` 与 `thread_diff` 显示每个 Thread 的 worktree 路径；当多个 Thread 改了同一批文件时应先提出合并顺序；已合并 Thread 的归档由用户在界面上完成。Thread 看到的是一个名为 `threads:worker-contract` 的 runtime context。它说明：模型是 Project 的 Thread，负责一项被委派的任务；它的检出目录与分支属于自己；每个完成的步骤都要提交；除非被要求，不推送、不改动其他分支；它的检出目录是完整的独立仓库，普通 git 命令无需任何提权即可使用；绝不创建任何仓库的 worktree、clone 或副本，也绝不为 git 操作申请更宽的文件写入权限，无法在自己的检出目录内写入时向协调者报告；完成后用 `send_message` 给父代理发送自包含的总结：改了什么、如何验证、剩余风险，以及来自 `git branch --show-current` 的分支名。该行的 `Config` 提供三种句子变体：汇报节奏（`milestones`、`each-thread`、`quiet`）、启动 Thread 前是否等待批准（`ask`、`auto`），以及合并前是否询问（`ask`、`auto`）；每个变体都是替换进契约的固定句子，其余文本完全相同。委派描述、schema 以及 `thread_status` 的 schema 属于这两个预设挂载的行，而不属于本包。
 
 #### Token 影响
 
-协调者契约约 2 kB prompt 文本，每个 Project 会话添加一次，且只对 Project 会话添加。worker 契约不到 0.8 kB，每个 Thread 添加一次。选择其他预设的会话不承担任何开销。
+协调者契约约 2.2 kB prompt 文本，每个 Project 会话添加一次，且只对 Project 会话添加。worker 契约约 1.2 kB，每个 Thread 添加一次。选择其他预设的会话不承担任何开销。
 
 #### KV Cache 影响
 

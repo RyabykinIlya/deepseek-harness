@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { realpathSync } from 'node:fs'
@@ -28,13 +28,17 @@ function git(args: readonly string[], cwd?: string): string {
   }).trim()
 }
 
-/** Absolute paths git currently reports for `repoRoot`'s worktrees. */
-function worktreePaths(repoRoot: string): string[] {
-  const porcelain = git(['worktree', 'list', '--porcelain'], repoRoot)
-  return porcelain
-    .split('\n')
-    .filter(line => line.startsWith('worktree '))
-    .map(line => line.slice('worktree '.length).trim())
+/** Absolute paths of the managed worktree directories currently on disk. */
+function worktreePaths(worktreeRoot: string): string[] {
+  if (!existsSync(worktreeRoot)) return []
+  const paths: string[] = []
+  for (const bucket of readdirSync(worktreeRoot, { withFileTypes: true })) {
+    if (!bucket.isDirectory()) continue
+    for (const entry of readdirSync(join(worktreeRoot, bucket.name), { withFileTypes: true })) {
+      if (entry.isDirectory()) paths.push(join(worktreeRoot, bucket.name, entry.name))
+    }
+  }
+  return paths
 }
 
 /** Branch names git currently reports for `repoRoot` (markers stripped). */
@@ -95,11 +99,31 @@ function sidecarOrEmpty(worktreeRoot: string): Record<string, unknown>[] {
   }
 }
 
-/** Make `git worktree add` slow enough to abort while it is genuinely in flight. */
-function slowCheckout(repoRoot: string): void {
-  const hook = join(repoRoot, '.git', 'hooks', 'post-checkout')
+/**
+ * Make every git checkout this process spawns slow enough to abort while creation is
+ * genuinely in flight.
+ *
+ * A clone does not copy the parent's hooks, so the sleeping `post-checkout` hook is
+ * delivered through `core.hooksPath` in git's config environment — which the clone's
+ * single checkout consults.
+ * @returns a function that restores the process environment.
+ */
+function slowCheckout(): () => void {
+  const hooks = temporary('dsh-wm-hooks-')
+  const hook = join(hooks, 'post-checkout')
   writeFileSync(hook, '#!/bin/sh\nsleep 0.4\n', 'utf8')
   chmodSync(hook, 0o755)
+  const previousCount = process.env.GIT_CONFIG_COUNT
+  const index = previousCount === undefined ? 0 : Number(previousCount)
+  process.env.GIT_CONFIG_COUNT = String(index + 1)
+  process.env[`GIT_CONFIG_KEY_${index}`] = 'core.hooksPath'
+  process.env[`GIT_CONFIG_VALUE_${index}`] = hooks
+  return () => {
+    if (previousCount === undefined) delete process.env.GIT_CONFIG_COUNT
+    else process.env.GIT_CONFIG_COUNT = previousCount
+    delete process.env[`GIT_CONFIG_KEY_${index}`]
+    delete process.env[`GIT_CONFIG_VALUE_${index}`]
+  }
 }
 
 let worktreeRoot: string
@@ -130,8 +154,8 @@ describe('SBFT A1 — create a worktree', { timeout: GIT_TIMEOUT_MS }, () => {
     expect(record.branch).toBe('dsh/thread-thread-a1')
     expect(record.repoRoot).toBe(repoRoot)
     expect(record.path.startsWith('/')).toBe(true)
-    expect(worktreePaths(repoRoot)).toContain(record.path)
-    expect(branchNames(repoRoot)).toContain('dsh/thread-thread-a1')
+    expect(worktreePaths(worktreeRoot)).toContain(record.path)
+    expect(branchNames(record.path)).toContain('dsh/thread-thread-a1')
     // The durable intent is on disk BEFORE the add, so the log shows both steps.
     expect(sidecar(worktreeRoot).map(line => line.state)).toEqual(['reserved', 'ready'])
     // A ready worktree is clean: nothing was written into it yet.
@@ -164,22 +188,26 @@ describe('SBFT A2 — re-create is idempotent', { timeout: GIT_TIMEOUT_MS }, () 
     const second = await service.create(spec, new AbortController().signal)
 
     expect(second).toEqual(first)
-    // Exactly the main worktree plus the one we created.
-    expect(worktreePaths(repoRoot)).toHaveLength(2)
-    expect(branchNames(repoRoot)).toHaveLength(2)
+    // Exactly the one managed worktree we created, with its own branch inside it.
+    expect(worktreePaths(worktreeRoot)).toHaveLength(1)
+    expect(branchNames(first.path)).toHaveLength(2)
   })
 
   it('shares one attempt between concurrent creates of the same thread', async () => {
     const repoRoot = repository()
-    slowCheckout(repoRoot)
-    const { service } = await mount({ worktreeRoot })
-    const spec = { repoRoot, threadId: 'thread-race', baseRef: 'HEAD' }
-    const signal = new AbortController().signal
+    const restore = slowCheckout()
+    try {
+      const { service } = await mount({ worktreeRoot })
+      const spec = { repoRoot, threadId: 'thread-race', baseRef: 'HEAD' }
+      const signal = new AbortController().signal
 
-    const [a, b] = await Promise.all([service.create(spec, signal), service.create(spec, signal)])
+      const [a, b] = await Promise.all([service.create(spec, signal), service.create(spec, signal)])
 
-    expect(b).toEqual(a)
-    expect(worktreePaths(repoRoot)).toHaveLength(2)
+      expect(b).toEqual(a)
+      expect(worktreePaths(worktreeRoot)).toHaveLength(1)
+    } finally {
+      restore()
+    }
   })
 })
 
@@ -242,7 +270,7 @@ describe('SBFT A4 — an existing branch is refused', { timeout: GIT_TIMEOUT_MS 
       new AbortController().signal,
     )).rejects.toMatchObject({ code: 'WORKTREE_BRANCH_EXISTS' })
 
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
     expect(sidecarOrEmpty(worktreeRoot)).toEqual([])
   })
 
@@ -268,7 +296,7 @@ describe('SBFT A4 — an existing branch is refused', { timeout: GIT_TIMEOUT_MS 
 })
 
 describe('SBFT A5 — an already-aborted signal never reaches git', { timeout: GIT_TIMEOUT_MS }, () => {
-  it('rejects before spawning git and leaves the worktree list untouched', async () => {
+  it('rejects before spawning git and creates no worktree', async () => {
     const repoRoot = repository()
     const { service } = await mount({ worktreeRoot })
     const controller = new AbortController()
@@ -279,35 +307,39 @@ describe('SBFT A5 — an already-aborted signal never reaches git', { timeout: G
       controller.signal,
     )).rejects.toMatchObject({ name: 'AbortError' })
 
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
     expect(() => readFileSync(join(worktreeRoot, REGISTRY_FILE_NAME), 'utf8')).toThrow()
   })
 })
 
-describe('SBFT A6 — an abort mid-add rolls the reservation back', { timeout: GIT_TIMEOUT_MS }, () => {
+describe('SBFT A6 — an abort mid-creation rolls the reservation back', { timeout: GIT_TIMEOUT_MS }, () => {
   it('removes the worktree in the provider finally and settles as rolled-back', async () => {
     const repoRoot = repository()
-    // `git worktree add` runs post-checkout, so the add is provably still in flight
-    // while the abort lands — no sleeps in the assertion path.
-    slowCheckout(repoRoot)
-    const { service } = await mount({ worktreeRoot })
-    const controller = new AbortController()
+    // The clone's single checkout runs the sleeping post-checkout hook, so creation is
+    // provably still in flight while the abort lands — no sleeps in the assertion path.
+    const restore = slowCheckout()
+    try {
+      const { service } = await mount({ worktreeRoot })
+      const controller = new AbortController()
 
-    const attempt = service.create(
-      { repoRoot, threadId: 'thread-a6', baseRef: 'HEAD' },
-      controller.signal,
-    )
-    // Wait for the durable intent, which is written before the add is spawned.
-    while (sidecarOrEmpty(worktreeRoot).length === 0) {
-      await new Promise(resolve => setTimeout(resolve, 5))
+      const attempt = service.create(
+        { repoRoot, threadId: 'thread-a6', baseRef: 'HEAD' },
+        controller.signal,
+      )
+      // Wait for the durable intent, which is written before the clone is spawned.
+      while (sidecarOrEmpty(worktreeRoot).length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      controller.abort()
+
+      await expect(attempt).rejects.toMatchObject({ name: 'AbortError' })
+
+      expect(worktreePaths(worktreeRoot)).toEqual([])
+      expect(sidecar(worktreeRoot).map(line => line.state)).toEqual(['reserved', 'rolled-back'])
+      expect((await service.list(repoRoot))).toEqual([])
+    } finally {
+      restore()
     }
-    controller.abort()
-
-    await expect(attempt).rejects.toMatchObject({ name: 'AbortError' })
-
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
-    expect(sidecar(worktreeRoot).map(line => line.state)).toEqual(['reserved', 'rolled-back'])
-    expect((await service.list(repoRoot))).toEqual([])
   })
 })
 
@@ -324,12 +356,12 @@ describe('SBFT A7 — removal is explicit and refuses to eat unsaved work', { ti
 
     await expect(service.remove(record)).rejects.toMatchObject({ code: 'REMOVE_DIRTY_WITHOUT_FORCE' })
     // The refusal left a `removing` tombstone, not a lost record.
-    expect(worktreePaths(repoRoot)).toContain(record.path)
+    expect(worktreePaths(worktreeRoot)).toContain(record.path)
     expect((await service.list(repoRoot)).map(entry => entry.state)).toEqual(['removing'])
 
     await service.remove(record, { force: true })
 
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
     expect(() => readFileSync(record.path, 'utf8')).toThrow()
     // Design §2: "what to delete on close" is keyed on `(threadId, path)`, NOT on
     // the branch — so the branch (and any commit only it reaches) survives removal.
@@ -357,13 +389,15 @@ describe('SBFT A7 — removal is explicit and refuses to eat unsaved work', { ti
     const repoRoot = repository()
     const { service } = await mount({ worktreeRoot })
     const record = await service.create({ repoRoot, threadId: 'thread-tombstone', baseRef: 'HEAD' }, new AbortController().signal)
-    // Git no longer registers the path, so even `--force` has nothing to remove.
-    rmSync(record.path, { recursive: true, force: true })
-    git(['worktree', 'prune'], repoRoot)
+    // The bucket refuses deletion, so the `rm` itself fails even with force.
+    chmodSync(dirname(record.path), 0o500)
+    try {
+      await expect(service.remove(record, { force: true })).rejects.toMatchObject({ code: 'WORKTREE_OPERATION_FAILED' })
 
-    await expect(service.remove(record, { force: true })).rejects.toMatchObject({ code: 'WORKTREE_OPERATION_FAILED' })
-
-    expect((await service.get('thread-tombstone'))?.state).toBe('removing')
+      expect((await service.get('thread-tombstone'))?.state).toBe('removing')
+    } finally {
+      chmodSync(dirname(record.path), 0o755)
+    }
   })
 
   it('refuses a worktree path occupied by a plain file', async () => {
@@ -413,7 +447,9 @@ describe('SBFT A8 — a vanished worktree is never reported clean', { timeout: G
       { repoRoot, threadId: 'thread-a8b', baseRef: 'HEAD' },
       new AbortController().signal,
     )
-    git(['worktree', 'remove', '--force', record.path], repoRoot)
+    // The checkout is dismantled but the directory stays: a bare directory is not a
+    // live worktree, and git — not the filesystem — decides.
+    rmSync(record.path, { recursive: true, force: true })
     mkdirSync(record.path, { recursive: true })
 
     await expect(service.status(record)).rejects.toMatchObject({ code: 'WORKTREE_NOT_FOUND' })
@@ -425,7 +461,6 @@ describe('SBFT A8 — a vanished worktree is never reported clean', { timeout: G
     const spec = { repoRoot, threadId: 'thread-a8c', baseRef: 'HEAD' }
     const record = await service.create(spec, new AbortController().signal)
     rmSync(record.path, { recursive: true, force: true })
-    git(['worktree', 'prune'], repoRoot)
 
     await expect(service.create(spec, new AbortController().signal)).rejects.toMatchObject({
       code: 'WORKTREE_ORPHANED',
@@ -443,8 +478,11 @@ describe('SBFT A9 — two threads stay disjoint', { timeout: GIT_TIMEOUT_MS }, (
 
     expect(a.path).not.toBe(b.path)
     expect(a.branch).not.toBe(b.branch)
-    expect(new Set(worktreePaths(repoRoot))).toEqual(new Set([repoRoot, a.path, b.path]))
-    expect(new Set(branchNames(repoRoot))).toEqual(new Set(['main', 'dsh/thread-thread-a', 'dsh/thread-thread-b']))
+    expect(new Set(worktreePaths(worktreeRoot))).toEqual(new Set([a.path, b.path]))
+    // Each clone owns its own branch; the user's checkout gains none of them.
+    expect(branchNames(repoRoot)).toEqual(['main'])
+    expect(new Set(branchNames(a.path))).toEqual(new Set(['main', 'dsh/thread-thread-a']))
+    expect(new Set(branchNames(b.path))).toEqual(new Set(['main', 'dsh/thread-thread-b']))
     // The whole point: the user's own checkout is untouched by Thread activity.
     expect(git(['status', '--porcelain'], repoRoot)).toBe('')
     expect(git(['status', '--porcelain'], a.path)).toBe('')
@@ -650,11 +688,17 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
     writeRecord(worktreeRoot, threadId, path, repoRoot, 'reserved', createdAt)
   }
 
+  /** Materialize `path` as a self-contained clone of `repoRoot` with `branch` checked out. */
+  function seedClone(repoRoot: string, path: string, branch: string): void {
+    mkdirSync(dirname(path), { recursive: true })
+    git(['clone', '--local', '--no-checkout', repoRoot, path], repoRoot)
+    git(['checkout', '-b', branch, 'HEAD'], path)
+  }
+
   it('detects a reserved record whose thread has no session and removes it', async () => {
     const repoRoot = repository()
     const orphanedPath = join(worktreeRoot, 'bucket', 'thread-orphan')
-    mkdirSync(join(worktreeRoot, 'bucket'), { recursive: true })
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-thread-orphan', orphanedPath, 'HEAD'], repoRoot)
+    seedClone(repoRoot, orphanedPath, 'dsh/thread-thread-orphan')
     writeReservedRecord(worktreeRoot, 'thread-orphan', orphanedPath, repoRoot)
 
     const { service } = await mount({ worktreeRoot })
@@ -665,9 +709,9 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
 
     expect(orphans.map(entry => entry.threadId)).toEqual(['thread-orphan'])
     expect(orphans[0]?.state).toBe('orphaned')
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
-    expect(new Set(branchNames(repoRoot))).toEqual(new Set(['main', 'dsh/thread-thread-orphan']))
-    expect(git(['branch', '--list', '--format=%(worktreepath)', 'dsh/thread-thread-orphan'], repoRoot)).toBe('')
+    expect(worktreePaths(worktreeRoot)).toEqual([])
+    // The crash-written record names no branch, so there is nothing to import back.
+    expect(branchNames(repoRoot)).toEqual(['main'])
     expect(sidecar(worktreeRoot).map(line => line.state)).toEqual(['reserved', 'orphaned', 'removing', 'removed'])
     expect(await service.list(repoRoot)).toEqual([])
   })
@@ -682,7 +726,7 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
     service.sessionExists = () => true
 
     expect(await service.reconcile()).toEqual([])
-    expect(worktreePaths(repoRoot)).toContain(record.path)
+    expect(worktreePaths(worktreeRoot)).toContain(record.path)
   })
 
   it('removes a session-less worktree older than the grace period and keeps a younger one', async () => {
@@ -691,12 +735,12 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
     const record = await young.service.create({ repoRoot, threadId: 'thread-young', baseRef: 'HEAD' }, new AbortController().signal)
     young.service.sessionExists = () => false
     expect(await young.service.reconcile()).toEqual([])
-    expect(worktreePaths(repoRoot)).toContain(record.path)
+    expect(worktreePaths(worktreeRoot)).toContain(record.path)
 
     const old = await mount({ worktreeRoot, adoptionGraceMs: 0 })
     old.service.sessionExists = () => false
     expect((await old.service.reconcile()).map(entry => entry.threadId)).toEqual(['thread-young'])
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
   })
 
   it('frees a limit slot held by an abandoned worktree when the next create runs', async () => {
@@ -719,7 +763,7 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
     )
 
     expect(await service.reconcile()).toEqual([])
-    expect(worktreePaths(repoRoot)).toContain(record.path)
+    expect(worktreePaths(worktreeRoot)).toContain(record.path)
   })
 
   it('rolls back a reservation whose worktree never materialized', async () => {
@@ -738,8 +782,7 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
   it('runs the sweep on load when pruneOnStart is enabled', async () => {
     const repoRoot = repository()
     const orphanedPath = join(worktreeRoot, 'bucket', 'thread-startup')
-    mkdirSync(join(worktreeRoot, 'bucket'), { recursive: true })
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-thread-startup', orphanedPath, 'HEAD'], repoRoot)
+    seedClone(repoRoot, orphanedPath, 'dsh/thread-thread-startup')
     writeReservedRecord(worktreeRoot, 'thread-startup', orphanedPath, repoRoot)
 
     const ctx = new Context()
@@ -749,7 +792,7 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
     // and assert the startup sweep itself completed without leaving the record live.
     await ctx.worktrees.reconcile()
 
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
     expect(await ctx.worktrees.list(repoRoot)).toEqual([])
     // Disposing the context disposes the startup sweep's effect.
     await ctx.fiber.dispose()
@@ -757,25 +800,23 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
 
   it('treats an unstamped record as older than any grace period', async () => {
     const repoRoot = repository()
-    mkdirSync(join(worktreeRoot, 'bucket'), { recursive: true })
     const readyPath = join(worktreeRoot, 'bucket', 'thread-stamp-ready')
     const reservedPath = join(worktreeRoot, 'bucket', 'thread-stamp-reserved')
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-a', readyPath, 'HEAD'], repoRoot)
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-b', reservedPath, 'HEAD'], repoRoot)
+    seedClone(repoRoot, readyPath, 'dsh/thread-a')
+    seedClone(repoRoot, reservedPath, 'dsh/thread-b')
     writeRecord(worktreeRoot, 'thread-stamp-ready', readyPath, repoRoot, 'ready')
     writeRecord(worktreeRoot, 'thread-stamp-reserved', reservedPath, repoRoot, 'reserved')
     const { service } = await mount({ worktreeRoot, adoptionGraceMs: 0 })
     service.sessionExists = () => false
 
     expect((await service.reconcile()).map(entry => entry.threadId)).toEqual(['thread-stamp-ready', 'thread-stamp-reserved'])
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
   })
 
   it('re-attaches an unstamped reservation instead of calling it another process\'s', async () => {
     const repoRoot = repository()
     const path = join(worktreeRoot, 'bucket', 'thread-unstamped')
-    mkdirSync(join(worktreeRoot, 'bucket'), { recursive: true })
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-thread-unstamped', path, 'HEAD'], repoRoot)
+    seedClone(repoRoot, path, 'dsh/thread-thread-unstamped')
     writeRecord(worktreeRoot, 'thread-unstamped', path, repoRoot, 'reserved')
     const { service } = await mount({ worktreeRoot, adoptionGraceMs: 0 })
 
@@ -783,14 +824,13 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
 
     expect(record.state).toBe('reserved')
     expect(record.path).toBe(path)
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot, path])
+    expect(worktreePaths(worktreeRoot)).toEqual([path])
   })
 
   it('rolls a crashed add back through an explicit remove', async () => {
     const repoRoot = repository()
     const path = join(worktreeRoot, 'bucket', 'thread-half')
-    mkdirSync(join(worktreeRoot, 'bucket'), { recursive: true })
-    git(['worktree', 'add', '--quiet', '-b', 'dsh/thread-thread-half', path, 'HEAD'], repoRoot)
+    seedClone(repoRoot, path, 'dsh/thread-thread-half')
     writeReservedRecord(worktreeRoot, 'thread-half', path, repoRoot)
     const { service } = await mount({ worktreeRoot })
     const reserved = await service.get('thread-half')
@@ -798,7 +838,7 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
 
     await service.remove(reserved)
 
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
     expect((await service.get('thread-half'))?.state).toBe('rolled-back')
   })
 
@@ -952,7 +992,7 @@ describe('unusable input', { timeout: GIT_TIMEOUT_MS }, () => {
     )).rejects.toMatchObject({ code: 'WORKTREE_CREATE_FAILED' })
   })
 
-  it('reports a failing add as WORKTREE_CREATE_FAILED', async () => {
+  it('reports a failing creation as WORKTREE_CREATE_FAILED', async () => {
     const repoRoot = repository()
     const { service } = await mount({ worktreeRoot })
     await expect(service.create(
@@ -961,6 +1001,6 @@ describe('unusable input', { timeout: GIT_TIMEOUT_MS }, () => {
     )).rejects.toMatchObject({ code: 'WORKTREE_CREATE_FAILED' })
     // The reservation was rolled back rather than left behind.
     expect(sidecar(worktreeRoot).map(line => line.state)).toEqual(['reserved', 'rolled-back'])
-    expect(worktreePaths(repoRoot)).toEqual([repoRoot])
+    expect(worktreePaths(worktreeRoot)).toEqual([])
   })
 })

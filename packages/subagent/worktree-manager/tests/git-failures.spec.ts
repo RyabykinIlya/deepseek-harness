@@ -1,7 +1,7 @@
 /**
  * How the git seam FAILS: a git that cannot be spawned, a subcommand that exits
- * non-zero, an add whose wording git alone can classify, and a bounded read whose
- * output exceeds the byte bound.
+ * non-zero, a creation whose wording git alone can classify, and a bounded read
+ * whose output exceeds the byte bound.
  *
  * These paths are reached through the REAL service wherever a caller would meet
  * them, with a scripted `git` first on `PATH` for the outcomes a healthy
@@ -246,12 +246,12 @@ describe('a subcommand git answers with a failure', { timeout: GIT_TIMEOUT_MS },
     }
   })
 
-  it('reports an unreadable worktree list as WORKTREE_OPERATION_FAILED', async () => {
+  it('reports a checkout git cannot read as WORKTREE_NOT_FOUND', async () => {
     const service = await mount(worktreeRoot)
     const record = await service.create({ repoRoot, threadId: 'list', baseRef: 'HEAD' }, new AbortController().signal)
-    const restore = scriptGit({ match: 'worktree list', code: 129, err: 'fatal: unrecognized option' })
+    const restore = scriptGit({ match: '--show-toplevel', code: 129, err: 'fatal: unrecognized option' })
     try {
-      await expect(service.status(record)).rejects.toMatchObject({ code: 'WORKTREE_OPERATION_FAILED' })
+      await expect(service.status(record)).rejects.toMatchObject({ code: 'WORKTREE_NOT_FOUND' })
     } finally {
       restore()
     }
@@ -271,10 +271,11 @@ describe('a subcommand git answers with a failure', { timeout: GIT_TIMEOUT_MS },
 })
 
 describe('a detached worktree', { timeout: GIT_TIMEOUT_MS }, () => {
-  it('reads a record whose worktree git registered without a branch', async () => {
+  it('reads a branch-less record whose checkout is live', async () => {
     const detachedPath = join(worktreeRoot, 'bucket', 'detached')
     mkdirSync(dirname(detachedPath), { recursive: true })
-    git(['worktree', 'add', '--quiet', '--detach', detachedPath, 'HEAD'], repoRoot)
+    git(['clone', '--local', '--no-checkout', repoRoot, detachedPath], repoRoot)
+    git(['checkout', '--detach', 'HEAD'], detachedPath)
     const record: WorktreeRecord = {
       threadId: 'detached',
       path: detachedPath,
@@ -288,15 +289,22 @@ describe('a detached worktree', { timeout: GIT_TIMEOUT_MS }, () => {
   })
 })
 
-describe('classifying a failing git worktree add', { timeout: GIT_TIMEOUT_MS }, () => {
-  /** Create `threadId` while `git worktree add` fails with `err`. */
-  async function createWithAddFailure(service: WorktreeService, threadId: string, err: string): Promise<WorktreeError> {
-    const restore = scriptGit({ match: 'worktree add', err })
+describe('classifying a failing clone or checkout', { timeout: GIT_TIMEOUT_MS }, () => {
+  /**
+   * Create `threadId` while the git step selected by `match` fails with `err`.
+   * @param service - the mounted service.
+   * @param threadId - the Thread to create.
+   * @param match - argv substring selecting the failing step (`clone` or `checkout -b`).
+   * @param err - git's own stderr for that step.
+   * @returns the typed failure the service classified.
+   */
+  async function createWithGitFailure(service: WorktreeService, threadId: string, match: string, err: string): Promise<WorktreeError> {
+    const restore = scriptGit({ match, err })
     try {
       const settled = await service
         .create({ repoRoot, threadId, baseRef: 'HEAD' }, new AbortController().signal)
         .then(
-          (record) => { throw new Error(`the add should have failed with: ${err} (got a ${record.state} record)`) },
+          (record) => { throw new Error(`creation should have failed with: ${err} (got a ${record.state} record)`) },
           (error: unknown) => error,
         )
       if (!(settled instanceof WorktreeError)) throw new Error(`expected a WorktreeError, got ${String(settled)}`)
@@ -308,46 +316,53 @@ describe('classifying a failing git worktree add', { timeout: GIT_TIMEOUT_MS }, 
 
   it('reads a repository that vanished as NOT_A_GIT_REPO', async () => {
     const service = await mount(worktreeRoot)
-    const error = await createWithAddFailure(service, 'not-a-repo', 'fatal: not a git repository: .git')
+    const error = await createWithGitFailure(service, 'not-a-repo', 'clone', 'fatal: not a git repository: .git')
     expect(error.code).toBe('NOT_A_GIT_REPO')
   })
 
-  it('reads git\'s own "branch ... already exists" wording as WORKTREE_BRANCH_EXISTS', async () => {
+  it('reads git\'s own "a branch named ... already exists" wording as WORKTREE_BRANCH_EXISTS', async () => {
     const service = await mount(worktreeRoot)
     const branch = `dsh/thread-${threadSlug('branch-worded')}`
-    const error = await createWithAddFailure(service, 'branch-worded', `fatal: a branch named '${branch}' already exists`)
+    const error = await createWithGitFailure(service, 'branch-worded', 'checkout -b', `fatal: a branch named '${branch}' already exists`)
     expect(error.code).toBe('WORKTREE_BRANCH_EXISTS')
   })
 
   it('reads a bare "already exists" that names the branch as WORKTREE_BRANCH_EXISTS', async () => {
     const service = await mount(worktreeRoot)
     const branch = `dsh/thread-${threadSlug('branch-bare')}`
-    const error = await createWithAddFailure(service, 'branch-bare', `fatal: could not set up HEAD: '${branch}' already exists`)
+    const error = await createWithGitFailure(service, 'branch-bare', 'checkout -b', `fatal: could not set up HEAD: '${branch}' already exists`)
     expect(error.code).toBe('WORKTREE_BRANCH_EXISTS')
   })
 
-  it('reads a path git names as WORKTREE_PATH_IN_USE', async () => {
+  it('reads a destination git refuses because it exists as WORKTREE_PATH_IN_USE', async () => {
     const service = await mount(worktreeRoot)
     // The path the service derives is a bucket hash of the repository, so it is
     // read back from a rolled-back record rather than recomputed here.
-    await createWithAddFailure(service, 'path-probe', 'fatal: cannot lock ref: is at 1 but expected 2')
+    await createWithGitFailure(service, 'path-probe', 'checkout -b', 'fatal: cannot lock ref: is at 1 but expected 2')
     const probe = await service.get('path-probe')
     const path = join(dirname(probe?.path ?? ''), threadSlug('path-named'))
-    const error = await createWithAddFailure(service, 'path-named', `fatal: '${path}' is already used by another checkout`)
+    const error = await createWithGitFailure(
+      service,
+      'path-named',
+      'clone',
+      `fatal: destination path '${path}' already exists and is not an empty directory.`,
+    )
     expect(error.code).toBe('WORKTREE_PATH_IN_USE')
+    expect(error.message).toContain(path)
   })
 
-  it('reads a path git reports as registered as WORKTREE_PATH_IN_USE', async () => {
+  it('names the base commit when checkout rejects it as WORKTREE_CREATE_FAILED', async () => {
     const service = await mount(worktreeRoot)
-    const error = await createWithAddFailure(service, 'registered', "fatal: '/elsewhere' is already registered with this repository")
-    expect(error.code).toBe('WORKTREE_PATH_IN_USE')
+    const error = await createWithGitFailure(service, 'bad-base', 'checkout -b', 'fatal: invalid object name: gone')
+    expect(error.code).toBe('WORKTREE_CREATE_FAILED')
+    expect(error.message).toContain(git(['rev-parse', 'HEAD'], repoRoot))
   })
 
   it('falls through to the generic WORKTREE_CREATE_FAILED when nothing else matches', async () => {
     const service = await mount(worktreeRoot)
-    const error = await createWithAddFailure(service, 'unknown', 'fatal: cannot lock ref: is at 1 but expected 2')
+    const error = await createWithGitFailure(service, 'unknown', 'checkout -b', 'fatal: cannot lock ref: is at 1 but expected 2')
     expect(error.code).toBe('WORKTREE_CREATE_FAILED')
-    expect(error.message).toContain('git worktree add failed')
+    expect(error.message).toContain('git failed while creating')
   })
 })
 

@@ -15,7 +15,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 export type WorktreeErrorCode =
   /** The requested `repoRoot` is not inside a git work tree (design §3.3). */
   | 'NOT_A_GIT_REPO'
-  /** `git worktree add` returned non-zero for a reason no other code covers (design §3.3). */
+  /** A creation step (clone or checkout) returned non-zero for a reason no other code covers (design §3.3). */
   | 'WORKTREE_CREATE_FAILED'
   /** The Thread's branch already exists; the worktree was not added (design §3.3, SBFT A4). */
   | 'WORKTREE_BRANCH_EXISTS'

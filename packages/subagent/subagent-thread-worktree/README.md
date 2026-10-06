@@ -1,5 +1,5 @@
 ---
-description: "Worktree-isolated continuable subagent backend: every Thread child runs in its own git worktree."
+description: "Worktree-isolated continuable subagent backend: every Thread child runs in its own self-contained clone."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give an agent a named subagent backend in which every continuable child is isolated in its own git worktree. The backend creates the worktree as part of child creation, returns its absolute path as the child's durable `cwd`, and owns rollback of that worktree when creation aborts. Because a session's `cwd` is also its sandbox write root, the worktree is what confines the child's writes. It is not itself the worktree manager: it depends on `@deepseek-ai/dsh-worktree-manager` for the git operations, durable intent records, and startup reconciliation.
+Use this package to give an agent a named subagent backend in which every continuable child is isolated in its own self-contained clone. The backend creates the clone as part of child creation, returns its absolute path as the child's durable `cwd`, and owns rollback of that clone when creation aborts. Because a session's `cwd` is also its sandbox write root, the clone is what confines the child's writes. It is not itself the worktree manager: it depends on `@deepseek-ai/dsh-worktree-manager` for the git operations, durable intent records, and startup reconciliation.
 
 ## Table of Contents
 
@@ -108,7 +108,7 @@ Append-only; the provider changes no model-visible prefix.
 - **No merge-back.** The branch is created for the child and left in place; nothing merges it into the parent's checkout, and nothing deletes it when a child settles.
 - **Removal requires the worktree manager.** This package never removes a worktree during normal operation; removal is an explicit manager call.
 - **Uncommitted changes need `baseRef: head-with-uncommitted`.** With the default, a child does not see changes in the parent checkout. Even with it, untracked files are not copied.
-- **Write isolation only.** Reads, the network, and the shared git object store are not isolated; `/tmp` is shared; a Thread can run `git push`.
+- **Write isolation only.** Reads and the network are not isolated; the object store is the child's own inside its directory, and only `/tmp` is shared. A `git push` targets its clone's `origin`, the parent repository's path, which lies outside the child's sandbox root, so the sandbox refuses it, and the worker contract forbids push in any session.
 - **One `worktreeRoot` per DSH process.** Several processes sharing one root are not yet coordinated.
 
 <a id="dev-note"></a>

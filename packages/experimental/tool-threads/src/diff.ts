@@ -39,12 +39,18 @@ export interface ThreadDiffResult {
   readonly patchTruncated?: boolean
 }
 
-/** Merge instructions phrased for the Project model. */
+/**
+ * Merge instructions phrased for the Project model. The Thread's branch or head
+ * commit lives in the Thread's own repository, so the instruction always begins
+ * with the fetch that brings it into the Project checkout; a detached head
+ * names its full sha because an abbreviated one is not fetchable.
+ */
 function mergeLine(result: ThreadDiffResult): string {
   if (result.branch !== undefined) {
-    return `branch ${result.branch}: merge with \`git merge --no-ff ${result.branch}\` in the Project checkout`
+    return `branch ${result.branch}: fetch it into the Project checkout with \`git fetch ${result.worktree} ${result.branch}\`, then merge with \`git merge --no-ff ${result.branch}\``
   }
-  return `no branch (detached): merge commit ${(result.headSha ?? '').slice(0, SHORT_SHA)} from ${result.worktree}`
+  const commit = result.headSha === undefined ? 'the head commit' : result.headSha
+  return `no branch (detached): fetch commit ${commit} from ${result.worktree} into the Project checkout and merge it`
 }
 
 /** Render the summary mode. */

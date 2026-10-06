@@ -43,14 +43,6 @@ export interface GitOutput {
   readonly stderr: string
 }
 
-/** One entry of `git worktree list --porcelain`. */
-export interface GitWorktreeEntry {
-  /** Absolute worktree path as git itself reports it (already realpath-normalized). */
-  readonly path: string
-  /** Full ref of the checked-out branch, or `undefined` for a detached worktree. */
-  readonly branch?: string
-}
-
 /**
  * Run `git` with an argument array and no shell.
  *
@@ -106,59 +98,6 @@ export async function resolveRepoTopLevel(dir: string): Promise<string | undefin
 }
 
 /**
- * List the repository's worktrees.
- * @param repoRoot - absolute path inside the owning repository.
- * @returns every registered worktree, with its branch when it is not detached.
- */
-export async function listWorktrees(repoRoot: string): Promise<readonly GitWorktreeEntry[]> {
-  const output = await runGit(['worktree', 'list', '--porcelain'], repoRoot)
-  if (output.code !== 0) {
-    throw new WorktreeError(
-      `worktree-manager: git worktree list failed in ${repoRoot}: ${output.stderr.trim()}`,
-      'WORKTREE_OPERATION_FAILED',
-    )
-  }
-  return parseWorktreePorcelain(output.stdout)
-}
-
-/**
- * Parse `git worktree list --porcelain` into entries.
- *
- * Records are separated by a blank line and start with `worktree <path>`, followed
- * by `HEAD <sha>` and then either `branch <full-ref>` or `detached`. Only the first
- * two facts are needed here, so the rest is skipped rather than modelled.
- * @param stdout - raw porcelain output.
- * @returns the parsed entries in git's own order (main worktree first).
- */
-export function parseWorktreePorcelain(stdout: string): readonly GitWorktreeEntry[] {
-  const entries: GitWorktreeEntry[] = []
-  let currentPath: string | undefined
-  let currentBranch: string | undefined
-  const flush = (): void => {
-    if (currentPath !== undefined) {
-      entries.push(currentBranch === undefined ? { path: currentPath } : { path: currentPath, branch: currentBranch })
-    }
-    currentPath = undefined
-    currentBranch = undefined
-  }
-  for (const line of stdout.split('\n')) {
-    if (line.trim() === '') {
-      flush()
-      continue
-    }
-    if (line.startsWith('worktree ')) {
-      // A new `worktree` line closes the previous record even without a blank line.
-      flush()
-      currentPath = line.slice('worktree '.length).trim()
-    } else if (line.startsWith('branch ')) {
-      currentBranch = line.slice('branch '.length).trim()
-    }
-  }
-  flush()
-  return entries
-}
-
-/**
  * Test whether a branch already exists in the repository.
  * @param repoRoot - absolute path inside the owning repository.
  * @param branch - branch name to look for.
@@ -176,50 +115,99 @@ export async function branchExists(repoRoot: string, branch: string): Promise<bo
 }
 
 /**
- * Create a worktree, and with it the Thread's branch.
- * @param repoRoot - absolute path inside the owning repository.
- * @param worktreePath - absolute destination path (must not exist yet).
- * @param branch - branch to create at `baseRef`.
- * @param baseRef - ref the new branch is created from.
+ * Create a local clone of a repository at `destPath`, without a checkout.
+ *
+ * The clone keeps its default `origin` → parent path (file transport) and a complete
+ * `.git` of its own inside `destPath`, so one sandbox root covers files and git
+ * metadata alike. That is the isolation property of the whole design: a Thread's
+ * `git push` to `origin` writes into the parent, outside its root, and the sandbox
+ * refuses it. `--no-checkout` keeps the single checkout in the branch step, at the
+ * recorded base, instead of twice at HEAD then base.
+ * @param repoRoot - absolute top level of the repository to clone.
+ * @param destPath - absolute destination path (must not exist yet).
  * @returns git's raw result; the caller classifies a non-zero exit.
  */
-export function addWorktree(
-  repoRoot: string,
-  worktreePath: string,
-  branch: string,
-  baseRef: string,
-): Promise<GitOutput> {
-  return runGit(['worktree', 'add', '-b', branch, worktreePath, baseRef], repoRoot)
+export function cloneLocal(repoRoot: string, destPath: string): Promise<GitOutput> {
+  return runGit(['clone', '--local', '--no-checkout', repoRoot, destPath], repoRoot)
 }
 
 /**
- * Create a worktree by checking out a branch that already exists.
+ * Create `branch` at `at` and check it out — the first attempt of a Thread's branch.
+ * @param clonePath - absolute root of the clone.
+ * @param branch - branch to create.
+ * @param at - resolved commit the branch starts at.
+ * @returns git's raw result; the caller classifies a non-zero exit.
+ */
+export function checkoutNewBranch(clonePath: string, branch: string, at: string): Promise<GitOutput> {
+  return runGit(['checkout', '-b', branch, at], clonePath)
+}
+
+/**
+ * Check out the existing `branch`, keeping whatever it already committed.
  *
- * `git worktree add -b` refuses an existing branch, so a Thread that restarts on
- * the branch it created earlier needs this form instead: the branch keeps whatever
- * it already committed, which is the whole point of resuming a Thread.
- * @param repoRoot - absolute path inside the owning repository.
- * @param worktreePath - absolute destination path (must not exist yet).
+ * Removal imports a Thread's branch back into the parent (see
+ * {@link fetchBranchIntoParent}), so a fresh clone of a restarted Thread already
+ * contains the branch and its commits — resuming must not create it again.
+ * @param clonePath - absolute root of the clone.
  * @param branch - existing branch to check out.
  * @returns git's raw result; the caller classifies a non-zero exit.
  */
-export function addWorktreeAtExistingBranch(
-  repoRoot: string,
-  worktreePath: string,
-  branch: string,
-): Promise<GitOutput> {
-  return runGit(['worktree', 'add', worktreePath, branch], repoRoot)
+export function checkoutExistingBranch(clonePath: string, branch: string): Promise<GitOutput> {
+  return runGit(['checkout', branch], clonePath)
 }
 
 /**
- * Remove a worktree. `--force` discards local modifications and untracked files.
- * @param repoRoot - absolute path inside the owning repository.
- * @param worktreePath - absolute path of the registered worktree.
- * @param force - pass `--force` (required for a dirty worktree).
+ * Check out `at` detached, recording no branch — the `detached` spec path.
+ * @param clonePath - absolute root of the clone.
+ * @param at - resolved commit to check out.
  * @returns git's raw result; the caller classifies a non-zero exit.
  */
-export function removeWorktree(repoRoot: string, worktreePath: string, force: boolean): Promise<GitOutput> {
-  return runGit(force ? ['worktree', 'remove', '--force', worktreePath] : ['worktree', 'remove', worktreePath], repoRoot)
+export function checkoutDetached(clonePath: string, at: string): Promise<GitOutput> {
+  return runGit(['checkout', '--detach', at], clonePath)
+}
+
+/**
+ * Fetch `what` — a commit sha, a branch name, or a refspec — from `source` into the clone.
+ *
+ * Two callers: pulling the `head-with-uncommitted` snapshot commit from the parent, and
+ * pulling a merge-check target from the parent or a sibling Thread's clone. Fetching writes
+ * only into the clone's own object store and `FETCH_HEAD`.
+ * @param clonePath - absolute root of the clone to fetch into.
+ * @param source - repository path to fetch from.
+ * @param what - the sha, branch, or refspec to fetch.
+ * @returns git's raw result; the caller classifies a non-zero exit.
+ */
+export function fetchIntoClone(clonePath: string, source: string, what: string): Promise<GitOutput> {
+  return runGit(['fetch', source, what], clonePath)
+}
+
+/**
+ * Import `branch` from the clone back into the parent — the archive-time branch import.
+ *
+ * The force refspec updates the parent's ref even though the clone owned the branch while
+ * it lived. Run in the parent; a non-zero exit means the archive contract ("the branch is
+ * kept") cannot be honoured and the removal must fail loud.
+ * @param repoRoot - absolute top level of the parent repository.
+ * @param clonePath - absolute root of the clone that owns the branch.
+ * @param branch - branch to import.
+ * @returns git's raw result; the caller classifies a non-zero exit.
+ */
+export function fetchBranchIntoParent(repoRoot: string, clonePath: string, branch: string): Promise<GitOutput> {
+  return runGit(['fetch', clonePath, `+refs/heads/${branch}:refs/heads/${branch}`], repoRoot)
+}
+
+/**
+ * Test whether `path` is the top level of a live git repository.
+ *
+ * The clone-era liveness test: a directory without a working `.git` is not a live Thread
+ * checkout, and git — not the filesystem — decides. `path` must exist; callers test the
+ * directory first, so a missing path is classified without spawning git.
+ * @param path - absolute directory to test.
+ * @returns true when `git rev-parse --show-toplevel` in `path` names `path` itself.
+ */
+export async function isRepoTopLevel(path: string): Promise<boolean> {
+  const output = await runGit(['rev-parse', '--show-toplevel'], path)
+  return output.code === 0 && output.stdout.trim() === path
 }
 
 /**
@@ -240,8 +228,8 @@ export function worktreeStatus(worktreePath: string): Promise<GitOutput> {
  * `git stash push`/`pop` would not be: it rewrites the parent's working tree under everyone else's
  * feet, and two Threads starting at once would pop each other's stash.
  *
- * The commit is a real merge commit whose tree is the working state, so `git worktree add <path>
- * <sha>` materializes exactly what the parent was looking at.
+ * The commit is a real merge commit whose tree is the working state, so a checkout at that
+ * commit materializes exactly what the parent was looking at.
  * @param repoRoot - absolute path inside the owning repository.
  * @returns git's raw result; empty `stdout` with exit 0 means "nothing tracked is modified".
  */

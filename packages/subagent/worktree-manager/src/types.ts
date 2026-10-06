@@ -13,21 +13,21 @@
  * Lifecycle state of one managed worktree.
  *
  * ```text
- * reserved ──git worktree add ok──▶ ready ──explicit remove──▶ removing ──▶ removed
+ * reserved ──clone + checkout ok──▶ ready ──explicit remove──▶ removing ──▶ removed
  *    │                               │                              ▲
- *    │ add failed / signal.abort    │ reconcile: no session          │ reconcile sweep
+ *    │ create failed / signal.abort  │ reconcile: no session        │ reconcile sweep
  *    ▼                               ▼                              │
  * rolled-back ──────────────────── orphaned ────────────────────────┘
  * ```
  *
- * - `reserved` — durable intent, written BEFORE `git worktree add` runs. A crash
+ * - `reserved` — durable intent, written BEFORE the clone is created. A crash
  *   after this line is what {@link WorktreeService.reconcile} exists to repair.
- * - `ready` — the add succeeded; the ONLY state a session cwd may be bound to.
- * - `rolled-back` — a failed or aborted add was explicitly undone with
- *   `git worktree remove --force`.
+ * - `ready` — the clone and its checkout succeeded; the ONLY state a session cwd may be bound to.
+ * - `rolled-back` — a failed or aborted creation was explicitly undone by deleting
+ *   the half-created clone.
  * - `orphaned` — reconcile classified the record as having no live session.
- * - `removing` — tombstone left behind when `git worktree remove` failed, so a
- *   later prune can finish the job.
+ * - `removing` — tombstone left behind when the removal failed, so a later sweep
+ *   can finish the job.
  * - `removed` — terminal: the worktree is gone and the record is history.
  */
 export type WorktreeState =
@@ -61,14 +61,20 @@ export interface WorktreeSpec {
   /** Deterministic Thread key. Its {@link threadSlug} is the worktree directory name and the default branch suffix. */
   readonly threadId: string
   /**
-   * Ref the new worktree is created from (`git worktree add … <baseRef>`); always resolved and
-   * validated, so an unusable base is refused under either policy.
+   * Ref the new worktree is created from; always resolved and validated, so an
+   * unusable base is refused under either policy.
    *
    * Under `base: 'head-with-uncommitted'` this names the ref the snapshot is *taken against* and
    * the fallback when the working tree is clean — the commit the Thread actually starts from is
    * then {@link WorktreeRecord.baseSha}, not this string.
    */
   readonly baseRef: string
+  /**
+   * Check out detached at the resolved base instead of creating a branch: the record then
+   * carries no `branch` field at all, matching {@link WorktreeRecord.branch}. Mutually
+   * exclusive with {@link WorktreeSpec.branch}; a spec carrying both is refused.
+   */
+  readonly detached?: boolean
   /**
    * Which base {@link WorktreeService.create} resolves. Defaults to the service's configured
    * `base`, which itself defaults to `'head'` — a spec that omits this field gets exactly the
@@ -103,7 +109,7 @@ export interface WorktreeRecord {
   readonly base?: WorktreeBasePolicy
   /**
    * Commit the worktree was created at, resolved from `baseRef` (or, under
-   * `base: 'head-with-uncommitted'`, the working-state snapshot) when the add succeeded.
+   * `base: 'head-with-uncommitted'`, the working-state snapshot) when creation succeeded.
    * Absent on records written before the field existed and on `reserved` records.
    */
   readonly baseSha?: string

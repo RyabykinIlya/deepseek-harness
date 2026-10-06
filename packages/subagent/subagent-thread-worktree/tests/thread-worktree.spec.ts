@@ -61,7 +61,7 @@ async function realService(config: { adoptionGraceMs?: number } = {}): Promise<W
   return ctx.worktrees
 }
 
-interface CreateCall { repoRoot: string; threadId: string; baseRef: string; branch?: string }
+interface CreateCall { repoRoot: string; threadId: string; baseRef: string; branch?: string; detached?: boolean }
 interface RemoveCall { threadId: string; force?: boolean }
 
 /** A minimal parent Agent carrying only the header fields the provider reads. */
@@ -165,11 +165,12 @@ describe('thread worktree provider', () => {
     ])
   })
 
-  it('omits the branch when branchPerThread is disabled', async () => {
+  it('creates a detached checkout when branchPerThread is disabled', async () => {
     const worktrees = fakeWorktrees()
     await providerFor(worktrees, { branchPerThread: false }).prepareContinuable(request(worktrees.repoRoot, new AbortController().signal))
 
     expect(worktrees.creates[0]?.branch).toBeUndefined()
+    expect(worktrees.creates[0]?.detached).toBe(true)
   })
 
   it('fails loud when the parent session has no cwd, without touching git', async () => {

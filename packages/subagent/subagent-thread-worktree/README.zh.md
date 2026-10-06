@@ -1,5 +1,5 @@
 ---
-description: "Worktree-isolated continuable subagent backend: every Thread child runs in its own git worktree."
+description: "Worktree-isolated continuable subagent backend: every Thread child runs in its own self-contained clone."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当需要让某个 agent 的每个 continuable 子代理都隔离在自己的 git worktree 中时，使用本包。该后端在创建子代理的过程中创建 worktree，把它的绝对路径作为子代理持久化的 `cwd` 返回，并在创建被中止时负责回滚该 worktree。由于会话的 `cwd` 同时也是其沙箱写入根目录，worktree 正是约束子代理写入范围的东西。本包自身不是 worktree 管理器：git 操作、持久化的意图记录与启动时对账都由它依赖的 `@deepseek-ai/dsh-worktree-manager` 负责。
+当需要让某个 agent 的每个 continuable 子代理都隔离在自己的自包含克隆中时，使用本包。该后端在创建子代理的过程中创建这个克隆，把它的绝对路径作为子代理持久化的 `cwd` 返回，并在创建被中止时负责回滚该克隆。由于会话的 `cwd` 同时也是其沙箱写入根目录，这个克隆正是约束子代理写入范围的东西。本包自身不是 worktree 管理器：git 操作、持久化的意图记录与启动时对账都由它依赖的 `@deepseek-ai/dsh-worktree-manager` 负责。
 
 ## 目录
 
@@ -108,7 +108,7 @@ one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提�
 - **不做回合并。** 分支为子代理创建后就地保留；没有任何东西把它合并回父级检出目录，也没有任何东西在子代理停止时删除它。
 - **移除需要 worktree 管理器。** 在正常运行期间本包从不移除 worktree；移除是对管理器的显式调用。
 - **未提交改动需要 `baseRef: head-with-uncommitted`。** 使用默认值时，子代理看不到父级检出目录中的改动；即便启用它，未跟踪文件也不会被复制。
-- **隔离只覆盖写入。** 读取、网络与共享的 git object store 均未隔离；`/tmp` 是共享的；Thread 仍可执行 `git push`。
+- **隔离只覆盖写入。** 读取与网络未被隔离；object store 是子代理自己的，位于其目录内部，只有 `/tmp` 是共享的。`git push` 指向其克隆的 `origin`，即父仓库的路径，位于子代理沙箱根之外，因此沙箱会拒绝它，worker 契约在任何会话中都禁止 push。
 - **一个 DSH 进程一个 `worktreeRoot`。** 多个进程共用同一根目录尚未做协调。
 
 <a id="dev-note"></a>

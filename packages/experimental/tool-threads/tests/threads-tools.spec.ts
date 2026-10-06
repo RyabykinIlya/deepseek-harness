@@ -400,7 +400,7 @@ describe('thread_diff', () => {
     expect(result.isError).toBe(false)
     expect(text(result)).toBe([
       'Thread thread-a',
-      'branch dsh/thread-a: merge with `git merge --no-ff dsh/thread-a` in the Project checkout',
+      'branch dsh/thread-a: fetch it into the Project checkout with `git fetch /wt/thread-a dsh/thread-a`, then merge with `git merge --no-ff dsh/thread-a`',
       `base ${'b'.repeat(12)}, head ${'h'.repeat(12)}; 1 uncommitted in /wt/thread-a (not on the branch until committed)`,
       'commits (2, newest first):',
       `  ${'c'.repeat(12)} add auth`,
@@ -458,7 +458,7 @@ describe('thread_diff', () => {
     seedThread(project.session, { id: 'thread-b', label: 'b' })
 
     const summary = text(await diff(ctx, project, { thread_id: 'thread-a' }))
-    expect(summary).toContain(`no branch (detached): merge commit ${'h'.repeat(12)} from /wt/thread-a`)
+    expect(summary).toContain(`no branch (detached): fetch commit ${'h'.repeat(40)} from /wt/thread-a into the Project checkout and merge it`)
 
     const cut = text(await diff(ctx, project, { thread_id: 'thread-b', path: 'src/auth.ts' }))
     expect(bytes(cut)).toBeLessThanOrEqual(1024)

@@ -518,7 +518,7 @@ describe('the contracts', () => {
       '',
       'Review a finished Thread with `thread_diff`, which lists its commits and changed files. Use `send_message` to give a running Thread more instructions and `interrupt_agent` to stop it.',
       '',
-      'Integrate a reviewed Thread by merging its branch into the Project checkout with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
+      'Integrate a reviewed Thread by fetching its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
       '',
       'After a Thread\'s branch is merged, suggest that the user archive that Thread. Archiving is done by the user from the interface; you cannot do it.',
     ].join('\n'))
@@ -533,7 +533,7 @@ describe('the contracts', () => {
       '',
       'You are a Thread of a Project: a background agent working on one task given by the coordinator that started you. Your checkout and your git branch are your own. Your edits reach the Project checkout only when the coordinator merges your branch.',
       '',
-      'Commit each finished step with a meaningful message. Do not push, and do not change other branches, unless you are asked to.',
+      'Commit each finished step with a meaningful message. Do not push, and do not change other branches, unless you are asked to. Your checkout is a complete standalone repository: ordinary git commands work in it without any escalation. Never create a git worktree, clone, or copy of any repository, and never request wider file access for a git operation; if you cannot write inside your own checkout, report that to the coordinator instead of working around it.',
       '',
       'Read the Project memory with memory_read before you start, and record a decision other Threads need with memory_write; do not store file contents or logs there.',
       '',

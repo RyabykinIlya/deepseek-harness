@@ -5,7 +5,7 @@
  * Two properties matter and are why this is not a plain JSON snapshot:
  *
  * 1. **Intent is durable BEFORE the side effect.** `create` appends `reserved`
- *    before spawning `git worktree add`, so a crash between the two leaves a
+ *    before the clone is created, so a crash between the two leaves a
  *    detectable record instead of an invisible directory.
  * 2. **State is derived, never stored twice.** There is one line per transition;
  *    the current state is the fold (last line for a `threadId` wins). No second
@@ -33,13 +33,13 @@ export const REGISTRY_LOCK_NAME = 'worktrees.lock'
  * Illegal transitions — rejected with `WORKTREE_STATE_ILLEGAL` — are everything
  * not listed here, which is worth spelling out because each one is a bug class:
  *
- * - `reserved → removing` / `reserved → removed`: the add never succeeded, so the
+ * - `reserved → removing` / `reserved → removed`: the creation never succeeded, so the
  *   record must pass through `rolled-back`; skipping it loses the intent that the
  *   worktree was ever supposed to exist.
  * - `reserved → ready` without a preceding `reserved` append: the intent record
  *   would not be durable, which is exactly the crash window this design closes.
  * - `ready → reserved`: reserved is only ever the FIRST transition for a thread.
- * - `ready → rolled-back`: rollback belongs to a failed `add`; a live worktree is
+ * - `ready → rolled-back`: rollback belongs to a failed creation; a live worktree is
  *   removed through `removing → removed` so a failed removal stays a `removing`
  *   tombstone instead of being forgotten.
  * - `orphaned → ready` and `removing → ready`: once a record is classified as
@@ -49,7 +49,7 @@ export const REGISTRY_LOCK_NAME = 'worktrees.lock'
  *   terminal, and the single exception is the RESTART edge. A Thread whose
  *   worktree was fully removed may be re-created, and that is the one way a new
  *   lineage begins: `removed → reserved`. It is safe because the terminal state
- *   means `git worktree remove` returned 0, so the path and the branch slot are
+ *   means the removal completed, so the path and the branch slot are
  *   free. Every other terminal → * transition is illegal.
  */
 const LEGAL_TRANSITIONS: Readonly<Record<WorktreeState, readonly WorktreeState[]>> = {

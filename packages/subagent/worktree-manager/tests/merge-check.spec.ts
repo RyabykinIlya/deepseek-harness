@@ -116,9 +116,10 @@ describe('mergeCheck', { timeout: GIT_TIMEOUT_MS }, () => {
 
     const result = await service.mergeCheck(second, { target: first.branch ?? '' }, 10)
 
+    // The branch lives in the first Thread's own clone; the prediction is served from there.
     expect(result).toMatchObject({
       supported: true,
-      targetSha: git(['rev-parse', first.branch ?? ''], repoRoot),
+      targetSha: git(['rev-parse', first.branch ?? ''], first.path),
       clean: false,
       conflicts: ['a.txt'],
       conflictsTotal: 1,

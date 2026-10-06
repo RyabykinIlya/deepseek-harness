@@ -3965,13 +3965,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>',
-        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second `git worktree add`. An abort is honored at every boundary — before any git process is spawned, and again after the add resolves — and either way the reserved intent is rolled back with `git worktree remove --force`. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots. The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured `base` — and `head-with-uncommitted` snapshots the parent\'s tracked uncommitted changes with `git stash create`, which leaves the parent\'s working tree untouched.',
-        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref and policy, and optional branch.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
+        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second clone. An abort is honored at every boundary — before any git process is spawned, and again after the checkout resolves — and either way the reserved intent is rolled back by deleting the half-created clone. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots. The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured `base` — and `head-with-uncommitted` snapshots the parent\'s tracked uncommitted changes with `git stash create`, which leaves the parent\'s working tree untouched.',
+        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref and policy, and optional branch or `detached`.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
         returns: 'the `ready` record whose `path` may be used as a session cwd.',
       },
       {
         signature: 'async remove(record: WorktreeRecord, opts: WorktreeRemoveOptions = {}): Promise<void>',
-        description: 'Remove a Thread\'s worktree.\n\nRemoval is explicit and never automatic: a settled Thread\'s worktree holds its result, and deleting a turn\'s output silently is not acceptable. The order is NOT the mirror of creation — the durable record goes to `removing` first, then git, then `removed` — so a failed git removal leaves a `removing` tombstone a later prune can finish, instead of claiming a deletion that never happened.',
+        description: 'Remove a Thread\'s worktree.\n\nRemoval is explicit and never automatic: a settled Thread\'s worktree holds its result, and deleting a turn\'s output silently is not acceptable. The order is NOT the mirror of creation — the durable record goes to `removing` first, then the branch import and the directory deletion, then `removed` — so a failed removal leaves a `removing` tombstone a later sweep can finish, instead of claiming a deletion that never happened.',
         parameters: [{ name: 'record', description: 'the record to remove (may come from an earlier session).' }, { name: 'opts', description: '`force` discards local modifications; without it a dirty worktree is refused.' }],
       },
       {
@@ -4000,7 +4000,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async mergeCheck(record: WorktreeRecord, options: WorktreeMergeCheckOptions, maxConflicts: number): Promise<WorktreeMergeCheck>',
-        description: 'Predict whether merging the worktree\'s HEAD into `target` would conflict.\n\n`target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the main checkout\'s current commit and a branch name may be another Thread\'s branch. Uncommitted edits in either checkout are not part of the prediction. No ref, index, or working tree changes. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
+        description: 'Predict whether merging the worktree\'s HEAD into `target` would conflict.\n\n`target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the main checkout\'s current commit and a branch name may be another Thread\'s branch, served from that Thread\'s clone. `merge-tree` compares two commits of one object store — the worktree\'s own clone — so a target commit the clone has not seen is fetched in first; that writes only objects and `FETCH_HEAD`, never a ref, index entry, or file. Uncommitted edits in either checkout are not part of the prediction. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
         parameters: [{ name: 'record', description: 'the worktree whose HEAD would be merged.' }, { name: 'options', description: 'the target ref.' }, { name: 'maxConflicts', description: 'non-negative bound on the listed conflicting paths.' }],
         returns: 'the predicted result, or `{ supported: false }` when git lacks `merge-tree --write-tree`.',
       },
@@ -4012,7 +4012,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async reconcile(): Promise<WorktreeRecord[]>',
-        description: 'Sweep records that no longer describe a live Thread.\n\nTwo independent rules, both of which only ever REMOVE worktrees that git already owns: 1. a `reserved`/`ready` record whose path is missing from disk — a crash between the intent write and the add; 2. a `reserved`/`ready` record whose Thread has no persisted session, judged by WorktreeService.sessionExists (skipped when no probe is installed, because session existence is not this service\'s knowledge) and whose record is older than `adoptionGraceMs`.\n\nIn-flight creations of this process are never swept. Each orphan is marked `orphaned`, removed with `git worktree remove --force`, and settled to `removed` (or `rolled-back` when nothing was ever on disk).',
+        description: 'Sweep records that no longer describe a live Thread.\n\nTwo independent rules, both of which only ever REMOVE worktrees that git already owns: 1. a `reserved`/`ready` record whose path is missing from disk — a crash between the intent write and the add; 2. a `reserved`/`ready` record whose Thread has no persisted session, judged by WorktreeService.sessionExists (skipped when no probe is installed, because session existence is not this service\'s knowledge) and whose record is older than `adoptionGraceMs`.\n\nIn-flight creations of this process are never swept. Each orphan is marked `orphaned`, deleted from disk (and its branch imported into the parent where one exists), and settled to `removed` (or `rolled-back` when nothing was ever on disk).',
         parameters: [],
         returns: 'the records classified as orphans, in their `orphaned` state.',
       },
@@ -7728,7 +7728,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentProvider',
-    declaration: 'export interface SubagentProvider {\n    readonly name: string;\n    readonly capabilities: SubagentCapabilities;\n    readonly inheritsParentContext: boolean;\n    readonly agentRouteDefaults?: Readonly<{\n        provider: string;\n        model: string;\n    }>;\n    start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>;\n    prepareContinuable?(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>;\n}',
+    declaration: 'export interface SubagentProvider {\n    readonly name: string;\n    readonly capabilities: SubagentCapabilities;\n    readonly inheritsParentContext: boolean;\n    readonly agentRouteDefaults?: Readonly<{\n        provider: string;\n        model: string;\n    }>;\n    start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>;\n    prepareContinuable?(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>;\n    readonly isolatesContinuableCwd?: boolean;\n}',
   },
   {
     name: 'SubagentResult',
@@ -8760,7 +8760,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorktreeSpec',
-    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly base?: WorktreeBasePolicy;\n    readonly branch?: string;\n}',
+    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly detached?: boolean;\n    readonly base?: WorktreeBasePolicy;\n    readonly branch?: string;\n}',
   },
   {
     name: 'WorktreeState',

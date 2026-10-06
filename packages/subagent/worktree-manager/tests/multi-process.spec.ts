@@ -141,12 +141,12 @@ describe('shared worktreeRoot', { timeout: TEST_TIMEOUT_MS }, () => {
 
   it('summarizes a long list of Threads in the limit error', async () => {
     // The behaviour under test is the LIMIT ERROR and the Thread ids it names, not
-    // the add. Driving 52 real `git worktree add` subprocesses through `create`
-    // also runs 52 reconcile sweeps over a growing fold — each record costs one
-    // `git worktree list`, so the sweep alone is O(n²) subprocesses, which is what
-    // blew the budget under coverage. Seeding the fold directly reaches the same
-    // registry state: a fresh `reserved` intent is inside the adoption grace
-    // period, so the sweep leaves it alone and the limit counts it as active.
+    // the creation. Driving 52 real creations through `create` also runs 52
+    // reconcile sweeps over a growing fold — each record costs one liveness probe,
+    // so the sweep alone is O(n²) subprocesses, which is what blew the budget under
+    // coverage. Seeding the fold directly reaches the same registry state: a fresh
+    // `reserved` intent is inside the adoption grace period, so the sweep leaves it
+    // alone and the limit counts it as active.
     const registry = new WorktreeRegistry(worktreeRoot, LOCKING)
     const seeded = Array.from({ length: 52 }, (_unused, index) => `t${String(index).padStart(2, '0')}`)
     for (const threadId of seeded) {

@@ -30,7 +30,7 @@ interface WorktreeRecord {
   readonly base?: WorktreeBasePolicy
   /**
    * Commit the worktree was created at, resolved from `baseRef` (or, under
-   * `base: 'head-with-uncommitted'`, the working-state snapshot) when the add succeeded.
+   * `base: 'head-with-uncommitted'`, the working-state snapshot) when creation succeeded.
    * Absent on records written before the field existed and on `reserved` records.
    */
   readonly baseSha?: string
@@ -47,7 +47,45 @@ interface WorktreeRecord {
 }
 ```
 
-A record is in one `WorktreeState`: `reserved` (intent written before `git worktree add`), `ready` (the only state a session cwd may be bound to), `rolled-back` (a failed or aborted add was undone), `orphaned` (reconciliation found no live Session), `removing` (a failed `git worktree remove` left a tombstone), or `removed` (terminal). A fully removed Thread may be created again. `maxWorktreesPerRepo` bounds active (non-terminal) worktrees per repository; exceeding it throws `WORKTREE_LIMIT_REACHED` with the existing Thread ids.
+A record is in one `WorktreeState`: `reserved` (intent written before the clone is created), `ready` (the only state a session cwd may be bound to), `rolled-back` (a failed or aborted creation was undone by deleting the half-created clone), `orphaned` (reconciliation found no live Session), `removing` (a failed removal left a tombstone), or `removed` (terminal). A fully removed Thread may be created again. `maxWorktreesPerRepo` bounds active (non-terminal) worktrees per repository; exceeding it throws `WORKTREE_LIMIT_REACHED` with the existing Thread ids.
+
+`create` receives one `WorktreeSpec`:
+
+```ts type-equiv
+/** Input for {@link WorktreeService.create}: one Thread asking for its own working tree. */
+interface WorktreeSpec {
+  /** Absolute path inside the project checkout; resolved to the enclosing repository's top level. */
+  readonly repoRoot: string
+  /** Deterministic Thread key. Its {@link threadSlug} is the worktree directory name and the default branch suffix. */
+  readonly threadId: string
+  /**
+   * Ref the new worktree is created from; always resolved and validated, so an
+   * unusable base is refused under either policy.
+   *
+   * Under `base: 'head-with-uncommitted'` this names the ref the snapshot is *taken against* and
+   * the fallback when the working tree is clean — the commit the Thread actually starts from is
+   * then {@link WorktreeRecord.baseSha}, not this string.
+   */
+  readonly baseRef: string
+  /**
+   * Check out detached at the resolved base instead of creating a branch: the record then
+   * carries no `branch` field at all, matching {@link WorktreeRecord.branch}. Mutually
+   * exclusive with {@link WorktreeSpec.branch}; a spec carrying both is refused.
+   */
+  readonly detached?: boolean
+  /**
+   * Which base {@link WorktreeService.create} resolves. Defaults to the service's configured
+   * `base`, which itself defaults to `'head'` — a spec that omits this field gets exactly the
+   * behaviour that package shipped before the policy existed.
+   */
+  readonly base?: WorktreeBasePolicy
+  /**
+   * Branch to create alongside the worktree. Defaults to `dsh/thread-<threadSlug(threadId)>`.
+   * The branch is a convenience handle, never the identity: removal is keyed on `(threadId, path)`.
+   */
+  readonly branch?: string
+}
+```
 
 `status` and `changes` read live git state of one worktree:
 
@@ -116,7 +154,7 @@ type WorktreeMergeCheck =
   }
 ```
 
-`remove` refuses a dirty worktree with `REMOVE_DIRTY_WITHOUT_FORCE` unless `WorktreeRemoveOptions.force` is set. Removal deletes the worktree, not the branch.
+`remove` refuses a dirty worktree with `REMOVE_DIRTY_WITHOUT_FORCE` unless `WorktreeRemoveOptions.force` is set. Removal imports the Thread's branch into the parent repository when it has one, then deletes the worktree directory; the branch itself is never deleted.
 
 ## Threads projection
 
@@ -209,7 +247,7 @@ A live Thread's changed files come from `ctx.worktrees.changes`; an archived Thr
 
 ## Write-only isolation
 
-A Thread's sandbox confines writes to its worktree. Reads, the network, and the shared git object store stay open, and `git push` remains possible. There is no read fence.
+A Thread's sandbox confines writes to its worktree. Reads and the network stay open, and the object store is the worktree's own: a `git push` targets its `origin`, the parent repository's path outside the sandbox root, so the sandbox refuses it, and the worker contract forbids push in any session. There is no read fence.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -428,15 +466,15 @@ One worktree per Thread, placed under a configured root that survives restarts. 
  * Create (or re-attach to) the worktree for one Thread.
  *
  * The call is idempotent by `threadId`: a second `create` for a Thread whose
- * worktree still exists returns the SAME record without a second `git worktree
- * add`. An abort is honored at every boundary — before any git process is
- * spawned, and again after the add resolves — and either way the reserved
- * intent is rolled back with `git worktree remove --force`.
+ * worktree still exists returns the SAME record without a second clone. An abort
+ * is honored at every boundary — before any git process is spawned, and again
+ * after the checkout resolves — and either way the reserved intent is rolled
+ * back by deleting the half-created clone.
  * Each call first runs {@link WorktreeService.reconcile}, so abandoned worktrees do not hold limit slots.
  * The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured
  * `base` — and `head-with-uncommitted` snapshots the parent's tracked uncommitted changes with
  * `git stash create`, which leaves the parent's working tree untouched.
- * @param spec - the repository, Thread, base ref and policy, and optional branch.
+ * @param spec - the repository, Thread, base ref and policy, and optional branch or `detached`.
  * @param signal - aborts the attempt; the worktree is rolled back, never left half-created.
  * @returns the `ready` record whose `path` may be used as a session cwd.
  */
@@ -448,8 +486,9 @@ create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>
  * Removal is explicit and never automatic: a settled Thread's worktree holds its
  * result, and deleting a turn's output silently is not acceptable. The order is
  * NOT the mirror of creation — the durable record goes to `removing` first, then
- * git, then `removed` — so a failed git removal leaves a `removing` tombstone a
- * later prune can finish, instead of claiming a deletion that never happened.
+ * the branch import and the directory deletion, then `removed` — so a failed
+ * removal leaves a `removing` tombstone a later sweep can finish, instead of
+ * claiming a deletion that never happened.
  * @param record - the record to remove (may come from an earlier session).
  * @param opts - `force` discards local modifications; without it a dirty worktree is refused.
  */
@@ -496,9 +535,12 @@ async changes(record: WorktreeRecord, opts: WorktreeChangesOptions): Promise<Wor
  * Predict whether merging the worktree's HEAD into `target` would conflict.
  *
  * `target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the
- * main checkout's current commit and a branch name may be another Thread's branch.
- * Uncommitted edits in either checkout are not part of the prediction. No ref,
- * index, or working tree changes. Same `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
+ * main checkout's current commit and a branch name may be another Thread's branch,
+ * served from that Thread's clone. `merge-tree` compares two commits of one object
+ * store — the worktree's own clone — so a target commit the clone has not seen is
+ * fetched in first; that writes only objects and `FETCH_HEAD`, never a ref, index
+ * entry, or file. Uncommitted edits in either checkout are not part of the
+ * prediction. Same `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
  * @param record - the worktree whose HEAD would be merged.
  * @param options - the target ref.
  * @param maxConflicts - non-negative bound on the listed conflicting paths.
@@ -531,8 +573,8 @@ async filePatch(record: WorktreeRecord, path: string, maxBytes: number): Promise
  *    is older than `adoptionGraceMs`.
  *
  * In-flight creations of this process are never swept. Each orphan is marked
- * `orphaned`, removed with `git worktree remove --force`, and settled to
- * `removed` (or `rolled-back` when nothing was ever on disk).
+ * `orphaned`, deleted from disk (and its branch imported into the parent where one
+ * exists), and settled to `removed` (or `rolled-back` when nothing was ever on disk).
  * @returns the records classified as orphans, in their `orphaned` state.
  */
 async reconcile(): Promise<WorktreeRecord[]>

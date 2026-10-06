@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-为每个后台 Thread 分配独立的 git worktree，使 Thread 的提交、索引区与工作文件都不会影响项目主检出（checkout）。创建失败时会响亮地抛出带类型的错误，而不会把 Thread 悄悄塞回父级目录；持久化意图记录与 `git worktree add` 之间发生的崩溃，会在下次启动时修复。没有任何自动删除：移除只能由显式调用触发，它保留分支，并在你确认之前拒绝移除脏 worktree。你可以读取某个 Thread 的提交、改动文件与合并预测，而不移动任何 ref。
+为每个后台 Thread 分配独立的自包含本地克隆，使 Thread 的提交、索引区与工作文件都不会影响项目主检出（checkout）。创建失败时会响亮地抛出带类型的错误，而不会把 Thread 悄悄塞回父级目录；持久化意图记录与创建克隆之间发生的崩溃，会在下次启动时修复。没有任何自动删除：移除只能由显式调用触发，它先把分支导入父仓库再删除目录，并在你确认之前拒绝移除脏 worktree。你可以读取某个 Thread 的提交、改动文件与合并预测，而不移动任何 ref。
 
 ## 目录
 
@@ -89,20 +89,20 @@ ctx.worktrees.sessionExists = async (threadId: string) => (await ctx.sessionPers
 
 两种策略下 `baseRef` 都会被解析和校验，因此不可用的基座在任一策略下都会被拒绝。在 `head-with-uncommitted` 下，它表示快照所依据的 ref，也是工作树干净时的回退目标；`WorktreeRecord.baseSha` 始终是真正使用的提交，`WorktreeRecord.base` 记录产生它的策略。
 
-**重启**的 Thread 绝不重新快照。它通过 `git worktree add <path> <branch>` 重建，因此分支保留自己的历史；重新快照父 checkout 会记录下一个不再是该 Thread 工作的祖先的基座，使 `changes`/`filePatch` 拿它去和该 Thread 从未有过的提交做差异对比。取而代之的是继承上一条血脉的 `baseSha` —— 以及产生它的策略 —— 于是恢复的 Thread 仍然从它真正出发的地方度量。
+**重启**的 Thread 绝不重新快照。它作为一个全新的克隆重建，检出在移除时已导入父仓库的那条分支上，因此分支保留自己的历史；重新快照父 checkout 会记录下一个不再是该 Thread 工作的祖先的基座，使 `changes`/`filePatch` 拿它去和该 Thread 从未有过的提交做差异对比。取而代之的是继承上一条血脉的 `baseSha` —— 以及产生它的策略 —— 于是恢复的 Thread 仍然从它真正出发的地方度量。
 
 ### 意图先于副作用落盘
 
-`create()` 在启动 `git worktree add` **之前**先向 `worktrees.jsonl` 追加一行 `reserved`，只在 add 成功后才写 `ready`，并在 `finally` 中用 `git worktree remove --force` 回滚失败或被中止的 add。这个顺序就是整个设计的核心：意图写入与 add 之间发生崩溃时，会留下一条可检测的记录，而不是一个无人能归属的隐形目录。
+`create()` 在创建克隆**之前**先向 `worktrees.jsonl` 追加一行 `reserved`，只在克隆及其检出成功后才写 `ready`，并在 `finally` 中删除创建失败或被中止的半成品克隆。这个顺序就是整个设计的核心：意图写入与克隆之间发生崩溃时，会留下一条可检测的记录，而不是一个无人能归属的隐形目录。
 
 该 sidecar 是只追加的 JSONL，每次操作追加一行，内存中折叠（同一 `threadId` 以最后一行为准）。因此状态是*推导*出来的，绝不存在可能与日志不一致的第二台状态机。末行被截断（崩溃中断追加的常见痕迹）会被跳过；中间出现格式错误的行则响亮拒绝，而不是静默丢弃记录。
 
 ### 状态机
 
 ```text
-reserved ──git worktree add ok──▶ ready ──explicit remove──▶ removing ──▶ removed
+reserved ──clone + checkout ok──▶ ready ──explicit remove──▶ removing ──▶ removed
    │                               │                              ▲
-   │ add failed / signal.abort    │ reconcile: no session          │ reconcile sweep
+   │ create failed / signal.abort  │ reconcile: no session        │ reconcile sweep
    ▼                               ▼                              │
 rolled-back ──────────────────── orphaned ────────────────────────┘
 ```
@@ -111,20 +111,20 @@ rolled-back ──────────────────── orphane
 
 ### 分支是什么，以及删除会删掉什么
 
-分支（默认 `dsh/thread-<slug>`；worktree 目录使用同一个 `threadSlug(threadId)` 命名，完整 `threadId` 保存在记录中）是从 Thread 派生的便捷句柄，绝不是身份标识。删除以 `(threadId, path)` 为键，因此 **`remove()` 删除 worktree 但保留分支**——删掉分支可能让 Thread 的提交变成不可达。也正因如此，重启的 Thread 对自己此前拥有的分支豁免 `WORKTREE_BRANCH_EXISTS` 检查，并用 `git worktree add <path> <branch>` 重建，使其早期提交得以保留。其他任何已存在的分支——别的 Thread 的，或你自己的——仍然会被拒绝。
+分支（默认 `dsh/thread-<slug>`；worktree 目录使用同一个 `threadSlug(threadId)` 命名，完整 `threadId` 保存在记录中）是从 Thread 派生的便捷句柄，绝不是身份标识。删除以 `(threadId, path)` 为键：**`remove()` 删除 worktree 目录，并在记录带有分支时先把它导入父仓库**——删掉分支可能让 Thread 的提交变成不可达。集成时把该分支从 Thread 的目录中取出，fetch 进执行合并的检出目录：`git fetch <worktree> <branch>`，然后 `git merge --no-ff <branch>`。也正因如此，重启的 Thread 对自己此前拥有的分支豁免 `WORKTREE_BRANCH_EXISTS` 检查，并作为一个全新的克隆重建、检出在那条分支上，使其早期提交得以保留。其他任何已存在的分支——别的 Thread 的，或你自己的——仍然会被拒绝。
 
 ### 对账
 
 `reconcile()` 依据两条互相独立的规则清理记录，且绝不触碰它并不拥有的 worktree：
 
-1. 路径已不在磁盘上的 `reserved`/`ready` 记录（add 中途崩溃）；
+1. 路径已不在磁盘上的 `reserved`/`ready` 记录（创建中途崩溃）；
 2. 依据 `sessionExists` 判定已无持久化会话、且记录早于 `adoptionGraceMs` 的 `reserved`/`ready` 记录。本进程中仍在创建的 worktree 绝不会被清理。
 
-清理在启动时和每次 `create()` 之前运行，因此被遗弃的 worktree 不会占用上限名额。每条孤儿记录都会被标记为 `orphaned`，用 `git worktree remove --force` 删除，并收敛到 `removed`——若磁盘上从未有过任何内容则收敛到 `rolled-back`。删除失败会留下 `removing` 墓碑，供后续清理收尾。
+清理在启动时和每次 `create()` 之前运行，因此被遗弃的 worktree 不会占用上限名额。每条孤儿记录都会被标记为 `orphaned`，其目录被删除——带有分支时先导入父仓库——并收敛到 `removed`；若磁盘上从未有过任何内容则收敛到 `rolled-back`。删除失败会留下 `removing` 墓碑，供后续清理收尾。
 
 ### 记录的基线与变更
 
-`create()` 按基座策略解析出提交，作为 `baseSha` 存入日志，并连同产生它的策略一起存为 `base`（更早写入的记录两者都没有，回退到 `baseRef`）。`get(threadId)` 返回任意状态下的最新记录。`status()` 增加 `commitsAhead`（`git rev-list --count baseSha..HEAD`）。`changes(record, { maxCommits, maxFiles })` 返回最新在前的提交、`baseSha..HEAD` 已提交的文件（含二进制识别）、总数以及未提交数量。`filePatch(record, path, maxBytes)` 返回单个仓库相对路径的已提交 diff，按字节在字符边界截断；绝对路径与 `..` 路径会被拒绝。所有列表与补丁都有上限。 `mergeCheck(record, { target }, maxConflicts)` 用 `git merge-tree --write-tree` 预测把 worktree 的 HEAD 合并进 `target`（在主检出中解析）是否冲突，列出至多 `maxConflicts` 个冲突路径并给出总数；不移动任何引用或工作树，git 低于 2.38 时返回 `{ supported: false }`。
+`create()` 按基座策略解析出提交，作为 `baseSha` 存入日志，并连同产生它的策略一起存为 `base`（更早写入的记录两者都没有，回退到 `baseRef`）。`get(threadId)` 返回任意状态下的最新记录。`status()` 增加 `commitsAhead`（`git rev-list --count baseSha..HEAD`）。`changes(record, { maxCommits, maxFiles })` 返回最新在前的提交、`baseSha..HEAD` 已提交的文件（含二进制识别）、总数以及未提交数量。`filePatch(record, path, maxBytes)` 返回单个仓库相对路径的已提交 diff，按字节在字符边界截断；绝对路径与 `..` 路径会被拒绝。所有列表与补丁都有上限。 `mergeCheck(record, { target }, maxConflicts)` 用 `git merge-tree --write-tree` 预测把 worktree 的 HEAD 合并进 `target` 是否冲突，列出至多 `maxConflicts` 个冲突路径并给出总数；不移动任何引用或工作树，git 低于 2.38 时返回 `{ supported: false }`。目标先在主检出中解析，失败时改由持有该分支的另一个 Thread 的克隆来解析；worktree 自己的克隆缺少该提交时，会先把它 fetch 进来再让 `merge-tree` 比较两者。
 
 ### 多进程共用同一根目录
 
@@ -142,7 +142,7 @@ rolled-back ──────────────────── orphane
 | Code | 触发条件 |
 |---|---|
 | `NOT_A_GIT_REPO` | `repoRoot` 不在 git work tree 内（或在 `explicit` 解析下为相对路径/空值）。 |
-| `WORKTREE_CREATE_FAILED` | `git worktree add` 因其他 code 未覆盖的原因失败，或 spec 携带了不可用的分支/Thread id。 |
+| `WORKTREE_CREATE_FAILED` | 克隆或检出步骤因其他 code 未覆盖的原因失败，或 spec 携带了不可用的分支/Thread id。 |
 | `WORKTREE_BRANCH_EXISTS` | 该 Thread 的分支已存在，且不是它自己上一次运行留下的。 |
 | `WORKTREE_PATH_IN_USE` | 目标 worktree 路径已被占用。 |
 | `GIT_SPAWN_FAILED` | 无法启动 `git` 可执行文件。 |
@@ -180,10 +180,10 @@ rolled-back ──────────────────── orphane
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **未建模 detached worktree。** `WorktreeSpec.branch` 是可选的，但省略它会得到默认派生分支，而不是 detached 检出；设计把 `branchMode` 的决策交给了 Thread provider 包。
-- **读取未被设防。** worktree 隔离的是*写入*与 git 状态；Thread 仍可通过共享 object store 读取整个仓库。本包不尝试实现读取设防。
+- **省略 `branch` 不等于 detached 检出。** `WorktreeSpec.branch` 是可选的，但没有它的 spec 会得到默认派生分支；detached 检出需要 `WorktreeSpec.detached`（两者互斥），设计把 `branchMode` 的决策交给了 Thread provider 包。
+- **读取未被设防。** worktree 隔离的是*写入*与 git 状态：Thread 的仓库是自包含的，object store 就在 Thread 目录内部。读取本身仍然开放，因此 Thread 仍能读取整个仓库。本包不尝试实现读取设防。
 - **`maxWorktreesPerRepo` 按仓库计**，与 `list(repoRoot)` 保持一致，而非全进程全局计数。
-- **隔离只覆盖写入。** 读取、网络与共享的 git object store 均未隔离；`/tmp` 是共享的；Thread 仍可执行 `git push`。
+- **隔离只覆盖写入。** 读取与网络未被隔离，`/tmp` 是共享的。Thread 的 `git push` 指向其克隆的 `origin`，即父仓库的路径，位于 Thread 沙箱根之外，因此沙箱会拒绝它；worker 契约在任何会话中都禁止 push。
 - **多进程共用同一 `worktreeRoot` 受锁保护。** 锁依赖本地文件系统的目录原子创建；网络文件系统上不保证。
 - **启动清理看不到会话存在性**，因为探针无法经 YAML 传入。探针安装之后，每次 `create()` 之前的清理即可依据会话判断。
 - **注册本包需要生成的 tsconfig 别名。** `tsconfig.base.json` 带有生成的 `@deepseek-ai/dsh-*` 包别名；新增本包后请运行 `pnpm run gen-tsconfig-paths`。
@@ -193,7 +193,7 @@ rolled-back ──────────────────── orphane
 
 - 源码布局：`src/index.ts`（服务）、`src/registry.ts`（持久化意图日志与状态机）、`src/git.ts`（git 子进程表面）、`src/error.ts`（类型化失败）、`src/types.ts`（公共数据结构）、`src/states.ts`（状态集合）。
 - 基座策略的测试会真实地构造一个未干净的父 checkout，并从磁盘上读回所创建 worktree 里的文件；因此 `git stash create` 与 `git stash push`/`pop` 的区别是靠它对父 checkout **没有**做什么来证明的（`git status --porcelain` 不变、`git stash list` 为空），而不是靠一个被 mock 的返回值。
-- 测试为每个用例构建真实的临时 git 仓库（`mkdtemp` + `git init` + 一次提交），并把每条断言都从 git 本身读回——`git worktree list --porcelain`、`git branch --list`、`git status --porcelain`——而不是相信服务自己的账本。它们覆盖 SBFT 第 A1–A9 行，以及配置守卫与状态机各条边。
-- `SBFT A6`（add 进行中途中止）通过安装一个会 `sleep` 的 `post-checkout` 钩子变成确定性用例，从而保证 abort 确实落在 `git worktree add` 执行期间，而不是与它赛跑。
+- 测试为每个用例构建真实的临时 git 仓库（`mkdtemp` + `git init` + 一次提交），把每个 worktree 创建为本地克隆，并把每条断言都从 git 本身读回——`git rev-parse --git-dir` 解析到 worktree 自己的目录内、`git branch --list`、`git status --porcelain`——而不是相信服务自己的账本。它们覆盖 SBFT 第 A1–A9 行，以及配置守卫与状态机各条边。
+- `SBFT A6`（创建过程中中止）通过一个会 `sleep` 的 `post-checkout` 钩子变成确定性用例，该钩子经 `core.hooksPath` 下发——克隆不会复制父仓库的钩子——从而保证 abort 确实落在克隆检出进行期间，而不是与它赛跑。
 
 **运行时不变式：** 不发布伴生入口。sidecar 日志是本服务持有的唯一状态：每次转换都在咨询锁下对照刚折叠出的日志校验，因此非法边会从本该写入它的那次 append 本身抛出；而分支、提交与工作树事实在调用时直接从 `git` 读出，而不是取自某个维护中的投影。

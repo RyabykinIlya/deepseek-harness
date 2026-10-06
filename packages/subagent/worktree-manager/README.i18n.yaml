@@ -9,8 +9,8 @@
   en: 9672f18bd147196e
   zh: 30d58326702b44fb
 /deepseek-ai-dsh-worktree-manager/summary:
-  en: e9e645e0d9303983
-  zh: 4acb5e9652e76c08
+  en: 2cc3c148140b6c7e
+  zh: c4720e68eeb27486
 /deepseek-ai-dsh-worktree-manager/table-of-contents:
   en: 1bcd197f64c9fb56
   zh: ebc90fe5692157d0
@@ -24,23 +24,23 @@
   en: 6ebfc97113269267
   zh: 20685e359a221cff
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/the-base-policy:
-  en: 8ae060eae8a9b1bc
-  zh: 9fc4f62cadd23cf6
+  en: 56f1e875a2a812e4
+  zh: 8aedd9f7d9933d3c
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/durable-intent-comes-before-the-side-effect:
-  en: 2e5c9011d93ea78c
-  zh: ff87dd2b6139e777
+  en: 5775ec9de18dfc27
+  zh: 1a0af89feb992020
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/the-state-machine:
   en: b94e262a41adeb8c
   zh: 6baedde4c122421a
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/what-the-branch-is-and-what-removal-deletes:
-  en: dfd6236ec47bcb96
-  zh: c95deaa525364975
+  en: c73c351c62d553f5
+  zh: 47e124fb5b1625d3
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/reconciliation:
-  en: cc94c9d912611fb6
-  zh: f6e616330eb69c52
+  en: f7052af5d02fd8ff
+  zh: 648f05df36a9dd91
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/recorded-base-and-changes:
-  en: 4558a467f6722704
-  zh: 1f1e0fd9361994f5
+  en: 3b6d164969d312a8
+  zh: a8f519069eb1b478
 /deepseek-ai-dsh-worktree-manager/understand-the-implementation/several-processes-on-one-root:
   en: eeda8957fbfddacf
   zh: 0590fed901f15c7d
@@ -48,8 +48,8 @@
   en: 0a991b2733dbeac2
   zh: 90dccae820af0124
 /deepseek-ai-dsh-worktree-manager/errors:
-  en: 2327e0476ab76b80
-  zh: 7e3f22e3ade9cf0f
+  en: a55cd94b22c8aa65
+  zh: 65e6d83ec1568a72
 /deepseek-ai-dsh-worktree-manager/model-experience:
   en: 215e7ba838619b7b
   zh: a311da3843709f90
@@ -66,8 +66,8 @@
   en: e7ba08477bf22c4e
   zh: 62caf67747c125dc
 /deepseek-ai-dsh-worktree-manager/known-limitations-and-deferred-work:
-  en: 292a8072a5982388
-  zh: 465dacd18000ec2e
+  en: 52309b0b18def08c
+  zh: d58ea8cc6d8a56e8
 /deepseek-ai-dsh-worktree-manager/known-limitations-and-deferred-work/dev-note:
-  en: 63bab82932c9329e
-  zh: 424541bc7d331fe5
+  en: 89bf7bd1f9f3cbbc
+  zh: f94cb4c4ed857221
