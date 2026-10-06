@@ -40,6 +40,7 @@ import type {
 import {
   attributionHeaders,
   contentHasImage,
+  KEY_QUOTA_EXCEEDED_CODE,
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
@@ -56,6 +57,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
@@ -82,6 +84,38 @@ function withRouting(model: Model<Api>, block: OpenRouterRoutingBlock | undefine
   return { ...model, compat: { ...model.compat, openRouterRouting: block } }
 }
 
+/**
+ * Whether one chunk carries model output, which is what commits an attempt to
+ * the key that produced it.
+ *
+ * `usage` and `finish` are bookkeeping: a terminal failure chunk emits a
+ * `usage` bookkeeping chunk immediately before itself (see `toStreamChunks`),
+ * so an attempt that never reached content is exactly one whose buffered
+ * chunks are all bookkeeping. Everything else is content.
+ * @param chunk - one chunk from an attempt.
+ * @returns true when the chunk is model output rather than bookkeeping.
+ */
+function isContentChunk(chunk: StreamChunk): boolean {
+  return chunk.type !== 'usage' && chunk.type !== 'finish'
+}
+
+/**
+ * Whether one attempt's terminal event says the credential it used reached its
+ * own usage ceiling.
+ *
+ * Read from the finish failure's code, never its message: `KEY_QUOTA` is the
+ * classification `toStreamChunks` already makes distinct from an account-wide
+ * `QUOTA` and from a transient `RATE_LIMIT`, which is the distinction rotation
+ * turns on — another key unblocks the first, and no key unblocks the other two.
+ * @param chunk - the attempt's `finish` chunk.
+ * @returns true when this key is exhausted and another may be tried.
+ */
+function isKeyQuotaFinish(chunk: StreamChunk): boolean {
+  return chunk.type === 'finish'
+    && chunk.reason.kind === 'error'
+    && chunk.reason.failure.code === KEY_QUOTA_EXCEEDED_CODE
+}
+
 /** One resolution's frozen view: the profiles and the collection built from them. */
 interface PiAiSnapshot {
   /** The resolved profiles this collection was built from, used as its identity. */
@@ -90,19 +124,63 @@ interface PiAiSnapshot {
   models: Models
 }
 
+/**
+ * The cross-request key-rotation state one adapter consults.
+ *
+ * It lives outside the adapter because exhaustion outlives one operation: a
+ * key the provider reported exhausted must stay out of rotation for its
+ * cooldown, across every request that arrives in the meantime. Keeping it here
+ * also keeps the adapter free of a mutable cache that a configuration change
+ * would have to remember to clear.
+ */
+export interface PiAiKeyRotation {
+  /**
+   * The credentials one request may try, in order, with references currently
+   * inside their cooldown omitted.
+   * @param provider - the route key.
+   * @param profile - the resolved profile the request captured.
+   * @returns the candidate references; an empty list for a keyless route.
+   */
+  candidates: (provider: string, profile: ResolvedPiAiProviderProfile) => readonly CredentialRef[]
+  /**
+   * Record that one reference reported its own usage ceiling, starting its
+   * cooldown for later requests.
+   * @param provider - the route key.
+   * @param ref - the exhausted reference.
+   * @param cooldownMs - how long it stays out of rotation, as the operation
+   *   captured from its own profile.
+   */
+  exhaust: (provider: string, ref: CredentialRef, cooldownMs: number) => void
+}
+
 /** Constructor options for {@link PiAiAdapter}: the two resolution hooks the plugin owns. */
 export interface PiAiAdapterOptions {
   /** Current validated profiles by provider route; called once per operation. */
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
-   * Resolve the credential for one already-resolved profile; called once per
-   * stream call and frozen for that call. `undefined` defers to the route's own
-   * pi-ai auth, which for an installed catalog route is its provider-native
-   * ambient discovery; the plugin allows that only for a profile naming no
-   * credential at all, because a named reference that misses throws `LlmError`
+   * Resolve the credential one attempt uses; called once per attempt and
+   * frozen for it. `undefined` defers to the route's own pi-ai auth, which for
+   * an installed catalog route is its provider-native ambient discovery; the
+   * plugin allows that only when the profile names no credential at all,
+   * because a named reference that misses throws `LlmError`
    * `MISSING_CREDENTIAL` rather than falling back.
+   * @param provider - the route key.
+   * @param profile - the resolved profile this operation captured.
+   * @param ref - the specific reference this attempt authenticates with, or
+   *   `undefined` for the keyless posture.
+   * @returns the usable key, or undefined when the route names none.
    */
-  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  resolveApiKey: (
+    provider: string,
+    profile: ResolvedPiAiProviderProfile,
+    ref: CredentialRef | undefined,
+  ) => Promise<string | undefined>
+  /**
+   * Rotation state and cooldown policy for a route naming several credentials.
+   * Omission keeps the single-credential behavior for every route: one attempt
+   * with `profile.apiKeyEnv` and no rotation.
+   */
+  keyRotation?: PiAiKeyRotation
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -382,8 +460,131 @@ export class PiAiAdapter extends LlmAdapter {
       model,
       options.reasoningEffort ?? profile.reasoning,
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    // Choosing a key is not a retry: one adapter call is still one SDK attempt
+    // (`profileOptions` pins `maxRetries: 0`), and every key below is tried
+    // inside that single attempt. Without the rotation state the route keeps
+    // its single-credential behavior.
+    const candidates = this.config.keyRotation?.candidates(options.provider, profile)
+      ?? (profile.apiKeyEnv === undefined ? [] : [profile.apiKeyEnv])
+    // Whether the route names a credential at all is read from the profile, not
+    // from this list: every key can be inside its cooldown, which leaves the
+    // list empty while the route is still a keyed one. Falling through to
+    // pi-ai's ambient discovery then would authenticate with an unrelated
+    // ambient key — the exact substitution a named reference exists to prevent.
+    const keyless = profile.apiKeys.length === 0
+    const attempted = new Set<CredentialRef>()
+    for (;;) {
+      const ref = candidates.find(candidate => !attempted.has(candidate))
+      if (ref === undefined && keyless) {
+        // One attempt that leaves the credential for pi-ai's own
+        // provider-native discovery to answer.
+        const ambient = await this.config.resolveApiKey(options.provider, profile, undefined)
+        yield* this.attemptStream(options, snapshot, dispatch, profile, model, reasoning, ambient)
+        return
+      }
+      if (ref === undefined) {
+        // Two ways to arrive here, and the remedy differs: every key was tried
+        // on this request, or the ones left are still cooling from an earlier
+        // one. The second is the more common by far once a route is in
+        // rotation, so it names the cooldown rather than the attempt count.
+        const attemptedCount = attempted.size
+        throw new LlmError(
+          attemptedCount === candidates.length
+            ? `llm-pi-ai: route "${options.provider}" exhausted all ${String(candidates.length)} API`
+              + ` key${candidates.length === 1 ? '' : 's'} for one request; each reported its own usage ceiling`
+              + ' (KEY_QUOTA), so another key or a higher per-key budget is what unblocks it — this is not the'
+              + ' account balance, which no key change fixes'
+            : `llm-pi-ai: route "${options.provider}" has no API key to try: of the`
+              + ` ${String(profile.apiKeys.length)} the profile names, every one is still inside its`
+              + ` keyCooldownMs (${String(profile.keyCooldownMs ?? 0)}ms) after reporting its own usage ceiling`
+              + ' (KEY_QUOTA), so the next request succeeds once one expires',
+          KEY_QUOTA_EXCEEDED_CODE,
+        )
+      }
+      const apiKey = await this.config.resolveApiKey(options.provider, profile, ref)
+      // `AsyncIterable` hides its iterator type, so this names the one the
+      // generator method already produces without converting any value.
+      const attempt = this
+        .attemptStream(options, snapshot, dispatch, profile, model, reasoning, apiKey)
+        [Symbol.asyncIterator]() as AsyncGenerator<StreamChunk>
+      // A key may be rotated away from only while this attempt has produced no
+      // content: pi-ai reports a failure as a terminal in-band event, so the
+      // reason is unknown until its finish chunk arrives, by which point bytes
+      // already yielded to the caller cannot be taken back.
+      const buffered: StreamChunk[] = []
+      let outcome: StreamChunk | undefined
+      let sawContent = false
+      for (;;) {
+        const next = await attempt.next()
+        if (next.done === true) break
+        const chunk = next.value
+        if (chunk.type === 'finish') {
+          outcome = chunk
+          break
+        }
+        if (!sawContent && isContentChunk(chunk)) sawContent = true
+        // Once content exists the request is committed, so the buffer is
+        // released immediately and every later chunk streams straight through.
+        if (sawContent) {
+          for (const held of buffered) yield held
+          buffered.length = 0
+          yield chunk
+          for (;;) {
+            const rest = await attempt.next()
+            if (rest.done === true) break
+            yield rest.value
+          }
+          await attempt.return?.(undefined)
+          return
+        }
+        buffered.push(chunk)
+      }
+      await attempt.return?.(undefined)
+      if (outcome === undefined) {
+        // The stream ended without a terminal event. Nothing was content, so
+        // the buffered chunks are exactly what an unknown-ending stream
+        // produced before; release them and let the caller's own handling
+        // decide what a terminal-less stream means.
+        for (const held of buffered) yield held
+        return
+      }
+      if (isKeyQuotaFinish(outcome)) {
+        // The key is exhausted and nothing durable has left this operation:
+        // report the exhaustion, discard the buffer, and try the next key.
+        this.config.keyRotation?.exhaust(options.provider, ref, profile.keyCooldownMs ?? 0)
+        attempted.add(ref)
+        continue
+      }
+      for (const held of buffered) yield held
+      yield outcome
+      return
+    }
+  }
 
+  /**
+   * One attempt for one credential, as its own chunk iterator.
+   *
+   * Everything from here down is per-attempt — the consumer controller, the
+   * idle watchdog, the SDK stream, and its teardown — so abandoning an attempt
+   * for the next key cannot leak the previous one's socket or watchdog.
+   * @param options - the request.
+   * @param snapshot - the snapshot this operation captured.
+   * @param dispatch - per-call options.
+   * @param profile - this operation's profile.
+   * @param model - this operation's model descriptor.
+   * @param reasoning - the resolved reasoning level.
+   * @param apiKey - the credential this attempt authenticates with.
+   * @returns this attempt's chunks, ending with a `finish` when the provider produced one.
+   */
+  private async * attemptStream(
+    options: GenerateOptions,
+    snapshot: PiAiSnapshot,
+    dispatch: PiAiDispatchOptions,
+    profile: ResolvedPiAiProviderProfile,
+    model: Model<Api>,
+    reasoning: ModelThinkingLevel | undefined,
+    apiKey: string | undefined,
+  ): AsyncIterable<StreamChunk> {
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal

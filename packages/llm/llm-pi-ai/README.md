@@ -37,6 +37,8 @@ Choose this adapter when the same composition serves several providers, when a r
 
 Each profile may set a `retryPolicy`; omission uses normal mode with five retries. `apiKeyEnv` is a credential reference resolved per request through the harness credential seam, so no secret enters the configuration file; a reference that resolves to nothing fails the request with `MISSING_CREDENTIAL`. Omitting it leaves the route configured-but-keyless, which for an installed catalog route defers to pi-ai's provider-native ambient discovery.
 
+A profile may name several credentials with `apiKeys`, in the order a request tries them. When the provider reports that one key reached its own usage ceiling (`KEY_QUOTA`), the same request continues on the next key before any content has reached the caller — one attempt, one visible reply, whichever key completed it. `apiKeyEnv`, when also set, is tried after the `apiKeys` entries unless it already appears among them. An exhausted key stays out of rotation for `keyCooldownMs`, which the profile must state whenever it names more than one credential. When every key has been tried or is cooling, the request fails with `KEY_QUOTA` naming the route; that code stays distinct from an account-wide `QUOTA`, because another key can unblock the former and no key unblocks the latter.
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -56,6 +58,16 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
         models:
           - id: claude-sonnet-4-5
             contextWindow: 200000
+      # Two credentials, tried in order; the first is skipped for a minute
+      # after the provider reports that it hit its own usage ceiling.
+      acme-budget:
+        apiKeyEnv: ACME_BUDGET_PRIMARY
+        apiKeys:
+          - ACME_BUDGET_SECONDARY
+        keyCooldownMs: 60000
+        models:
+          - id: acme-large
+            contextWindow: 262144
       acme-gateway:
         displayName: Acme Gateway
         apiKeyEnv: ACME_GATEWAY_API_KEY
@@ -75,6 +87,8 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
 | Field | Default | Meaning |
 |---|---|---|
 | `apiKeyEnv` | absent | Credential reference resolved per request; omission defers to pi-ai ambient discovery |
+| `apiKeys` | empty | Credential references tried in order; another key continues a request whose key reported `KEY_QUOTA` |
+| `keyCooldownMs` | absent | How long a key stays out of rotation after its own ceiling; required with, and refused without, more than one credential |
 | `displayName` | provider name | Label shown by selector surfaces |
 | `api` | catalog protocol | Wire protocol; only needed for routes the catalog does not supply |
 | `baseURL` | catalog endpoint | Endpoint of every model on the route |
@@ -114,7 +128,7 @@ The plugin answers "which models can this provider serve?" for a route a configu
 
 ### Failures and recovery
 
-A route pi-ai does not ship needs `api`, `baseURL`, and a non-empty `models` list; an unserviceable profile is refused where it is written, naming the route and model. Failures carry stable codes: a credential that cannot be used fails with `INVALID_CREDENTIAL` naming the route and reference, a route whose `apiKeyEnv` reference resolves to nothing fails with `MISSING_CREDENTIAL`, an unconfigured model fails with `UNKNOWN_MODEL`, and terminal provider failures distinguish `QUOTA` from transient `RATE_LIMIT`. `GenerateOptions.stop` is rejected with `UNSUPPORTED_OPTION` because pi-ai's common streaming UI cannot guarantee it across providers.
+A route pi-ai does not ship needs `api`, `baseURL`, and a non-empty `models` list; an unserviceable profile is refused where it is written, naming the route and model. Failures carry stable codes: a credential that cannot be used fails with `INVALID_CREDENTIAL` naming the route and reference, a route whose `apiKeyEnv` reference resolves to nothing fails with `MISSING_CREDENTIAL`, an unconfigured model fails with `UNKNOWN_MODEL`, terminal provider failures distinguish `QUOTA` from transient `RATE_LIMIT`, and a request whose every key reported its own ceiling fails with `KEY_QUOTA`. `GenerateOptions.stop` is rejected with `UNSUPPORTED_OPTION` because pi-ai's common streaming UI cannot guarantee it across providers.
 
 Config updates strictly validate changed providers. Initial loading retains stored catalog failures as editable provider diagnostics; unchanged failed providers do not block edits elsewhere. Serviceable models remain selectable, and unresolved models fail before network I/O. Repairing or deleting the offending configuration clears its diagnostic.
 

@@ -92,6 +92,29 @@ export type {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Credential references this route may authenticate one request with, in
+   * declared order. A request starts at the first one and moves to the next
+   * when the provider reports that key's own usage ceiling (`KEY_QUOTA`); the
+   * caller sees one attempt either way.
+   *
+   * With both this and {@link apiKeyEnv} set, these entries are tried first in
+   * the order declared and `apiKeyEnv` is appended last when it is not already
+   * one of them. Naming the same reference twice within this list is refused;
+   * naming it here and in `apiKeyEnv` is one credential attempted once.
+   *
+   * An empty list is indistinguishable from an omitted one after defaulting,
+   * and a profile naming no credential through either field keeps the
+   * keyless posture: pi-ai's own provider-native ambient discovery.
+   */
+  apiKeys?: string[]
+  /**
+   * How long a key stays out of rotation after the provider reported it
+   * exhausted. Required when the route names more than one credential and
+   * refused when it names fewer, because a route can only skip a key when it
+   * has another one to try instead.
+   */
+  keyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -186,7 +209,7 @@ export interface PiAiProviderProfile {
 export interface ResolvedPiAiProviderProfile
   extends Omit<
     PiAiProviderProfile,
-    'apiKeyEnv' | 'retryPolicy' | 'models' | 'displayName'
+    'apiKeyEnv' | 'apiKeys' | 'keyCooldownMs' | 'retryPolicy' | 'models' | 'displayName'
   > {
   /** Harness route key and the `Models` collection key (the configuration dict key). */
   provider: string
@@ -194,6 +217,15 @@ export interface ResolvedPiAiProviderProfile
   displayName: string
   /** Validated credential reference, when one is configured. */
   apiKeyEnv?: CredentialRef
+  /**
+   * Every credential reference this route can authenticate one request with,
+   * in the order rotation tries them, deduplicated and frozen. Always present:
+   * an empty list is the keyless posture, in which the request runs once
+   * against pi-ai's own ambient discovery.
+   */
+  apiKeys: readonly CredentialRef[]
+  /** How long one key stays out of rotation after its own usage ceiling; present exactly when more than one credential is named. */
+  keyCooldownMs?: number
   /** Positive finite provider-idle interval after defaulting. */
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
@@ -371,6 +403,12 @@ const modelOverride: z<PiAiModelOverride> = z.object(modelFields)
 
 const profile = z.object({
   apiKeyEnv: z.string().role('credential-ref'),
+  // No explicit default, like an entry's `input`: schemastery materializes an
+  // absent array as `[]`, so "omitted" and "empty" are one value here. That is
+  // harmless because both mean the same thing — this field names no credential
+  // — and resolution reads the list, never the raw field.
+  apiKeys: z.array(z.string().role('credential-ref')),
+  keyCooldownMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS),
   displayName: z.string(),
   api: z.union(supportedProtocols()),
   baseURL: z.string(),
@@ -446,6 +484,31 @@ function assertValidHeaders(provider: string, headers: Readonly<Record<string, s
 }
 
 /**
+ * The credential references one route rotates through, in the order a request
+ * tries them: the declared `apiKeys` entries first, then `apiKeyEnv` when it is
+ * not already among them. A repeated reference within `apiKeys` is refused — a
+ * rotation list that tried the same key twice would spend an attempt on a key
+ * the previous attempt proved exhausted. `apiKeyEnv` is deduplicated rather
+ * than refused because it is the field that existed before rotation did.
+ * @param provider - the route key, for diagnostics.
+ * @param source - the configured profile.
+ * @returns the frozen, deduplicated references in try order.
+ * @throws TypeError naming the route when an entry is not a credential reference or repeats.
+ */
+function resolveApiKeys(provider: string, source: PiAiProviderProfile): readonly CredentialRef[] {
+  const keys = [...source.apiKeys ?? []]
+  const seen = new Set<string>()
+  for (const name of keys) {
+    if (seen.has(name)) {
+      throw new Error(`llm-pi-ai: provider "${provider}" apiKeys lists the credential reference "${name}" more than once`)
+    }
+    seen.add(name)
+  }
+  if (source.apiKeyEnv !== undefined && !seen.has(source.apiKeyEnv)) keys.push(source.apiKeyEnv)
+  return Object.freeze(keys.map(name => credentialRef(name)))
+}
+
+/**
  * Resolve scalar defaults and materialize each route's serviceable models.
  * Deferred catalog validation retains diagnostics without deleting configured
  * routes. An omitted dict resolves to the empty, dormant route set.
@@ -472,6 +535,32 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    // Resolved before `buildProvider` because the resolved list — not the
+    // configured pair of fields — decides whether this route names a
+    // credential, and that answer is what adds the harness's own api-key
+    // method to a catalog provider offering none.
+    const apiKeys = resolveApiKeys(provider, source)
+    const keyCooldownMs = source.keyCooldownMs
+    if (apiKeys.length > 1) {
+      // An absent cooldown is refused rather than defaulted: rotation without
+      // one would retry a key the provider just said was exhausted on the very
+      // next step, and choosing the interval is a deployment fact no built-in
+      // value can know.
+      if (keyCooldownMs === undefined) {
+        throw new Error(
+          `llm-pi-ai: provider "${provider}" names ${String(apiKeys.length)} credentials, so keyCooldownMs must`
+          + ' state how long one stays out of rotation after the provider reports it exhausted',
+        )
+      }
+      if (!Number.isInteger(keyCooldownMs) || keyCooldownMs <= 0) {
+        throw new Error(`llm-pi-ai: provider "${provider}" keyCooldownMs must be a positive integer`)
+      }
+    } else if (keyCooldownMs !== undefined) {
+      throw new Error(
+        `llm-pi-ai: provider "${provider}" sets keyCooldownMs but names ${String(apiKeys.length)} credentials;`
+        + ' a cooldown only has an effect when the route names more than one',
+      )
+    }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
     if (!Number.isFinite(streamIdleTimeoutMs)
       || streamIdleTimeoutMs <= 0
@@ -527,7 +616,7 @@ export function resolveProfiles(
         ...source.api === undefined ? {} : { api: source.api },
         ...source.baseURL === undefined ? {} : { baseURL: source.baseURL },
         models: catalog.models,
-        namesCredential: source.apiKeyEnv !== undefined,
+        namesCredential: apiKeys.length > 0,
       })
     } catch (error) {
       if (validation === 'strict' || !(error instanceof PiAiCatalogError)) throw error
@@ -535,6 +624,8 @@ export function resolveProfiles(
     }
     const {
       apiKeyEnv,
+      apiKeys: _apiKeys,
+      keyCooldownMs: _keyCooldownMs,
       retryPolicy,
       models: _models,
       displayName: _displayName,
@@ -545,6 +636,8 @@ export function resolveProfiles(
       provider,
       displayName,
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
+      apiKeys,
+      ...keyCooldownMs === undefined ? {} : { keyCooldownMs },
       streamIdleTimeoutMs,
       maxRequestImageBytes,
       requestImagePixelBudget,

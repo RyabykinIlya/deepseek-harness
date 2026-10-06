@@ -59,12 +59,14 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess } from '@deepseek-ai/dsh-llm'
 import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigurableProvider } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { PiAiAdapter } from './adapter.ts'
+import type { PiAiKeyRotation } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
 import { catalogProviderIds } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
@@ -75,7 +77,7 @@ import type { StoredModelDiscoveryProfile } from './discovery.ts'
 import { registerPiAiFlows } from './login.ts'
 
 export { PiAiAdapter } from './adapter.ts'
-export type { PiAiAdapterOptions } from './adapter.ts'
+export type { PiAiAdapterOptions, PiAiKeyRotation } from './adapter.ts'
 export { Config } from './config.ts'
 export type {
   Options,
@@ -218,9 +220,9 @@ export function apply(ctx: Context, config: Config): void {
 
   const resolveApiKey = async (
     provider: string,
-    profile: ResolvedPiAiProviderProfile,
+    _profile: ResolvedPiAiProviderProfile,
+    ref: CredentialRef | undefined,
   ): Promise<string | undefined> => {
-    const ref = profile.apiKeyEnv
     // Only a profile that names no credential at all defers to pi-ai's
     // provider-native discovery. Once one is named, a miss must fail loud:
     // handing pi-ai `undefined` would let it pick up an unrelated ambient key
@@ -241,6 +243,41 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  /**
+   * Which API keys a route may authenticate one request with, and how long a
+   * key stays out after it reports its own ceiling.
+   *
+   * State lives in this closure because it must outlive one request — a key the
+   * provider just refused has to stay out of rotation for every request that
+   * arrives during its cooldown — while dying with the plugin instance, so a
+   * re-registration never inherits an exhaustion fact it cannot date. A route
+   * whose profile changed its key list keeps its entries: exhaustion is a fact
+   * about a credential, not about the profile that happens to name it, and a
+   * key the provider refused a minute ago is no more usable after an unrelated
+   * edit. Only a monotonically growing map of timestamps is kept, so nothing
+   * has to be scheduled or disposed.
+   */
+  const cooldowns = new Map<string, Map<CredentialRef, number>>()
+  const keyRotation: PiAiKeyRotation = {
+    candidates: (provider, profile) => {
+      const exhausted = cooldowns.get(provider)
+      if (exhausted === undefined || profile.keyCooldownMs === undefined) return profile.apiKeys
+      const now = Date.now()
+      return profile.apiKeys.filter((ref) => {
+        const until = exhausted.get(ref)
+        if (until === undefined) return true
+        if (until > now) return false
+        exhausted.delete(ref)
+        return true
+      })
+    },
+    exhaust: (provider, ref, cooldownMs) => {
+      const exhausted = cooldowns.get(provider) ?? new Map<CredentialRef, number>()
+      exhausted.set(ref, Date.now() + cooldownMs)
+      cooldowns.set(provider, exhausted)
+    },
+  }
+
   // One store and one ambient context for the whole plugin instance: both read
   // through `ctx` per call, so they stay correct across the collection rebuilds
   // a configuration change causes, and a sign-in survives one.
@@ -248,6 +285,7 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new PiAiAdapter({
     profiles,
     resolveApiKey,
+    keyRotation,
     auth,
     resolveAttachments: () => ctx.get('attachments'),
     resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
@@ -305,7 +343,10 @@ export function apply(ctx: Context, config: Config): void {
     if (profile === undefined) return undefined
     return {
       headers: profile.headers,
-      resolveApiKey: () => resolveApiKey(provider, profile),
+      // Discovery probes with one credential and does not rotate: it is a
+      // configuration-time question about what an endpoint advertises, and the
+      // first reference is the one the profile leads with.
+      resolveApiKey: () => resolveApiKey(provider, profile, profile.apiKeys[0]),
     }
   }
   // Interrogating an endpoint is a configuration-time action over a draft, so

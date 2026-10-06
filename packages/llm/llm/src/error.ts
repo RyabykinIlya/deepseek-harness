@@ -31,6 +31,16 @@ export const QUOTA_EXCEEDED_CODE = 'QUOTA'
 export const ACCOUNT_QUOTA_EXCEEDED_CODE = 'ACCOUNT_QUOTA'
 
 /**
+ * Canonical provider-neutral code for a request rejected because one supplied
+ * API key reached its own usage ceiling. Distinct from `QUOTA` because the
+ * remedy differs: rotating to another key unblocks the request, while an
+ * exhausted `QUOTA` (account balance, credits, billing plan) stays blocked for
+ * every key on the account. Also distinct from `RATE_LIMIT`, which clears on
+ * its own — a per-key ceiling does not, so retrying the same key is pointless.
+ */
+export const KEY_QUOTA_EXCEEDED_CODE = 'KEY_QUOTA'
+
+/**
  * Canonical provider-neutral code for a response that completed normally but
  * carried no content blocks at all. Providers occasionally emit a degenerate
  * completion (a terminal stop with zero output); adapters classify it as this
@@ -88,18 +98,67 @@ export function isContextWindowExceededError(detail: string): boolean {
     || EXCEEDS_MODEL_CONTEXT.test(detail)
 }
 
+/** Account-level exhaustion wording that names the account rather than a single key. */
+const ACCOUNT_LIMIT_REACHED = new RegExp(
+  String.raw`\b(?:account|organization|organisation|org|tenant|workspace)\b[^.!?\n]{0,40}?`
+  + String.raw`\b(?:reached|exceeded|exhausted|hit|depleted)\b[^.!?\n]{0,20}?`
+  + String.raw`\b(?:quota|usage[\s_-]+limit|credits?|balance)\b`,
+  'i',
+)
+
+/** A key named as the subject that reached or exhausted its own ceiling. */
+const KEY_REACHED_ITS_LIMIT = new RegExp(
+  String.raw`\b(?:api[\s_-]+)?key(?:'s)?\b[^.!?\n]{0,24}?`
+  + String.raw`\b(?:reached|hit|exceeded|maxed)\b[^.!?\n]{0,20}?`
+  + String.raw`\b(?:usage[\s_-]+limit|quota|budget|cap)\b`,
+  'i',
+)
+
+/** Reversed order: the key's usage/request limit is named first and the ceiling verb follows. */
+const KEY_LIMIT_REACHED = new RegExp(
+  String.raw`\b(?:api[\s_-]+)?key[\s_-]+(?:usage[\s_-]+|request[\s_-]+)?limit[\s_-]+`
+  + String.raw`(?:reached|exceeded|exhausted|hit)\b`,
+  'i',
+)
+
+/** A key reported as exhausted/depleted with no limit noun present. */
+const KEY_EXHAUSTED = new RegExp(
+  String.raw`\b(?:api[\s_-]+)?key\b(?:\s+(?:has|have|had|is|was|been))*\s*`
+  + String.raw`\b(?:exhausted|depleted)\b`,
+  'i',
+)
+
+/**
+ * Recognize provider wording that identifies one API key reaching its own
+ * usage ceiling, as opposed to an account-wide quota or a transient request
+ * rate. The distinction routes recovery: a per-key ceiling is worked around by
+ * rotating keys, while an account quota stays blocked for every key. Also
+ * matches the proxy wording "This API key reached its usage limit", whose
+ * subject-then-limit word order {@link isQuotaExceededError} does not cover.
+ * @param detail - provider error code/type/message text joined into one string.
+ * @returns true only when a key is named as the thing that hit its limit.
+ */
+export function isKeyQuotaExceededError(detail: string): boolean {
+  return KEY_REACHED_ITS_LIMIT.test(detail)
+    || KEY_LIMIT_REACHED.test(detail)
+    || KEY_EXHAUSTED.test(detail)
+}
+
 /**
  * Recognize provider wording that identifies an exhausted account quota rather
- * than a transient request-rate limit.
+ * than a transient request-rate limit. The `usage limit` alternative excludes a
+ * preceding `key` so a per-key ceiling stays on the {@link isKeyQuotaExceededError}
+ * path instead of reading as an account-wide one; the predicates stay disjoint.
  * @param detail - provider error code/type/message text joined into one string.
  * @returns true only for terminal quota, balance, credit, budget, or usage-limit wording.
  */
 export function isQuotaExceededError(detail: string): boolean {
   return /\binsufficient[\s_-]+(?:quota|balance|credits?)\b/i.test(detail)
-    || /\b(?:quota|usage[\s_-]+limit)[\s_-]+(?:exceeded|exhausted|reached)\b/i.test(detail)
+    || /\b(?:quota|(?<!key[\s_-]+)usage[\s_-]+limit)[\s_-]+(?:exceeded|exhausted|reached)\b/i.test(detail)
     || /\bexceed(?:ed|s)?[\s_-]+(?:(?:your|the)[\s_-]+)?(?:current[\s_-]+)?quota\b/i.test(detail)
     || /\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b/i.test(detail)
     || /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(detail)
+    || ACCOUNT_LIMIT_REACHED.test(detail)
 }
 
 /**

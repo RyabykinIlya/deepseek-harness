@@ -9,9 +9,14 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import LlmRuntime, { createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { AssistantMessage } from '@earendil-works/pi-ai'
+import { AssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createToolResultMessage, createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, KEY_QUOTA_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import type { PiAiKeyRotation } from '@deepseek-ai/dsh-llm-pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
@@ -22,8 +27,46 @@ import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 afterEach(async () => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
+  streamSimple.mockReset()
   await closeMockServers()
 })
+
+const streamSimple = vi.hoisted(() => vi.fn())
+
+// A hand-declared route dispatches through the protocol table in
+// `src/provider.ts`, which imports this lazy entry point, so this is the one
+// SDK boundary a spec can observe. The mock stays in the way of every test in
+// this file, so it delegates to the real implementation until a spec installs
+// one, which keeps the real-network specs on their real path.
+vi.mock('@earendil-works/pi-ai/api/openai-completions.lazy', async (importOriginal) => {
+  const actual = await importOriginal<{ openAICompletionsApi: () => Record<string, unknown> }>()
+  return {
+    openAICompletionsApi: () => {
+      const real = actual.openAICompletionsApi()
+      const delegate = (name: 'stream' | 'streamSimple') => (...args: unknown[]): unknown =>
+        (streamSimple.getMockImplementation() === undefined
+          ? (real[name] as (...inner: unknown[]) => unknown)(...args)
+          : streamSimple(...args))
+      return { ...real, stream: delegate('stream'), streamSimple: delegate('streamSimple') }
+    },
+  }
+})
+
+const MODEL_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+
+/** A pi-ai assistant message part-way through generation, for hand-built event streams. */
+function assistantMessage(content: AssistantMessage['content']): AssistantMessage {
+  return {
+    role: 'assistant',
+    content,
+    api: 'openai-completions',
+    provider: 'deepseek',
+    model: 'local-model',
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { total: 0, ...MODEL_COST } },
+    stopReason: 'stop',
+    timestamp: 0,
+  }
+}
 
 const IMAGE_REF: ImageAttachmentRef = {
   attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
@@ -1057,4 +1100,250 @@ it.each([
     auth: memoryAuth(),
   })
   expect(await adapter.listModels('deepseek')).not.toHaveLength(0)
+})
+
+/**
+ * A route naming two credentials, with the rotation state the plugin builds:
+ * an exhaustion map, a cooldown, and a resolver that maps each reference to a
+ * distinct key so the wire can show which one an attempt used.
+ */
+function rotatingAdapter(baseURL: string, options: {
+  apiKeys?: string[]
+  apiKeyEnv?: string
+  keyCooldownMs?: number
+  keys?: Record<string, string>
+  runExhaustedAt?: { value: number }
+} = {}): PiAiAdapter {
+  const cooldownMs = options.keyCooldownMs ?? 60_000
+  const keyValues = options.keys ?? { FIRST_KEY: 'key-one', SECOND_KEY: 'key-two' }
+  const exhausted = new Map<CredentialRef, number>()
+  const rotation: PiAiKeyRotation = {
+    candidates: (_provider, profile) => {
+      const now = options.runExhaustedAt?.value ?? Date.now()
+      return profile.apiKeys.filter((ref) => {
+        const until = exhausted.get(ref)
+        if (until === undefined) return true
+        if (until > now) return false
+        exhausted.delete(ref)
+        return true
+      })
+    },
+    exhaust: (provider, ref, cooldown) => {
+      exhausted.set(ref, (options.runExhaustedAt?.value ?? Date.now()) + cooldown)
+      void provider
+    },
+  }
+  return new PiAiAdapter({
+    profiles: () => resolveProfiles({
+      // Hand-declared rather than a catalog route: a catalog route dispatches
+      // through pi-ai's own provider and would bypass the SDK mock below.
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL,
+        models: [{ id: 'acme-turn', contextWindow: 8192, maxTokens: 1024 }],
+        apiKeys: options.apiKeys ?? ['FIRST_KEY', 'SECOND_KEY'],
+        keyCooldownMs: cooldownMs,
+        ...options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv },
+      },
+    }),
+    resolveApiKey: (_provider, _profile, ref) => Promise.resolve(ref === undefined ? undefined : keyValues[ref]),
+    keyRotation: rotation,
+    auth: memoryAuth(),
+  })
+}
+
+/** Drain one adapter stream, returning the chunks or the error it threw. */
+async function drainStream(adapter: PiAiAdapter): Promise<{ chunks: StreamChunk[] } | { error: unknown }> {
+  const chunks: StreamChunk[] = []
+  try {
+    for await (const chunk of adapter.stream({ provider: 'acme-gateway', model: 'acme-turn', messages: [] })) {
+      chunks.push(chunk)
+    }
+  } catch (error: unknown) {
+    return { error }
+  }
+  return { chunks }
+}
+
+/** A provider reply that reports one key's own usage ceiling before any content. */
+const keyQuotaReply = {
+  status: 429,
+  body: JSON.stringify({ error: { message: 'This API key reached its usage limit' } }),
+}
+
+describe('API key rotation', () => {
+  it('retries the same request with the next key when one is exhausted', async () => {
+    const server = await mockServer([
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': { events: textEvents } } },
+      { events: textEvents, byKey: { 'key-one': keyQuotaReply, 'key-two': { events: textEvents } } },
+    ])
+    const adapter = rotatingAdapter(server.url)
+    const result = await drainStream(adapter)
+
+    // The caller sees one seamless generation: a single bookkeeping finish for
+    // the successful key, and no failure anywhere in the stream.
+    expect('chunks' in result).toBe(true)
+    if (!('chunks' in result)) return
+    const finish = result.chunks.at(-1)
+    expect(finish).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(result.chunks.filter(chunk => chunk.type === 'finish')).toHaveLength(1)
+    expect(result.chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    // Both keys reached the wire, in the profile's declared order.
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+    ])
+  })
+
+  it('reports KEY_QUOTA, naming the route and how many keys it tried, once all are exhausted', async () => {
+    const server = await mockServer([
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': keyQuotaReply } },
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': keyQuotaReply } },
+    ])
+    const adapter = rotatingAdapter(server.url)
+    const result = await drainStream(adapter)
+
+    // A per-key ceiling, never rewritten as the account-level QUOTA.
+    expect('error' in result).toBe(true)
+    if (!('error' in result)) return
+    expect(result.error).toBeInstanceOf(LlmError)
+    expect((result.error as LlmError).code).toBe(KEY_QUOTA_EXCEEDED_CODE)
+    expect((result.error as LlmError).message).toContain('route "acme-gateway"')
+    expect((result.error as LlmError).message).toContain('2')
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+    ])
+  })
+
+  it('does not rotate away from a key that already produced content', async () => {
+    // A mid-stream failure cannot be expressed as an OpenAI-completions SSE
+    // body — that protocol reports errors through HTTP statuses — so this drives
+    // the pi-ai event stream directly, which is the same input `toStreamChunks`
+    // translates for every protocol.
+    const partial = assistantMessage([{ type: 'text', text: 'partial' }])
+    streamSimple.mockImplementation(() => {
+      const stream = new AssistantMessageEventStream()
+      stream.push({ type: 'start', partial: assistantMessage([]) })
+      stream.push({ type: 'text_delta', contentIndex: 0, delta: 'partial', partial })
+      const failed = { ...partial, stopReason: 'error' as const, errorMessage: 'This API key reached its usage limit' }
+      stream.push({ type: 'error', reason: 'error', error: failed })
+      stream.end(failed)
+      return stream
+    })
+    const server = await mockServer([{ events: textEvents }])
+    const adapter = rotatingAdapter(server.url)
+    const result = await drainStream(adapter)
+
+    expect('chunks' in result).toBe(true)
+    if (!('chunks' in result)) return
+    // The partial content is out, so the failure is delivered as-is rather
+    // than replayed on the second key.
+    expect(result.chunks.some(chunk => chunk.type === 'text-delta')).toBe(true)
+    expect(result.chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: KEY_QUOTA_EXCEEDED_CODE } },
+    })
+    expect(streamSimple).toHaveBeenCalledOnce()
+    expect(server.headers).toHaveLength(0)
+  })
+
+  it('skips a key that is inside its cooldown, and takes it again once it expires', async () => {
+    const clock = { value: 1_000_000 }
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => clock.value)
+    onTestFinished(() => { spy.mockRestore() })
+    const server = await mockServer([
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': keyQuotaReply } },
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': keyQuotaReply } },
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': keyQuotaReply } },
+      { events: textEvents, byKey: { 'key-one': keyQuotaReply, 'key-two': { events: textEvents } } },
+    ])
+    const adapter = rotatingAdapter(server.url, { keyCooldownMs: 10_000, runExhaustedAt: clock })
+
+    // First request exhausts both keys.
+    const first = await drainStream(adapter)
+    expect('error' in first).toBe(true)
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+    ])
+
+    // Inside the cooldown every key is skipped, so the request fails without
+    // reaching the provider at all.
+    clock.value += 5_000
+    const second = await drainStream(adapter)
+    expect('error' in second).toBe(true)
+    expect((second as { error: LlmError }).error.code).toBe(KEY_QUOTA_EXCEEDED_CODE)
+    expect(server.headers).toHaveLength(2)
+
+    // Past the cooldown both keys are candidates again, and the second one —
+    // which this server now answers with content — completes the request.
+    clock.value += 10_000
+    const third = await drainStream(adapter)
+    expect('chunks' in third).toBe(true)
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+      'Bearer key-one',
+      'Bearer key-two',
+    ])
+  })
+
+  it('leaves a single-credential route exactly as it was', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const adapter = new PiAiAdapter({
+      profiles: () => resolveProfiles({ 'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: server.url,
+        models: [{ id: 'acme-turn', contextWindow: 8192, maxTokens: 1024 }],
+        apiKeyEnv: 'PI_TEST_KEY',
+      } }),
+      resolveApiKey: () => Promise.resolve('test-key'),
+      auth: memoryAuth(),
+    })
+    const result = await drainStream(adapter)
+    expect('chunks' in result).toBe(true)
+    expect(server.headers.map(headers => headers?.authorization)).toEqual(['Bearer test-key'])
+  })
+
+  it('rotates through the mounted plugin, including the cooldown it owns', async () => {
+    // The real composition: the plugin's own `apply`, its credential resolution
+    // through the ambient environment, and the cooldown state it keeps. Only
+    // the provider is a stand-in.
+    vi.stubEnv('PI_ROTATE_FIRST', 'key-one')
+    vi.stubEnv('PI_ROTATE_SECOND', 'key-two')
+    const server = await mockServer([
+      { ...keyQuotaReply, byKey: { 'key-one': keyQuotaReply, 'key-two': { events: textEvents } } },
+      { ...keyQuotaReply, byKey: { 'key-one': { events: textEvents }, 'key-two': { events: textEvents } } },
+      { ...keyQuotaReply, byKey: { 'key-one': { events: textEvents }, 'key-two': { events: textEvents } } },
+    ])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { 'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: server.url,
+        models: [{ id: 'acme-turn', contextWindow: 8192, maxTokens: 1024 }],
+        apiKeys: ['PI_ROTATE_FIRST', 'PI_ROTATE_SECOND'],
+        keyCooldownMs: 60_000,
+      } },
+    })
+
+    // The exhausted first key is skipped by the plugin's own cooldown for the
+    // next request, which is what makes the state outlive one operation.
+    const first = await assemble(ctx, { provider: 'acme-gateway', model: 'acme-turn', messages: [] })
+    expect(first.finish).toEqual({ kind: 'stop' })
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+    ])
+
+    const second = await assemble(ctx, { provider: 'acme-gateway', model: 'acme-turn', messages: [] })
+    expect(second.finish).toEqual({ kind: 'stop' })
+    expect(server.headers.map(headers => headers?.authorization)).toEqual([
+      'Bearer key-one',
+      'Bearer key-two',
+      'Bearer key-two',
+    ])
+  })
 })

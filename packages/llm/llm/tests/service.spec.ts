@@ -6,6 +6,7 @@ import LlmRuntime, {
   GenerateOptions,
   HarnessError,
   isContextWindowExceededError,
+  isKeyQuotaExceededError,
   isQuotaExceededError,
   LlmAdapter,
   LlmError,
@@ -140,6 +141,46 @@ describe('LlmRuntime', () => {
     ]) expect(isQuotaExceededError(detail)).toBe(true)
     expect(isQuotaExceededError('HTTP 429: rate limit reached')).toBe(false)
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
+  })
+
+  it('classifies a per-key usage ceiling as KEY_QUOTA, disjoint from account QUOTA', () => {
+    const proxy = 'API Error: Request rejected (429) · 🐛 This API key reached its usage limit. Raise the limit on this key or use a different one.'
+    expect(isKeyQuotaExceededError(proxy)).toBe(true)
+    expect(isQuotaExceededError(proxy)).toBe(false)
+
+    for (const detail of [
+      'This API key reached its usage limit',
+      'the API key has reached its usage limit',
+      'API key usage limit reached',
+      'key reached its usage limit',
+      'api key exhausted',
+      'THIS API KEY REACHED ITS USAGE LIMIT',
+      'The API key has been exhausted',
+    ]) {
+      expect(isKeyQuotaExceededError(detail)).toBe(true)
+      expect(isQuotaExceededError(detail)).toBe(false)
+    }
+  })
+
+  it('leaves account-level exhaustion on the QUOTA path', () => {
+    for (const detail of [
+      'insufficient quota',
+      'your account has reached its usage limit',
+      'the organization exceeded its usage limit',
+      'out of credits',
+      'account balance depleted',
+      'OpenAI API error (429): You exceeded your current quota, please check your plan and billing details.',
+    ]) {
+      expect(isQuotaExceededError(detail)).toBe(true)
+      expect(isKeyQuotaExceededError(detail)).toBe(false)
+    }
+  })
+
+  it('does not read a plain rate limit or an unrelated key mention as a key quota', () => {
+    for (const detail of ['429 Too Many Requests', 'HTTP 429: rate limit reached', 'this key exceeded the rate limit', 'HTTP 401: bad key']) {
+      expect(isKeyQuotaExceededError(detail)).toBe(false)
+      expect(isQuotaExceededError(detail)).toBe(false)
+    }
   })
 
   it('errorChain renders the full cause chain of a wrapped transport failure', () => {

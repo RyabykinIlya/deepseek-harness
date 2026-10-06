@@ -10,6 +10,16 @@ export interface MockServer {
   requestReceived: Promise<void>
   responseClosed: Promise<void>
 }
+/** One scripted reply: either a status/body pair or a scripted SSE event list. */
+export interface MockBehavior {
+  status?: number
+  events?: string[]
+  body?: string
+  delayMs?: number
+  /** Keep the SSE response open after its scripted events until the client disconnects. */
+  holdOpen?: boolean
+  headers?: Record<string, string>
+}
 
 const servers: Server[] = []
 
@@ -29,16 +39,30 @@ export const textEvents = [
   '[DONE]',
 ]
 
-/** Local provider stand-in: replays scripted behaviors per request. */
-export async function mockServer(script: {
-  status?: number
-  events?: string[]
-  body?: string
-  delayMs?: number
-  /** Keep the SSE response open after its scripted events until the client disconnects. */
-  holdOpen?: boolean
-  headers?: Record<string, string>
-}[]): Promise<MockServer> {
+/** The key a request carried in its `Authorization` header, or undefined when it carried none. */
+function bearerCredential(headers: IncomingMessage['headers']): string | undefined {
+  const value = headers.authorization
+  if (typeof value !== 'string' || !value.startsWith('Bearer ')) return undefined
+  return value.slice('Bearer '.length)
+}
+
+/**
+ * Local provider stand-in: replays scripted behaviors per request.
+ *
+ * A behavior may branch on the credential the request carried, which is what
+ * lets one server answer two API keys differently — the shape key rotation is
+ * observed through, since the keys themselves never appear in a request body.
+ * @param script - one behavior per request, or one keyed behavior per credential.
+ * @returns the running server and the observations it recorded.
+ */
+export async function mockServer(script: (MockBehavior & {
+  /**
+   * Behavior per credential value, consulted before the surrounding fields. A
+   * credential with no entry falls through to the surrounding behavior, which
+   * is how a test states what an unexpected key receives.
+   */
+  byKey?: Record<string, MockBehavior>
+})[]): Promise<MockServer> {
   const paths: string[] = []
   const requests: unknown[] = []
   const headers: IncomingMessage['headers'][] = []
@@ -59,29 +83,32 @@ export async function mockServer(script: {
       requests.push(body.length === 0 ? undefined : JSON.parse(body))
       headers.push(request.headers)
       requestReceived.resolve(undefined)
-      const behavior = script.shift() ?? { status: 500, body: 'script exhausted' }
-      if (behavior.status !== undefined && behavior.status !== 200) {
-        response.writeHead(behavior.status, { 'content-type': 'application/json', ...behavior.headers })
-        response.end(behavior.body ?? '{}')
+      const entry = script.shift() ?? { status: 500, body: 'script exhausted' }
+      const credential = bearerCredential(request.headers)
+      const behavior = credential === undefined ? undefined : entry.byKey?.[credential]
+      const reply: MockBehavior = behavior ?? entry
+      if (reply.status !== undefined && reply.status !== 200) {
+        response.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers })
+        response.end(reply.body ?? '{}')
         return
       }
-      if (behavior.body !== undefined) {
-        response.writeHead(200, { 'content-type': 'application/json', ...behavior.headers })
-        response.end(behavior.body)
+      if (reply.body !== undefined) {
+        response.writeHead(200, { 'content-type': 'application/json', ...reply.headers })
+        response.end(reply.body)
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       response.flushHeaders()
       let index = 0
       const writeNext = (): void => {
-        const event = behavior.events?.[index++]
+        const event = reply.events?.[index++]
         if (event === undefined) {
-          if (!behavior.holdOpen) response.end()
+          if (!reply.holdOpen) response.end()
           return
         }
         response.write(`data: ${event}\n\n`)
-        if (behavior.delayMs === undefined) writeNext()
-        else timer = setTimeout(writeNext, behavior.delayMs)
+        if (reply.delayMs === undefined) writeNext()
+        else timer = setTimeout(writeNext, reply.delayMs)
       }
       writeNext()
     })

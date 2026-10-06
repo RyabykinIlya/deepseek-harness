@@ -37,6 +37,8 @@ kind: "package-reference"
 
 每个 profile 都可以设置 `retryPolicy`；省略时使用 normal mode、最多重试五次。`apiKeyEnv` 是按请求经 harness 凭据 seam 解析的凭据引用，因此配置文件绝不包含密钥；解析为空的引用会让请求以 `MISSING_CREDENTIAL` 失败。省略它会让路由保持已配置但无密钥（configured-but-keyless）状态，对已安装目录路由而言即交由 pi-ai 提供方原生的环境发现。
 
+profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝试。当提供方报告某个密钥触及其自身的用量上限（`KEY_QUOTA`）时，只要还没有任何内容送达调用方，同一个请求就会用下一个密钥继续——仍是一次尝试、一份可见回复，由成功完成的那个密钥产出。同时设置 `apiKeyEnv` 时，它在 `apiKeys` 之后尝试，除非它已经出现在该列表中。被判定耗尽的密钥在 `keyCooldownMs` 内退出轮转；只要 profile 声明了多个凭据，就必须给出该字段。所有密钥都已试过或都处于冷却中时，请求以 `KEY_QUOTA` 失败并点名路由；该 code 与账户级的 `QUOTA` 保持区分，因为另一个密钥能解除前者，而任何密钥都无法解除后者。
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -56,6 +58,16 @@ kind: "package-reference"
         models:
           - id: claude-sonnet-4-5
             contextWindow: 200000
+      # Two credentials, tried in order; the first is skipped for a minute
+      # after the provider reports that it hit its own usage ceiling.
+      acme-budget:
+        apiKeyEnv: ACME_BUDGET_PRIMARY
+        apiKeys:
+          - ACME_BUDGET_SECONDARY
+        keyCooldownMs: 60000
+        models:
+          - id: acme-large
+            contextWindow: 262144
       acme-gateway:
         displayName: Acme Gateway
         apiKeyEnv: ACME_GATEWAY_API_KEY
@@ -75,6 +87,8 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `apiKeyEnv` | 无 | 按请求解析的凭据引用；省略时交由 pi-ai 环境发现 |
+| `apiKeys` | 空 | 按顺序尝试的凭据引用；某个密钥报告 `KEY_QUOTA` 时由下一个密钥继续该请求 |
+| `keyCooldownMs` | 无 | 密钥触及自身上限后退出轮转的时长；凭据多于一个时必填，不多于一个时被拒绝 |
 | `displayName` | 提供方名 | 选择器界面显示的标签 |
 | `api` | 目录协议 | 协议格式；仅目录不提供的路由需要 |
 | `baseURL` | 目录端点 | 路由上所有模型的端点 |
@@ -114,7 +128,7 @@ profile 的 `models` 列表会替换而非扩展路由的已安装目录；每�
 
 ### 失败与恢复
 
-pi-ai 不提供的路由需要 `api`、`baseURL` 与非空 `models` 列表；无法服务的 profile 会在写入处被拒绝，并点名路由与模型。失败携带稳定 code：无法使用的凭据以 `INVALID_CREDENTIAL` 失败并点名路由与引用，`apiKeyEnv` 引用解析为空的路由以 `MISSING_CREDENTIAL` 失败，未配置模型以 `UNKNOWN_MODEL` 失败，终止性提供方失败则区分 `QUOTA` 与暂时性 `RATE_LIMIT`。`GenerateOptions.stop` 以 `UNSUPPORTED_OPTION` 被拒绝，因为 pi-ai 的通用流式 UI 无法跨提供方保证它。
+pi-ai 不提供的路由需要 `api`、`baseURL` 与非空 `models` 列表；无法服务的 profile 会在写入处被拒绝，并点名路由与模型。失败携带稳定 code：无法使用的凭据以 `INVALID_CREDENTIAL` 失败并点名路由与引用，`apiKeyEnv` 引用解析为空的路由以 `MISSING_CREDENTIAL` 失败，未配置模型以 `UNKNOWN_MODEL` 失败，终止性提供方失败则区分 `QUOTA` 与暂时性 `RATE_LIMIT`，而每个密钥都报告触及自身上限的请求以 `KEY_QUOTA` 失败。`GenerateOptions.stop` 以 `UNSUPPORTED_OPTION` 被拒绝，因为 pi-ai 的通用流式 UI 无法跨提供方保证它。
 
 Config 更新严格验证发生变化的 provider。初始加载将已存储的目录故障保留为可编辑的 provider 诊断；未更改的故障 provider 不阻止其他编辑。可用模型仍可选择，无法解析的模型在网络 I/O 前失败。修复或删除问题配置会清除其诊断。
 

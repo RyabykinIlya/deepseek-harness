@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageRequestTarget, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { createToolResultMessage, createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, createMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, KEY_QUOTA_EXCEEDED_CODE, QUOTA_EXCEEDED_CODE, createMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AssistantMessage, AssistantMessageEvent, Usage } from '@earendil-works/pi-ai'
 import { transformMessages } from '@earendil-works/pi-ai/api/transform-messages'
@@ -936,6 +936,28 @@ describe('mapStopReason / mapUsage', () => {
       stopReason: 'error',
       errorMessage: 'vector length limit exceeded',
     }))).toMatchObject({ kind: 'error', failure: { code: 'PI_AI_ERROR' } })
+  })
+
+  it('routes a per-key usage ceiling to KEY_QUOTA ahead of the rate-limit and quota branches', () => {
+    const proxy = 'API Error: Request rejected (429) · 🐛 This API key reached its usage limit. Raise the limit on this key or use a different one.'
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: proxy })))
+      .toMatchObject({ kind: 'error', failure: { code: KEY_QUOTA_EXCEEDED_CODE } })
+
+    for (const errorMessage of [
+      'This API key reached its usage limit',
+      'the API key has reached its usage limit',
+      'API key usage limit reached',
+      'key reached its usage limit',
+      'api key exhausted',
+    ]) {
+      expect(mapStopReason(assistant({ stopReason: 'error', errorMessage })))
+        .toMatchObject({ kind: 'error', failure: { code: KEY_QUOTA_EXCEEDED_CODE } })
+    }
+
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: 'your account has reached its usage limit' })))
+      .toMatchObject({ kind: 'error', failure: { code: QUOTA_EXCEEDED_CODE } })
+    expect(mapStopReason(assistant({ stopReason: 'error', errorMessage: '429 Too Many Requests' })))
+      .toMatchObject({ kind: 'error', failure: { code: 'RATE_LIMIT' } })
   })
 
   it.each([
