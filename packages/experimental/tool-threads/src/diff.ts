@@ -47,7 +47,7 @@ export interface ThreadDiffResult {
  */
 function mergeLine(result: ThreadDiffResult): string {
   if (result.branch !== undefined) {
-    return `branch ${result.branch}: fetch it into the Project checkout with \`git fetch ${result.worktree} ${result.branch}\`, then merge with \`git merge --no-ff ${result.branch}\``
+    return `branch ${result.branch}: import it into the Project checkout with \`git fetch ${result.worktree} ${result.branch}:${result.branch}\`, then merge with \`git merge --no-ff ${result.branch}\``
   }
   const commit = result.headSha === undefined ? 'the head commit' : result.headSha
   return `no branch (detached): fetch commit ${commit} from ${result.worktree} into the Project checkout and merge it`

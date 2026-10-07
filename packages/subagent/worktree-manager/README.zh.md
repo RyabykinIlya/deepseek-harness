@@ -111,7 +111,7 @@ rolled-back ──────────────────── orphane
 
 ### 分支是什么，以及删除会删掉什么
 
-分支（默认 `dsh/thread-<slug>`；worktree 目录使用同一个 `threadSlug(threadId)` 命名，完整 `threadId` 保存在记录中）是从 Thread 派生的便捷句柄，绝不是身份标识。删除以 `(threadId, path)` 为键：**`remove()` 删除 worktree 目录，并在记录带有分支时先把它导入父仓库**——删掉分支可能让 Thread 的提交变成不可达。集成时把该分支从 Thread 的目录中取出，fetch 进执行合并的检出目录：`git fetch <worktree> <branch>`，然后 `git merge --no-ff <branch>`。也正因如此，重启的 Thread 对自己此前拥有的分支豁免 `WORKTREE_BRANCH_EXISTS` 检查，并作为一个全新的克隆重建、检出在那条分支上，使其早期提交得以保留。其他任何已存在的分支——别的 Thread 的，或你自己的——仍然会被拒绝。
+分支（默认 `dsh/thread-<slug>`；worktree 目录使用同一个 `threadSlug(threadId)` 命名，完整 `threadId` 保存在记录中）是从 Thread 派生的便捷句柄，绝不是身份标识。删除以 `(threadId, path)` 为键：**`remove()` 删除 worktree 目录，并在记录带有分支时先把它导入父仓库**——删掉分支可能让 Thread 的提交变成不可达。集成时把该分支从 Thread 的目录中取出，导入执行合并的检出目录：`git fetch <worktree> <branch>:<branch>`，然后 `git merge --no-ff <branch>`。也正因如此，重启的 Thread 对自己此前拥有的分支豁免 `WORKTREE_BRANCH_EXISTS` 检查，并作为一个全新的克隆重建、检出在那条分支上，使其早期提交得以保留。其他任何已存在的分支——别的 Thread 的，或你自己的——仍然会被拒绝。
 
 ### 对账
 

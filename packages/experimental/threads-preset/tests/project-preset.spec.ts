@@ -518,7 +518,7 @@ describe('the contracts', () => {
       '',
       'Review a finished Thread with `thread_diff`, which lists its commits and changed files. Use `send_message` to give a running Thread more instructions and `interrupt_agent` to stop it.',
       '',
-      'Integrate a reviewed Thread by fetching its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
+      'Integrate a reviewed Thread by importing its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
       '',
       'After a Thread\'s branch is merged, suggest that the user archive that Thread. Archiving is done by the user from the interface; you cannot do it.',
     ].join('\n'))

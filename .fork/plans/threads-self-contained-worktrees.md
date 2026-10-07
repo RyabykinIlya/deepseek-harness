@@ -230,7 +230,7 @@ Coordinator merge sentence, currently
 `Integrate a reviewed Thread by merging its branch into the Project checkout with `git merge --no-ff <branch>`, …`
 becomes fetch-then-merge. Use the worktree path from the status/diff tools:
 
-> `Integrate a reviewed Thread by fetching its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread's worktree path.`
+> `Integrate a reviewed Thread by importing its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread's worktree path.`
 
 Worker contract, after the commit sentence, add one sentence stating the
 guarantee and the two prohibitions (the R3 part that belongs in the contract):
@@ -252,8 +252,8 @@ the same text. Do not touch sentence variants you were not asked to change.
   **Amendment (accepted during implementation):** `src/diff.ts`'s `mergeLine` told
   the model to `git merge --no-ff <branch>` with no fetch — after R1 that
   instruction silently stops working, so it is part of the change surface after
-  all: the branch line now reads `fetch it into the Project checkout with
-  \`git fetch <worktree> <branch>\`, then merge with \`git merge --no-ff <branch>\``
+  all: the branch line now reads `import it into the Project checkout with
+  \`git fetch <worktree> <branch>:<branch>\`, then merge with \`git merge --no-ff <branch>\``
   and the detached line names the full head sha (an abbreviated one is not
   fetchable). The five assertions of the old text are updated with it.
 - Sidecar registry format and every state machine edge.

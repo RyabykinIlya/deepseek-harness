@@ -400,7 +400,7 @@ describe('thread_diff', () => {
     expect(result.isError).toBe(false)
     expect(text(result)).toBe([
       'Thread thread-a',
-      'branch dsh/thread-a: fetch it into the Project checkout with `git fetch /wt/thread-a dsh/thread-a`, then merge with `git merge --no-ff dsh/thread-a`',
+      'branch dsh/thread-a: import it into the Project checkout with `git fetch /wt/thread-a dsh/thread-a:dsh/thread-a`, then merge with `git merge --no-ff dsh/thread-a`',
       `base ${'b'.repeat(12)}, head ${'h'.repeat(12)}; 1 uncommitted in /wt/thread-a (not on the branch until committed)`,
       'commits (2, newest first):',
       `  ${'c'.repeat(12)} add auth`,
