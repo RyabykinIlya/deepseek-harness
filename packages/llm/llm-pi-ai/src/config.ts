@@ -173,6 +173,22 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Explicit deployment override for the `user-agent` this route sends on
+   * every model request and on model discovery. Off by default: a request
+   * carries the Harness attribution `user-agent`, and nothing else can
+   * suppress or replace it — attribution is sent on every provider HTTP
+   * request except for this one, deliberately narrow, profile-level
+   * exception, which exists for gateways that gate on client identity and
+   * reject a request whose `user-agent` does not match their expected client.
+   * When set, the value replaces the attribution `user-agent` verbatim for
+   * this route only, on model requests and on model discovery; it is
+   * validated as a value Fetch can send as one header, and every route that
+   * omits it keeps the attribution value unchanged. A `user-agent` entry in
+   * {@link headers} cannot set this: it is stripped in favor of attribution
+   * exactly as before.
+   */
+  userAgentOverride?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -419,6 +435,11 @@ const profile = z.object({
   defaultMaxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   defaultInput: z.array(z.union(MODALITIES)).default([...DEFAULT_INPUT]),
   headers: z.dict(z.string()),
+  // Deliberately no default and no union with `undefined`: schemastery treats
+  // nullable input as "absent" for an unrequired field, which is exactly the
+  // off-by-default posture, and `assertValidHeaderValue` (below) is the loud
+  // validation for a value that is present but unusable as a header.
+  userAgentOverride: z.string(),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -465,6 +486,26 @@ function rejectRemovedFields(provider: string, source: PiAiProviderProfile): voi
     throw new Error(
       `llm-pi-ai: provider "${provider}" sets maxRetries or maxRetryDelayMs, which were removed;`
       + ' compose agent recovery with dsh-llm-retry',
+    )
+  }
+}
+
+/**
+ * Reject a header value that Fetch cannot put on a request. The value check is
+ * the same one every header passes, so an override is judged by the wire's own
+ * rule rather than a second, divergent one.
+ * @param provider - the route key, for diagnostics.
+ * @param what - the configured entry being judged, for the diagnostic.
+ * @param value - the configured value.
+ * @throws Error naming the route and entry when Fetch would refuse the value.
+ */
+function assertValidHeaderValue(provider: string, what: string, value: string): void {
+  try {
+    new Headers([['x', value]])
+  } catch {
+    throw new Error(
+      `llm-pi-ai: provider "${provider}" ${what} is not valid for Fetch;`
+      + ' use a single-line value representable as bytes',
     )
   }
 }
@@ -535,6 +576,12 @@ export function resolveProfiles(
       throw new Error(`llm-pi-ai: provider "${provider}" has an empty displayName`)
     }
     assertValidHeaders(provider, source.headers)
+    // The override replaces the attribution `user-agent` on the wire, so it is
+    // refused whenever Fetch could not have sent it — the same test a header
+    // value passes — rather than failing mid-request at the gateway.
+    if (source.userAgentOverride !== undefined) {
+      assertValidHeaderValue(provider, 'userAgentOverride', source.userAgentOverride)
+    }
     // Resolved before `buildProvider` because the resolved list — not the
     // configured pair of fields — decides whether this route names a
     // credential, and that answer is what adds the harness's own api-key

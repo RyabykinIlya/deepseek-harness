@@ -39,6 +39,8 @@ kind: "package-reference"
 
 profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝试。当提供方报告某个密钥触及其自身的用量上限（`KEY_QUOTA`）时，只要还没有任何内容送达调用方，同一个请求就会用下一个密钥继续——仍是一次尝试、一份可见回复，由成功完成的那个密钥产出。同时设置 `apiKeyEnv` 时，它在 `apiKeys` 之后尝试，除非它已经出现在该列表中。被判定耗尽的密钥在 `keyCooldownMs` 内退出轮转；只要 profile 声明了多个凭据，就必须给出该字段。所有密钥都已试过或都处于冷却中时，请求以 `KEY_QUOTA` 失败并点名路由；该 code 与账户级的 `QUOTA` 保持区分，因为另一个密钥能解除前者，而任何密钥都无法解除后者。
 
+每个提供方请求都携带 harness 来源 `user-agent`，通常没有任何办法压制或替换它。`userAgentOverride` 是唯一有文档记载、需显式启用的例外：当部署面对按客户端身份放行的网关——拒绝 `user-agent` 与其期望客户端不符的请求——就在此字段填入该网关接受的客户端字符串，路由会逐字发送它以取代来源标识，模型请求与模型发现均如此。该字段默认关闭，只作用于设置它的 profile，且按 Fetch 能作为单个标头发送的规则校验。`headers` 中的 `user-agent` 无法设置它：该名称仍像以前一样被剥离，以保留来源标识。
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -82,6 +84,24 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
             reasoningEfforts:
               off:
               high: high
+      # A relay that rejects any request whose user-agent is not a Claude
+      # Code client. `userAgentOverride` is the one documented exception to
+      # attribution, and it applies to this route only.
+      claude-proxy:
+        displayName: Claude Proxy
+        api: anthropic-messages
+        baseURL: https://claude.blogmin.ru/api/llm
+        apiKeys:
+          - CLAUDE_PROXY_KEY_A
+          - CLAUDE_PROXY_KEY_B
+        keyCooldownMs: 60000
+        userAgentOverride: claude-cli/2.1.289
+        models:
+          - id: claude-opus-4-8
+          - id: claude-opus-4-7
+          - id: claude-sonnet-5
+          - id: claude-sonnet-4-6
+          - id: claude-haiku-4-5
 ```
 
 | 字段 | 默认值 | 含义 |
@@ -100,6 +120,7 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
 | `requestImagePixelBudget` | `4,194,304` | 每张确定性请求图片的总像素预算 |
 | `requestImageMaxBytes` | `1 MiB` | 每张请求图片在 base64 扩展前的编码字节目标 |
 | `maxRequestImageBytes` | `20 MiB` | base64 图片载荷总上限，保留图片超过时请求以 `IMAGE_OFFLOAD_REQUIRED` 失败 |
+| `userAgentOverride` | 无 | 取代该路由请求与模型发现中的来源 `user-agent`；默认关闭 |
 | `retryPolicy` | normal，5 次重试 | 由 `dsh-llm-retry` 执行的提供方自有重试策略 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-pi-ai)是每个受支持字段及其 JSDoc 的穷尽式真源。

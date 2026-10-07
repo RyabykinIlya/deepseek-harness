@@ -299,13 +299,29 @@ function reasoningInfo(
   }
 }
 
-/** Merge deployment headers while removing case-insensitive attribution collisions. */
-function requestHeaders(headers: Readonly<Record<string, string>> | undefined): Record<string, string> {
+/**
+ * Merge deployment headers while removing case-insensitive attribution
+ * collisions.
+ *
+ * The `userAgentOverride` profile field is the one documented, opt-in way to
+ * replace the attribution `user-agent`; when the profile sets it, its value
+ * becomes the request's `user-agent` instead of attribution's. A `user-agent`
+ * named inside `headers` is still stripped, so the override cannot be
+ * smuggled through the header dict and stays the only path to it.
+ * @param headers - deployment-owned profile headers.
+ * @param userAgentOverride - the profile's explicit `user-agent` override, if any.
+ * @returns the headers to send, with attribution or the override winning `user-agent`.
+ */
+function requestHeaders(
+  headers: Readonly<Record<string, string>> | undefined,
+  userAgentOverride: string | undefined,
+): Record<string, string> {
   const attribution = attributionHeaders()
   const reserved = new Set(Object.keys(attribution).map(name => name.toLowerCase()))
   return {
     ...Object.fromEntries(Object.entries(headers ?? {}).filter(([name]) => !reserved.has(name.toLowerCase()))),
     ...attribution,
+    ...userAgentOverride === undefined ? {} : { 'user-agent': userAgentOverride },
   }
 }
 
@@ -633,8 +649,10 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
         signal: watchdog.signal,
         // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
+        // Harness-owned and therefore win collisions — except the profile's
+        // explicit `userAgentOverride`, the one documented way to replace the
+        // `user-agent` for gateways that gate on client identity.
+        headers: requestHeaders(profile.headers, profile.userAgentOverride),
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
       let exhausted = false

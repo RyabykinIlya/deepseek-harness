@@ -297,6 +297,36 @@ describe('draft-provider model discovery', () => {
       .toEqual(['private-tenant', 'private-tenant', undefined, undefined])
   })
 
+  it('replaces the attribution user-agent on the probe only for a route that sets userAgentOverride', async () => {
+    // A gateway gating the listing on client identity gates the probe exactly
+    // as it gates model requests, so the route's override must reach discovery
+    // too — and must stay confined to that route.
+    const server = await listingServer({ body: JSON.stringify({ data: [{ id: 'm' }] }) })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'claude-proxy': {
+          api: 'anthropic-messages',
+          baseURL: server.url,
+          userAgentOverride: 'claude-cli/2.1.289',
+          models: [{ id: 'claude-haiku-4-5' }],
+        },
+        'plain-gateway': {
+          api: 'openai-completions',
+          baseURL: server.url,
+          models: [{ id: 'plain-large' }],
+        },
+      },
+    })
+
+    await ctx.llm.discoverModels('llm-pi-ai', { provider: 'claude-proxy', baseURL: server.url })
+    await ctx.llm.discoverModels('llm-pi-ai', { provider: 'plain-gateway', baseURL: server.url })
+
+    expect(server.headers.map(headers => headers['user-agent']))
+      .toEqual(['claude-cli/2.1.289', userAgent()])
+  })
+
   it('leaves a catalog route\'s credential unresolved, having never reached the network', async () => {
     // The catalog answers before any endpoint is asked, so a route whose
     // profile names a credential that is not set must still answer rather than

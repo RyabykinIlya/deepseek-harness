@@ -191,3 +191,59 @@ describe('request image policy bounds', () => {
     }).toThrow(message)
   })
 })
+
+describe('userAgentOverride', () => {
+  const route = (userAgentOverride: unknown): unknown => ({
+    providers: {
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'm' }],
+        userAgentOverride,
+      },
+    },
+  })
+
+  it('resolves onto the profile when it is a legal header value', () => {
+    const resolved = resolveProfiles({
+      'claude-proxy': {
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        models: [{ id: 'claude-haiku-4-5' }],
+        userAgentOverride: 'claude-cli/2.1.289',
+      },
+    }).get('claude-proxy')
+    expect(resolved?.userAgentOverride).toBe('claude-cli/2.1.289')
+  })
+
+  it('stays absent on a route that does not set it', () => {
+    // The override must not leak between routes: one profile opting in cannot
+    // change the user-agent any other route sends.
+    const resolved = resolveProfiles({
+      'claude-proxy': {
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        models: [{ id: 'claude-haiku-4-5' }],
+        userAgentOverride: 'claude-cli/2.1.289',
+      },
+      plain: {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'm' }],
+      },
+    })
+    expect(resolved.get('plain')?.userAgentOverride).toBeUndefined()
+  })
+
+  it('is validated as one header value Fetch could send', () => {
+    expect(() => assertServiceable(route('claude-cli/2.1.289') as Options)).not.toThrow()
+    expect(() => assertServiceable(route('line\nbreak') as Options))
+      .toThrow(/userAgentOverride is not valid for Fetch/)
+    expect(() => assertServiceable(route('部署') as Options))
+      .toThrow(/userAgentOverride is not valid for Fetch/)
+    // An empty string is still a value Fetch can send, so it is taken
+    // verbatim like any other override; refusing it is not this validator's
+    // call, and a gateway is free to accept or reject what it sees.
+    expect(() => assertServiceable(route('') as Options)).not.toThrow()
+  })
+})

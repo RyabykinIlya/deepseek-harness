@@ -70,6 +70,41 @@ async function harness(config: LlmPiAi.Options): Promise<Context> {
 }
 
 describe('hand-declared providers', () => {
+  it('serves the claude-proxy route with its declared model list', () => {
+    // The relay serves Anthropic Messages under its own model ids, none of
+    // which the installed catalog describes, so the profile must spell the
+    // route out — and that spelled-out list is exactly what the route serves.
+    const resolved = resolveProfiles({
+      'claude-proxy': {
+        displayName: 'Claude Proxy',
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        apiKeys: ['CLAUDE_PROXY_KEY_A', 'CLAUDE_PROXY_KEY_B'],
+        keyCooldownMs: 60_000,
+        userAgentOverride: 'claude-cli/2.1.289',
+        models: [
+          { id: 'claude-opus-4-8' },
+          { id: 'claude-opus-4-7' },
+          { id: 'claude-sonnet-5' },
+          { id: 'claude-sonnet-4-6' },
+          { id: 'claude-haiku-4-5' },
+        ],
+      },
+    })
+    const route = resolved.get('claude-proxy')
+    expect(route?.piProvider?.getModels().map(model => model.id)).toEqual([
+      'claude-opus-4-8',
+      'claude-opus-4-7',
+      'claude-sonnet-5',
+      'claude-sonnet-4-6',
+      'claude-haiku-4-5',
+    ])
+    expect(route?.piProvider?.getModels().map(model => model.api))
+      .toEqual(Array(5).fill('anthropic-messages'))
+    expect(route?.piProvider?.baseUrl).toBe('https://claude.blogmin.ru/api/llm')
+    expect(route?.userAgentOverride).toBe('claude-cli/2.1.289')
+  })
+
   it('serves a route pi-ai has never heard of from its own declaration', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(gateway(`${server.url}/v1`))

@@ -343,6 +343,7 @@ export function apply(ctx: Context, config: Config): void {
     if (profile === undefined) return undefined
     return {
       headers: profile.headers,
+      userAgentOverride: profile.userAgentOverride,
       // Discovery probes with one credential and does not rotate: it is a
       // configuration-time question about what an endpoint advertises, and the
       // first reference is the one the profile leads with.

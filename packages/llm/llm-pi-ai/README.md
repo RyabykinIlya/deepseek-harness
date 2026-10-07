@@ -39,6 +39,8 @@ Each profile may set a `retryPolicy`; omission uses normal mode with five retrie
 
 A profile may name several credentials with `apiKeys`, in the order a request tries them. When the provider reports that one key reached its own usage ceiling (`KEY_QUOTA`), the same request continues on the next key before any content has reached the caller — one attempt, one visible reply, whichever key completed it. `apiKeyEnv`, when also set, is tried after the `apiKeys` entries unless it already appears among them. An exhausted key stays out of rotation for `keyCooldownMs`, which the profile must state whenever it names more than one credential. When every key has been tried or is cooling, the request fails with `KEY_QUOTA` naming the route; that code stays distinct from an account-wide `QUOTA`, because another key can unblock the former and no key unblocks the latter.
 
+Every provider request carries the harness attribution `user-agent`, and normally nothing can suppress or replace it. `userAgentOverride` is the one documented, opt-in exception: a deployment facing a gateway that gates on client identity — refusing a request whose `user-agent` does not match its expected client — sets this field to the client string that gateway accepts, and the route sends it verbatim in place of attribution, on model requests and on model discovery alike. It is off by default, applies to the profile that sets it and no other, and is validated as one header Fetch can send. A `user-agent` named inside `headers` cannot set it: that name is stripped in favor of attribution exactly as before.
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -82,6 +84,24 @@ A profile may name several credentials with `apiKeys`, in the order a request tr
             reasoningEfforts:
               off:
               high: high
+      # A relay that rejects any request whose user-agent is not a Claude
+      # Code client. `userAgentOverride` is the one documented exception to
+      # attribution, and it applies to this route only.
+      claude-proxy:
+        displayName: Claude Proxy
+        api: anthropic-messages
+        baseURL: https://claude.blogmin.ru/api/llm
+        apiKeys:
+          - CLAUDE_PROXY_KEY_A
+          - CLAUDE_PROXY_KEY_B
+        keyCooldownMs: 60000
+        userAgentOverride: claude-cli/2.1.289
+        models:
+          - id: claude-opus-4-8
+          - id: claude-opus-4-7
+          - id: claude-sonnet-5
+          - id: claude-sonnet-4-6
+          - id: claude-haiku-4-5
 ```
 
 | Field | Default | Meaning |
@@ -100,6 +120,7 @@ A profile may name several credentials with `apiKeys`, in the order a request tr
 | `requestImagePixelBudget` | `4,194,304` | Total-pixel budget for each deterministic request image |
 | `requestImageMaxBytes` | `1 MiB` | Encoded-byte target for each request image before base64 expansion |
 | `maxRequestImageBytes` | `20 MiB` | Aggregate base64 image-payload bound; a request whose retained images exceed it fails with `IMAGE_OFFLOAD_REQUIRED` |
+| `userAgentOverride` | absent | Replaces the attribution `user-agent` on this route's requests and model discovery; off by default |
 | `retryPolicy` | normal, 5 retries | Provider-owned retry policy executed by `dsh-llm-retry` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-pi-ai) is the exhaustive source for every accepted field and its JSDoc.

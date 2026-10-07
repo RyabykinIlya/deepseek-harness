@@ -1816,7 +1816,7 @@ export interface Config extends ProtocolConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:225`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:273`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -1833,6 +1833,29 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
+  /**
+   * Credential references this route may authenticate one request with, in
+   * declared order. A request starts at the first one and moves to the next
+   * when the provider reports that key's own usage ceiling (`KEY_QUOTA`); the
+   * caller sees one attempt either way.
+   *
+   * With both this and {@link apiKeyEnv} set, these entries are tried first in
+   * the order declared and `apiKeyEnv` is appended last when it is not already
+   * one of them. Naming the same reference twice within this list is refused;
+   * naming it here and in `apiKeyEnv` is one credential attempted once.
+   *
+   * An empty list is indistinguishable from an omitted one after defaulting,
+   * and a profile naming no credential through either field keeps the
+   * keyless posture: pi-ai's own provider-native ambient discovery.
+   */
+  apiKeys?: string[]
+  /**
+   * How long a key stays out of rotation after the provider reported it
+   * exhausted. Required when the route names more than one credential and
+   * refused when it names fewer, because a route can only skip a key when it
+   * has another one to try instead.
+   */
+  keyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -1891,6 +1914,22 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
+  /**
+   * Explicit deployment override for the `user-agent` this route sends on
+   * every model request and on model discovery. Off by default: a request
+   * carries the Harness attribution `user-agent`, and nothing else can
+   * suppress or replace it — attribution is sent on every provider HTTP
+   * request except for this one, deliberately narrow, profile-level
+   * exception, which exists for gateways that gate on client identity and
+   * reject a request whose `user-agent` does not match their expected client.
+   * When set, the value replaces the attribution `user-agent` verbatim for
+   * this route only, on model requests and on model discovery; it is
+   * validated as a value Fetch can send as one header, and every route that
+   * omits it keeps the attribution value unchanged. A `user-agent` entry in
+   * {@link headers} cannot set this: it is stripped in favor of attribution
+   * exactly as before.
+   */
+  userAgentOverride?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -4733,7 +4772,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-worktree-manager`
 
-- `source`: [`packages/subagent/worktree-manager/src/index.ts:86`](../packages/subagent/worktree-manager/src/index.ts)
+- `source`: [`packages/subagent/worktree-manager/src/index.ts:89`](../packages/subagent/worktree-manager/src/index.ts)
 
 ```ts config-catalog
 /**

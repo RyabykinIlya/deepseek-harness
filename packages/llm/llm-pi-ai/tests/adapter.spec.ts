@@ -167,6 +167,22 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.headers[0]?.['user-agent']).toBe(userAgent())
   })
 
+  it('replaces the attribution user-agent only when the profile sets userAgentOverride', async () => {
+    // The override is the one documented exception to attribution, and it is
+    // per profile: a route that sets it changes only its own requests.
+    const server = await mockServer([{ events: textEvents }, { events: textEvents }])
+    const ctx = await harness(server.url, {
+      userAgentOverride: 'claude-cli/2.1.289',
+      headers: { 'user-agent': 'still-wrong' },
+    })
+    await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+    expect(server.headers[0]?.['user-agent']).toBe('claude-cli/2.1.289')
+
+    const plain = await harness(server.url)
+    await assemble(plain, { model: 'deepseek-flash', messages: [] })
+    expect(server.headers[1]?.['user-agent']).toBe(userAgent())
+  })
+
   it('forwards common stream options and profile reasoning', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url, {
