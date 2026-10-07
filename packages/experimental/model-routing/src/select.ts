@@ -2,12 +2,24 @@
  * Endpoint filtering and ranking: which upstream providers may serve a tier's
  * models, and in what order the cheapest one is tried.
  *
+ * A tier's candidates come from two kinds of source and the ranking treats both
+ * the same way. An `OpenRouterEndpoint` is one upstream provider of one OpenRouter
+ * model, carrying the measurements OpenRouter publishes. A `DirectSource` is one
+ * model served by its own pi-ai route — a proxy, a subscription plan — whose
+ * prices a tier's `extraSources` entry states and whose measurements nobody has.
+ * Both are {@link Candidate}s: only the data-bearing filters (`status`, `uptime`,
+ * `quantization`) differ, and there they are neutral for a direct source, because
+ * an absent measurement must not reject — otherwise a direct source could never
+ * rank. The capability filters (`tools`, `context`, and the per-model `modality`
+ * rule) apply to both, and `tools` reads the spelling each kind declares.
+ *
  * The ranking key is a *blended* price per token, not a prompt price. An agent
  * turn is overwhelmingly cached input (§B.1: a 100k-token session re-reads 95k of
  * it), and the providers that look cheapest on prompt alone frequently publish no
  * cache-read discount at all — §B.1 measures Relace sixth and 7.5× the leader once
  * the cache term is in. So the mix is the decision, and the mix is either the
- * tier's configured default or the session's own measured usage.
+ * tier's configured default or the session's own measured usage. A direct source
+ * is blended under the same formula from the per-token prices its entry declares.
  *
  * A tier's `input` declaration is enforced rather than assumed: a request that
  * carries an image reaches only a model the catalog shows accepting one, so a
@@ -23,8 +35,53 @@
  */
 
 import type { OpenRouterEndpoint } from '@deepseek-ai/dsh-llm-pi-ai'
-import type { FreeMode, Quantization, RoutingSettings, TierSettingsSnapshot } from './config.ts'
+import type {
+  DirectSourceModelSnapshot,
+  ExtraSourcePriceSnapshot,
+  ExtraSourceSnapshot,
+  FreeMode,
+  Quantization,
+  RoutingSettings,
+  TierSettingsSnapshot,
+} from './config.ts'
 import { quantizationRank } from './quantization.ts'
+
+/** Prices of one direct source candidate, resolved from `prompt`/`completion` or a single flat rate. */
+export interface DirectPrices {
+  /** USD per input token; also the cache-read rate when `cacheRead` is absent. */
+  prompt: number
+  /** USD per output token. */
+  completion: number
+  /** USD per cached input token; absent charges `prompt` for a cache hit. */
+  cacheRead?: number
+}
+
+/**
+ * One model served by its own pi-ai route rather than by OpenRouter endpoints.
+ *
+ * A direct source states no status, uptime or quantization, so the data-bearing
+ * filters are neutral for it. The `tools` filter still applies, and reads
+ * `tools`: a route must say it takes tool calls rather than inherit the
+ * OpenRouter endpoint's `supportedParameters` spelling.
+ */
+export interface DirectSource {
+  kind: 'direct'
+  /** The pi-ai route that dispatches this model. */
+  route: string
+  /** Canonical model id, the one the tier and the request name. */
+  model: string
+  /** The route's own id for this model, which is what the dispatch carries. */
+  id: string
+  /** The prices the ranking blends; absent prices make the candidate `unpriced`. */
+  prices?: DirectPrices
+  /** Whether this route's models take tool calls (default `true`). */
+  tools?: boolean
+  /** Largest context this route serves this model in, in tokens, when the tier states one. */
+  contextLength?: number
+}
+
+/** One candidate of a ranking pass: an OpenRouter endpoint, or a direct route source. */
+export type Candidate = OpenRouterEndpoint | DirectSource
 
 /** Fraction of a turn's tokens spent in each bucket; the three sum to 1. */
 export interface TurnMix {
@@ -77,8 +134,16 @@ export interface SelectionPolicy {
   allowFree: boolean
   minUptime: number
   requireNormalStatus: boolean
-  /** Tags excluded after recent failures. */
+  /** Endpoint tags excluded after recent failures. */
   excludedTags: ReadonlySet<string>
+  /**
+   * Direct candidates excluded after a failure, by `route:id`.
+   *
+   * One route may serve the same id as several models' candidates — `models`
+   * and a `modelMap` entry can name it under two canonical ids — so the route
+   * id alone cannot say which candidate failed.
+   */
+  excludedSources?: ReadonlySet<string>
   /** The modality this request carries, when it carries one beyond text. */
   requiredInput?: RequiredInput
   /**
@@ -90,22 +155,24 @@ export interface SelectionPolicy {
   modalities?: ReadonlyMap<string, readonly string[] | undefined>
   /** Model whose endpoints sort before every other model's, used when re-routing after a failure. */
   preferModel?: string
+  /** Non-OpenRouter candidates the tier's `extraSources` named, keyed by canonical model id. */
+  extraSources?: ReadonlyMap<string, readonly DirectSource[]>
   /** Drops the uptime floor; set by `rankWithRelaxation` when nothing else passed. */
   readonly ignoreUptime?: true
 }
 
-/** One endpoint that passed every filter, with the price the ranking used. */
+/** One candidate that passed every filter, with the price the ranking used. */
 export interface RankedEndpoint {
   model: string
-  endpoint: OpenRouterEndpoint
+  endpoint: Candidate
   blendedUsdPerToken: number
   free: boolean
 }
 
-/** One endpoint a filter or a missing price dropped, with the reason it carries. */
+/** One candidate a filter or a missing price dropped, with the reason it carries. */
 export interface RejectedEndpoint {
   model: string
-  endpoint: OpenRouterEndpoint
+  endpoint: Candidate
   reason: EndpointRejection
 }
 
@@ -114,17 +181,16 @@ export interface SelectionResult {
   ranked: readonly RankedEndpoint[]
   /** Every {@link EndpointRejection} key present, zero by default. */
   rejections: Readonly<Record<EndpointRejection, number>>
-  /** Endpoints seen across every candidate model, admitted or not. */
+  /** Candidates seen across every candidate model and direct source, admitted or not. */
   considered: number
   /** Models whose endpoint list could not be read. */
   unreadable: readonly { model: string; reason: string }[]
-  /** Every dropped endpoint with its reason, in the order the walk met them. */
+  /** Every dropped candidate with its reason, in the order the walk met them. */
   rejected: readonly RejectedEndpoint[]
 }
 
-/** Endpoint list per model, or the failure that model reported. */
-export type EndpointLists = ReadonlyMap<string, readonly OpenRouterEndpoint[] | Error>
-
+/** Candidate list per model, or the failure that model reported. */
+export type EndpointLists = ReadonlyMap<string, readonly Candidate[] | Error>
 /**
  * The tier's configured mix, normalized to sum 1.
  *
@@ -168,21 +234,90 @@ export function mixFromUsage(usage: UsageTotals | undefined, fallback: TurnMix, 
 }
 
 /**
- * Cost of one token of the turn under one endpoint, in USD.
+ * Cost of one token of the turn under one candidate, in USD.
  *
  * A provider with no cache-read price charges the prompt price for a cache hit;
  * that is the honest reading, and it is why an unpriced cache term never
- * flatters a provider.
- * @param endpoint - the endpoint being priced.
+ * flatters a provider. A direct source states its own per-token prices, which
+ * the same formula blends.
+ * @param endpoint - the candidate being priced.
  * @param mix - the turn's token buckets.
- * @returns the blended price, or `undefined` when the endpoint states no price.
+ * @returns the blended price, or `undefined` when the candidate states no price.
  */
-export function blendedPrice(endpoint: OpenRouterEndpoint, mix: TurnMix): number | undefined {
+export function blendedPrice(endpoint: Candidate, mix: TurnMix): number | undefined {
+  const prices = pricesOf(endpoint)
+  if (prices === undefined) return undefined
+  return mix.cached * (prices.cacheRead ?? prices.prompt)
+    + mix.fresh * prices.prompt
+    + mix.output * prices.completion
+}
+
+/** The per-token prices one candidate charges, or `undefined` when it states none. */
+function pricesOf(endpoint: Candidate): DirectPrices | undefined {
+  if (isDirect(endpoint)) return endpoint.prices
   const { promptPrice, completionPrice } = endpoint
   if (promptPrice === undefined || completionPrice === undefined) return undefined
-  return mix.cached * (endpoint.inputCacheReadPrice ?? promptPrice)
-    + mix.fresh * promptPrice
-    + mix.output * completionPrice
+  return {
+    prompt: promptPrice,
+    completion: completionPrice,
+    ...endpoint.inputCacheReadPrice === undefined ? {} : { cacheRead: endpoint.inputCacheReadPrice },
+  }
+}
+
+/**
+ * Whether one candidate is a direct route source rather than an OpenRouter endpoint.
+ * @param candidate - the candidate to classify.
+ * @returns whether it carries a `route` rather than an endpoint listing.
+ */
+export function isDirect(candidate: Candidate): candidate is DirectSource {
+  return (candidate as DirectSource).kind === 'direct'
+}
+
+/**
+ * The direct-source candidates of one `extraSources` entry, as the ranking sees them.
+ *
+ * The `route` travels with every candidate because dispatch needs it and the
+ * price entry alone does not carry it; the prices are exactly what
+ * {@link directPricesOf} resolved, so a source that states none is ranked as
+ * `unpriced` rather than as free.
+ * @param source - one configured entry.
+ * @param models - the candidates {@link directSourceModels} read from it.
+ * @returns one ranked-candidate shape per named model.
+ */
+export function directSourcesOf(source: ExtraSourceSnapshot, models: readonly DirectSourceModelSnapshot[]): DirectSource[] {
+  return models.map((entry) => {
+    const prices = directPricesOf(entry.price)
+    return {
+      kind: 'direct',
+      route: source.route,
+      model: entry.model,
+      id: entry.id,
+      ...prices === undefined ? {} : { prices },
+      tools: source.tools,
+    }
+  })
+}
+
+/**
+ * The per-token prices of one direct source candidate.
+ *
+ * `usdPerToken` is the one-rate spelling for a subscription-style source that
+ * charges input, output and cache alike; the prompt/completion pair is the
+ * ordinary spelling. Both may be present, in which case the pair wins for the
+ * buckets it names and the flat rate fills the rest — a partial pair is not
+ * silently completed from the flat rate, so the configuration states exactly
+ * what the ranking charges.
+ * @param price - the price entry, or `undefined` when the source declares none.
+ * @returns the resolved prices, or `undefined` when nothing states one.
+ */
+export function directPricesOf(price: ExtraSourcePriceSnapshot | undefined): DirectPrices | undefined {
+  if (price === undefined) return undefined
+  const flat = price.usdPerToken
+  const prompt = price.promptUsdPerToken ?? flat
+  const completion = price.completionUsdPerToken ?? flat
+  if (prompt === undefined || completion === undefined) return undefined
+  const cacheRead = price.cacheReadUsdPerToken ?? price.promptUsdPerToken
+  return { prompt, completion, ...cacheRead === undefined ? {} : { cacheRead } }
 }
 
 /**
@@ -199,9 +334,10 @@ export function baseSlugOf(slug: string): string {
   return slash === -1 ? slug : slug.slice(0, slash)
 }
 
-/** Whether an endpoint costs nothing for both directions. */
-function isFree(endpoint: OpenRouterEndpoint): boolean {
-  return endpoint.promptPrice === 0 && endpoint.completionPrice === 0
+/** Whether a candidate costs nothing for both directions. */
+function isFree(endpoint: Candidate): boolean {
+  const prices = pricesOf(endpoint)
+  return prices !== undefined && prices.prompt === 0 && prices.completion === 0
 }
 
 /**
@@ -224,34 +360,51 @@ export function modelRejectionOf(model: string, policy: SelectionPolicy): Endpoi
 }
 
 /**
- * The first reason one endpoint cannot serve the tier, or `undefined` when it can.
+ * The first reason one candidate cannot serve the tier, or `undefined` when it can.
  *
  * Order is the order the failures are worth reporting in: a tag excluded after a
- * failure explains everything below it, and an endpoint nobody may use at all
+ * failure explains everything below it, and a candidate nobody may use at all
  * explains itself better than a quantization it happens to declare.
- * @param endpoint - the endpoint to check.
+ *
+ * For a direct source the data-bearing filters (`status`, `uptime`,
+ * `quantization`) are neutral: the route publishes no measurement, and an absent
+ * measurement must not reject — that would keep every direct source out of the
+ * ranking. The capability filters below them still apply, and `tools` is never
+ * silent: a direct source states it with `tools`, an endpoint with
+ * `supportedParameters`.
+ * @param endpoint - the candidate to check.
  * @param policy - the tier's filters.
- * @returns the first failing reason, or `undefined` when the endpoint is admissible.
+ * @returns the first failing reason, or `undefined` when the candidate is admissible.
  */
-export function rejectionOf(endpoint: OpenRouterEndpoint, policy: SelectionPolicy): EndpointRejection | undefined {
-  if (policy.excludedTags.has(endpoint.slug)) return 'excluded'
-  if (policy.requireNormalStatus && endpoint.status !== undefined && endpoint.status !== 0) return 'status'
-  if (policy.ignoreUptime !== true
-    && endpoint.uptimeLast30m !== undefined && endpoint.uptimeLast30m < policy.minUptime) {
-    return 'uptime'
+export function rejectionOf(endpoint: Candidate, policy: SelectionPolicy): EndpointRejection | undefined {
+  const direct = isDirect(endpoint)
+  const tag = direct ? endpoint.id : endpoint.slug
+  if (policy.excludedTags.has(tag)) return 'excluded'
+  if (direct && policy.excludedSources?.has(`${endpoint.route}:${endpoint.id}`) === true) return 'excluded'
+  if (!direct) {
+    if (policy.requireNormalStatus && endpoint.status !== undefined && endpoint.status !== 0) return 'status'
+    if (policy.ignoreUptime !== true
+      && endpoint.uptimeLast30m !== undefined && endpoint.uptimeLast30m < policy.minUptime) {
+      return 'uptime'
+    }
   }
-  if (endpoint.supportedParameters === undefined || !endpoint.supportedParameters.includes('tools')) return 'tools'
-  if (endpoint.contextLength !== undefined && endpoint.contextLength < policy.contextWindow) return 'context'
-  const rank = quantizationRank(endpoint.quantization)
-  const floor = quantizationRank(policy.minQuantization)
-  if (rank === undefined) {
-    const trusted = policy.unknownQuantization === 'accept'
-      || (policy.unknownQuantization === 'trusted' && policy.trustedUnknownProviders.has(baseSlugOf(endpoint.slug)))
-    if (!trusted) return 'untrusted-unknown'
-  } else if (floor !== undefined && rank < floor) {
-    return 'quantization'
+  if (direct ? endpoint.tools === false
+    : endpoint.supportedParameters === undefined || !endpoint.supportedParameters.includes('tools')) return 'tools'
+  const contextLength = endpoint.contextLength
+  if (contextLength !== undefined && contextLength < policy.contextWindow) return 'context'
+  if (!direct) {
+    const rank = quantizationRank(endpoint.quantization)
+    const floor = quantizationRank(policy.minQuantization)
+    if (rank === undefined) {
+      const trusted = policy.unknownQuantization === 'accept'
+        || (policy.unknownQuantization === 'trusted' && policy.trustedUnknownProviders.has(baseSlugOf(endpoint.slug)))
+      if (!trusted) return 'untrusted-unknown'
+    } else if (floor !== undefined && rank < floor) {
+      return 'quantization'
+    }
   }
-  if (endpoint.promptPrice === undefined || endpoint.completionPrice === undefined) return 'unpriced'
+  const prices = pricesOf(endpoint)
+  if (prices === undefined) return 'unpriced'
   if (isFree(endpoint)) {
     if (policy.free === 'off' || !policy.allowFree) return 'free'
   } else if (policy.free === 'only') {
@@ -277,19 +430,27 @@ function emptyRejections(): Record<EndpointRejection, number> {
   }
 }
 
+/** The tag a candidate ranks and is excluded under: an endpoint's slug, a direct source's route id. */
+function tagOf(candidate: Candidate): string {
+  return isDirect(candidate) ? candidate.id : candidate.slug
+}
+
 /**
- * Filter and rank every endpoint of every candidate model.
+ * Filter and rank every candidate of every candidate model.
  *
- * Models are considered in the tier's own order, which is what makes
+ * Models are considered in the tier's own order — OpenRouter endpoints first,
+ * then the model's direct sources in `extraSources` order — which is what makes
  * `preferModel` the only ordering rule that can override price: it sorts one
  * model's entries ahead of every other model's, and everything inside that group
  * is still price-ordered. Ties break on measured uptime, then on model and tag,
- * so the same fixture list always produces the same decision.
- * @param lists - endpoint list per model, or the failure that model reported.
+ * so the same fixture list always produces the same decision; a direct source
+ * states no uptime and therefore sorts behind an equally priced endpoint that
+ * measures one.
+ * @param lists - candidate list per model, or the failure that model reported.
  * @param models - candidate model ids, in tier order.
  * @param policy - the tier's filters and this request's requirements.
  * @param mix - the turn's token buckets.
- * @returns the admitted endpoints in order, plus why the rest were dropped.
+ * @returns the admitted candidates in order, plus why the rest were dropped.
  */
 export function rankEndpoints(
   lists: EndpointLists,
@@ -309,7 +470,8 @@ export function rankEndpoints(
       continue
     }
     const modelRejection = modelRejectionOf(model, policy)
-    for (const endpoint of list) {
+    const candidates: readonly Candidate[] = [...list, ...(policy.extraSources?.get(model) ?? [])]
+    for (const endpoint of candidates) {
       considered += 1
       const rejection = modelRejection ?? rejectionOf(endpoint, policy)
       if (rejection !== undefined) {
@@ -338,15 +500,15 @@ export function rankEndpoints(
     if (left.blendedUsdPerToken !== right.blendedUsdPerToken) {
       return left.blendedUsdPerToken - right.blendedUsdPerToken
     }
-    const leftUptime = left.endpoint.uptimeLast30m
-    const rightUptime = right.endpoint.uptimeLast30m
+    const leftUptime = isDirect(left.endpoint) ? undefined : left.endpoint.uptimeLast30m
+    const rightUptime = isDirect(right.endpoint) ? undefined : right.endpoint.uptimeLast30m
     if (leftUptime !== rightUptime) {
       if (leftUptime === undefined) return 1
       if (rightUptime === undefined) return -1
       return rightUptime - leftUptime
     }
     if (left.model !== right.model) return left.model.localeCompare(right.model)
-    return left.endpoint.slug.localeCompare(right.endpoint.slug)
+    return tagOf(left.endpoint).localeCompare(tagOf(right.endpoint))
   })
   return { ranked, rejections, considered, unreadable, rejected }
 }
@@ -368,6 +530,8 @@ export function policyFor(
     ignoreUptime?: boolean
     requiredInput?: RequiredInput
     modalities?: ReadonlyMap<string, readonly string[] | undefined>
+    extraSources?: ReadonlyMap<string, readonly DirectSource[]>
+    excludedSources?: ReadonlySet<string>
   },
 ): SelectionPolicy {
   return {
@@ -386,6 +550,8 @@ export function policyFor(
     ...options.preferModel === undefined ? {} : { preferModel: options.preferModel },
     ...options.requiredInput === undefined ? {} : { requiredInput: options.requiredInput },
     ...options.modalities === undefined ? {} : { modalities: options.modalities },
+    ...options.extraSources === undefined ? {} : { extraSources: options.extraSources },
+    ...options.excludedSources === undefined ? {} : { excludedSources: options.excludedSources },
   }
 }
 

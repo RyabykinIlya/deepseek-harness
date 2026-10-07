@@ -25,8 +25,8 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { fetchOpenRouterEndpoints, fetchOpenRouterModelCatalog } from '@deepseek-ai/dsh-llm-pi-ai'
 import { TiersAdapter } from './adapter.ts'
-import { routingEndpointOf } from './endpoint.ts'
-import { Config, readSettings, validateSettings } from './config.ts'
+import { routingDirectOf, routingEndpointOf } from './endpoint.ts'
+import { Config, directSourceModels, readSettings, validateSettings } from './config.ts'
 import type { RoutingSettings, TierSettingsSnapshot } from './config.ts'
 import { resolveApiKeyRef } from './credentials.ts'
 import { EndpointsCache } from './endpoints-cache.ts'
@@ -35,7 +35,7 @@ import { askJudge } from './judge.ts'
 import { KeyInfo } from './key-info.ts'
 import { modelRoutingProjectionDefinition } from './projection.ts'
 import { DiagnosticsFile } from './diagnostics.ts'
-import { defaultMix, policyFor, rankWithRelaxation } from './select.ts'
+import { defaultMix, directSourcesOf, isDirect, policyFor, rankWithRelaxation } from './select.ts'
 import type { EndpointLists } from './select.ts'
 import type { FreeUsage, ModelQuote, ModelRoutingControl } from './types.ts'
 
@@ -108,14 +108,14 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
             cacheWriteTokens: totals.cacheWriteTokens,
           }
       },
-      innerEfforts: async (model, signal) => {
-        // A model the inner catalog does not describe has no effort vocabulary;
+      innerEfforts: async (model, route, signal) => {
+        // A model the route's catalog does not describe has no effort vocabulary;
         // the request then simply carries none, which is what pi-ai would do.
-        const info = await ctx.llm.resolveModelInfo(config.innerRoute, model, signal).catch(() => undefined)
+        const info = await ctx.llm.resolveModelInfo(route, model, signal).catch(() => undefined)
         return info?.reasoning?.efforts.map(effort => String(effort.id))
       },
-      innerCanDispatch: (model, signal) =>
-        ctx.llm.resolveModelInfo(config.innerRoute, model, signal).then(() => true, () => false),
+      innerCanDispatch: (model, route, signal) =>
+        ctx.llm.resolveModelInfo(route, model, signal).then(() => true, () => false),
       endpoints: this.endpoints,
       catalog: this.catalog,
       keyInfo: this.keyInfo,
@@ -296,7 +296,13 @@ function presetOf(registry: SessionProjectionRegistry, session: Session): string
   }
 }
 
-/** Price one model under one tier's filters. */
+/**
+ * Price one model under one tier's filters.
+ *
+ * The tier's `extraSources` candidates for this model ride the same ranking as
+ * the OpenRouter endpoints, so a quote says what the model would cost this turn
+ * whichever source serves it — and `total` counts both kinds of candidate.
+ */
 function quoteOne(
   model: string,
   lists: EndpointLists,
@@ -307,20 +313,26 @@ function quoteOne(
   if (list === undefined || list instanceof Error) {
     return { model, eligible: 0, total: 0, error: list instanceof Error ? list.message : 'no endpoint list' }
   }
+  const extraSources = tier.extraSources.flatMap(source =>
+    directSourcesOf(source, directSourceModels(source)).filter(candidate => candidate.model === model))
   const result = rankWithRelaxation(
     lists,
     [model],
-    policyFor(tier, settings, { allowFree: true, excludedTags: new Set() }),
+    policyFor(tier, settings, {
+      allowFree: true,
+      excludedTags: new Set(),
+      ...extraSources.length === 0 ? {} : { extraSources: new Map([[model, extraSources]]) },
+    }),
     defaultMix(settings),
   )
   const best = result.ranked[0]
   return {
     model,
     ...best === undefined ? {} : {
-      endpoint: routingEndpointOf(best.endpoint),
+      endpoint: isDirect(best.endpoint) ? routingDirectOf(best.endpoint) : routingEndpointOf(best.endpoint),
       blendedUsdPerToken: best.blendedUsdPerToken,
     },
     eligible: result.ranked.length,
-    total: list.length,
+    total: list.length + extraSources.length,
   }
 }

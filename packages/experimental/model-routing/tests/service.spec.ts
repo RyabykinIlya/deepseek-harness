@@ -123,6 +123,38 @@ describe('Remote quote', () => {
     expect(quote?.endpoint?.tag).toBe('streamlake/fp8')
   })
 
+  it('prices a direct source beside the model\'s OpenRouter endpoints', async () => {
+    // The quote has to say what the model costs this turn whichever source
+    // serves it, and `total` counts both kinds of candidate.
+    const { service: routing } = await service(undefined, {
+      defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+      tiers: [{
+        ...PRO,
+        extraSources: [{
+          route: 'xiaomi-plan',
+          models: [],
+          modelMap: { 'deepseek/deepseek-v4-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+          price: {},
+          tools: true,
+        }],
+      }],
+    })
+    const [quote] = await routing.quote({ tier: 'pro', models: ['deepseek/deepseek-v4-pro'] })
+    expect(quote?.endpoint).toEqual({
+      tag: 'mimo-v2.6-pro',
+      providerName: 'xiaomi-plan',
+      promptUsd: 1e-8,
+      completionUsd: 1e-8,
+    })
+    expect(quote?.blendedUsdPerToken).toBeCloseTo(1e-8)
+    // Eight OpenRouter endpoints of the model pass the pro filters, and the
+    // direct source is the ninth candidate — counted like any other.
+    expect(quote?.eligible).toBe(9)
+    // The listing carries sixteen endpoints; the direct source is counted on
+    // top of them, so a quote cannot hide a source inside another count.
+    expect(quote?.total).toBe(17)
+  })
+
   it('reports a tier no configuration names', async () => {
     const { service: routing } = await service()
     await expect(routing.quote({ tier: 'max', models: ['deepseek/deepseek-v4-flash'] }))

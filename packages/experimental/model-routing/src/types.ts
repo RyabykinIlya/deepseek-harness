@@ -22,13 +22,35 @@ import type { EndpointRejection, MeasuredMix, RequiredInput } from './select.ts'
 /** The moments at which the route may take a fresh decision. */
 export type RoutingBoundary = 'start' | 'selection-change' | 'compaction' | 'idle' | 'failure'
 
-/** One upstream endpoint as the decision pinned it; prices are USD per token. */
+/**
+ * The source of one pinned or ranked candidate: an OpenRouter endpoint, or a
+ * model served by its own pi-ai route. A decision records this so a log can say
+ * *which kind* of upstream answered, and `restorePin` can rebuild a pin that
+ * dispatches through the right route after a Host restart.
+ */
+export interface RoutingSource {
+  /**
+   * `openrouter` for an OpenRouter endpoint, or the pi-ai route key that
+   * dispatches a direct source.
+   */
+  kind: string
+  /** The model id the dispatch carries: an endpoint tag, or the route's own model id. */
+  tag: string
+}
+
+/**
+ * One upstream endpoint as the decision pinned it; prices are USD per token.
+ *
+ * A direct source states its own prices, and only those it actually declared:
+ * silence there means "not priced here" rather than the zero an OpenRouter
+ * endpoint's unstated price is recorded as.
+ */
 export interface RoutingEndpoint {
   tag: string
   providerName?: string
   quantization?: string
-  promptUsd: number
-  completionUsd: number
+  promptUsd?: number
+  completionUsd?: number
   cacheReadUsd?: number
   /** Fraction OpenRouter marks off this provider's list price, when published. Already applied in the prices. */
   discount?: number
@@ -64,10 +86,12 @@ export interface JudgeVerdict {
   error?: string
 }
 
-/** One endpoint of a candidate model, as a diagnostics record lists it. */
+/** One candidate of a candidate model, as a diagnostics record lists it. */
 export interface RoutingCandidate {
   model: string
   tag: string
+  /** Which kind of source produced it: `openrouter`, or the direct source's route key. */
+  source?: string
   providerName?: string
   quantization?: string
   promptUsd?: number
@@ -81,7 +105,7 @@ export interface RoutingCandidate {
   status?: number
   /** Measured uptime over the last 30 minutes, as a percentage. */
   uptimeLast30m?: number
-  /** The blended price this endpoint would charge, when it states both prices. */
+  /** The blended price this candidate would charge, when it states prices. */
   blendedUsdPerToken?: number
   /** 1-based position in the ranking; present ⇔ the filters admitted it. */
   rank?: number
@@ -122,11 +146,13 @@ export interface RoutingDecision {
   requested: string
   tier: string
   judge?: JudgeVerdict
-  /** Concrete OpenRouter model id. */
+  /** Concrete model id: an OpenRouter id, or a direct source's canonical id. */
   model: string
-  /** Absent ⇔ the request went out unpinned. */
+  /** Which kind of source the pin came from; absent on decisions recorded before this field existed. */
+  source?: RoutingSource
+  /** Absent ⇔ the request went out unpinned or pinned to a direct source. */
   endpoint?: RoutingEndpoint
-  /** Present ⇔ `endpoint` is absent. */
+  /** Present ⇔ the request went out with no pin at all. */
   unpinnedReason?: string
   blendedUsdPerToken?: number
   /** Present ⇔ the uptime filter had to be dropped for anything to pass. */

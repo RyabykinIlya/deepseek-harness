@@ -13,6 +13,7 @@ import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import { TiersAdapter } from '../src/adapter.ts'
 import type { TiersAdapterDeps } from '../src/adapter.ts'
 import { Config, readSettings, validateSettings } from '../src/config.ts'
+import type { ExtraSource } from '../src/config.ts'
 import type { RoutingSettings } from '../src/config.ts'
 import { EndpointsCache } from '../src/endpoints-cache.ts'
 import { FamilyCache } from '../src/family-cache.ts'
@@ -48,7 +49,13 @@ const FLASH = {
 /** One dispatch the fake pi-ai route observed. */
 interface Dispatched {
   options: GenerateOptions
-  routing: OpenRouterRoutingBlock | undefined
+  /** The per-call pi-ai options the adapter passed, including the absent block on a direct route. */
+  dispatch: { openRouterRouting?: OpenRouterRoutingBlock } | undefined
+}
+
+/** The routing block one dispatch carried, `undefined` when the adapter passed none. */
+function blockOf(entry: Dispatched): OpenRouterRoutingBlock | undefined {
+  return entry.dispatch?.openRouterRouting
 }
 
 /** Everything the adapter tests drive, plus the record of what it did. */
@@ -66,7 +73,7 @@ interface Harness {
   warnings: string[]
   catalogEntries: readonly OpenRouterCatalogEntry[]
   catalogFails: boolean
-  /** Model ids the inner route cannot dispatch, as a release newer than the pinned pi-ai catalog. */
+  /** `route:model` pairs no pi-ai route can dispatch: a newer release, or an unconfigured route. */
   innerUnknown: Set<string>
 }
 
@@ -129,7 +136,7 @@ async function harness(over: {
   const scripted = [...(over.responses ?? [])]
   const dispatch: PiAiDispatch = {
     stream: (options, dispatchOptions) => {
-      sent.push({ options, routing: dispatchOptions?.openRouterRouting })
+      sent.push({ options, dispatch: dispatchOptions })
       const chunks = scripted.shift() ?? normalChunks()
       return {
         async *[Symbol.asyncIterator]() {
@@ -157,7 +164,7 @@ async function harness(over: {
     routingState: () => over.state,
     usage: () => over.usage,
     innerEfforts: async () => ['off', 'high', 'xhigh'],
-    innerCanDispatch: async model => !record.innerUnknown.has(model),
+    innerCanDispatch: async (model, route) => !record.innerUnknown.has(`${route}:${model}`) && route !== 'no-such-route',
     endpoints: cache,
     catalog: new FamilyCache(async () => {
       if (record.catalogFails) throw new Error('OpenRouter answered 503')
@@ -271,7 +278,7 @@ describe('TiersAdapter pinning', () => {
     expect(h.sent).toHaveLength(1)
     expect(h.sent[0]?.options.provider).toBe('openrouter')
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
-    expect(h.sent[0]?.routing).toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[0]!)).toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events).toHaveLength(1)
     expect(h.events[0]).toMatchObject({
       boundary: 'start',
@@ -374,7 +381,7 @@ describe('TiersAdapter pinning', () => {
     await run(h.adapter)
     expect(h.sent).toHaveLength(2)
     expect(h.events).toHaveLength(1)
-    expect(h.sent[1]?.routing).toEqual(h.sent[0]?.routing)
+    expect(blockOf(h.sent[1]!)).toEqual(blockOf(h.sent[0]!))
   })
 
   it('decides again after a compaction, and again after the cache went idle', async () => {
@@ -421,7 +428,7 @@ describe('TiersAdapter pinning', () => {
       },
     })
     await run(h.adapter)
-    expect(h.sent[0]?.routing).toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[0]!)).toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events).toHaveLength(0)
   })
 
@@ -506,7 +513,7 @@ describe('TiersAdapter rerouting', () => {
     expect(h.sent).toHaveLength(2)
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
     expect(h.sent[1]?.options.model).toBe('deepseek/deepseek-v4-flash')
-    expect(h.sent[1]?.routing).toEqual({ only: ['deepinfra/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[1]!)).toEqual({ only: ['deepinfra/fp8'], allow_fallbacks: false })
     expect(h.events).toHaveLength(2)
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     // Only the successful attempt's chunks reached the caller.
@@ -530,7 +537,7 @@ describe('TiersAdapter rerouting', () => {
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(2)
-    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[1]!)).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events).toHaveLength(2)
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     // The failed attempt's chunks never reached the caller; only the
@@ -573,7 +580,7 @@ describe('TiersAdapter rerouting', () => {
 
     await run(h.adapter)
     expect(h.sent).toHaveLength(2)
-    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[1]!)).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
   })
 
@@ -600,7 +607,7 @@ describe('TiersAdapter rerouting', () => {
 
     await run(h.adapter)
     expect(h.sent).toHaveLength(2)
-    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[1]!)).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
   })
 
@@ -619,7 +626,7 @@ describe('TiersAdapter rerouting', () => {
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(2)
-    expect(h.sent[1]?.routing).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
+    expect(blockOf(h.sent[1]!)).not.toEqual({ only: ['streamlake/fp8'], allow_fallbacks: false })
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
@@ -678,7 +685,7 @@ describe('TiersAdapter free endpoints', () => {
     })
     await run(h.adapter)
     expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
-    expect(h.sent[0]?.routing).toEqual({ only: ['stealth'], allow_fallbacks: false })
+    expect(blockOf(h.sent[0]!)).toEqual({ only: ['stealth'], allow_fallbacks: false })
   })
 
   it('never spends a subagent on a free endpoint', async () => {
@@ -756,7 +763,7 @@ describe('TiersAdapter when nothing works', () => {
       },
     })
     await run(h.adapter)
-    expect(h.sent[0]?.routing).toEqual({
+    expect(blockOf(h.sent[0]!)).toEqual({
       sort: 'price',
       quantizations: ['int8', 'fp8', 'mxfp8', 'fp16', 'bf16', 'fp32', 'unknown'],
       allow_fallbacks: true,
@@ -860,7 +867,7 @@ describe('TiersAdapter snapshot policy', () => {
       endpoints: { 'deepseek/deepseek-v4-pro': pro, 'deepseek/deepseek-v4-pro-0813': pro },
       catalog: options.catalog ?? FAMILY,
       catalogFails: options.catalogFails ?? false,
-      innerUnknown: options.innerUnknown ?? [],
+      innerUnknown: (options.innerUnknown ?? []).map(model => `openrouter:${model}`),
       settings: { snapshotPolicy: options.policy },
       // A Session compacted since its last decision decides again at every
       // boundary, which is what makes a second run a second decision rather than
@@ -1073,5 +1080,278 @@ describe('TiersAdapter input modalities', () => {
       'model-routing: the OpenRouter model catalog could not be read, so no model is shown to accept'
       + ' image input and an image request has no endpoint to serve it',
     )
+  })
+})
+
+describe('TiersAdapter direct sources', () => {
+  /** The tier the target scenario decides under: one canonical model, three sources. */
+  const MIMO = {
+    name: 'flash',
+    label: 'Flash',
+    models: ['xiaomi/mimo-v2.6-pro'],
+    contextWindow: 1_000_000,
+    maxTokens: 32_768,
+    input: ['text'],
+    minQuantization: 'fp8',
+    unknownQuantization: 'accept',
+    free: 'off',
+  }
+
+  /** `claude-proxy`: the first source, and the dearest one — the pin the fallback moves away from. */
+  const CLAUDE: ExtraSource = {
+    route: 'claude-proxy',
+    models: [],
+    modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-6}' },
+    price: {},
+    tools: true,
+  }
+
+  /** `xiaomi-plan`: the credit-weighted subscription source, priced per bucket. */
+  const PLAN: ExtraSource = {
+    route: 'xiaomi-plan',
+    models: [],
+    modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}' },
+    price: {},
+    tools: true,
+  }
+
+  /** One endpoint fixture stand-in; the recorded lists are not what this seam ranks. */
+  function endpointOf(slug: string, promptPrice: number): OpenRouterEndpoint {
+    return {
+      slug,
+      promptPrice,
+      completionPrice: promptPrice * 3,
+      inputCacheReadPrice: promptPrice / 2,
+      status: 0,
+      uptimeLast30m: 99,
+      supportedParameters: ['tools'],
+      contextLength: 1_048_576,
+    }
+  }
+
+  /** The scenario: the tier's two direct sources plus one OpenRouter endpoint of the same model. */
+  async function scenario(over: {
+    responses?: StreamChunk[][]
+    sources?: ExtraSource[]
+    settings?: Record<string, unknown>
+    state?: ModelRoutingState
+    catalogFails?: boolean
+  } = {}): Promise<Harness> {
+    return harness({
+      tiers: [{ ...MIMO, extraSources: over.sources ?? [CLAUDE, PLAN] }],
+      endpoints: { 'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)] },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        ...over.settings,
+      },
+      ...over.responses === undefined ? {} : { responses: over.responses },
+      ...over.state === undefined ? {} : { state: over.state },
+      ...over.catalogFails === undefined ? {} : { catalogFails: over.catalogFails },
+    })
+  }
+
+  it('prices all three sources of one model and dispatches the cheapest on its own route', async () => {
+    const h = await scenario()
+    await run(h.adapter)
+    expect(h.sent[0]?.options.provider).toBe('xiaomi-plan')
+    expect(h.sent[0]?.options.model).toBe('mimo-v2.6-pro')
+    // pi-ai refuses an OpenRouter routing block on a model that does not speak
+    // `openai-completions`, so a direct dispatch carries no block at all.
+    expect(blockOf(h.sent[0]!)).toBeUndefined()
+    expect(h.events[0]).toMatchObject({
+      tier: 'flash',
+      model: 'xiaomi/mimo-v2.6-pro',
+      source: { kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' },
+      blendedUsdPerToken: 5.56363616e-08,
+    })
+    expect(h.events[0]?.endpoint).toMatchObject({ tag: 'mimo-v2.6-pro', providerName: 'xiaomi-plan' })
+  })
+
+  it('falls back to the next source when a key pool is exhausted, taking only the failed one out', async () => {
+    // The claude source is the cheapest candidate, so it is the pin; once its
+    // whole key pool is exhausted (pi-ai surfaces `KEY_QUOTA` only then) the
+    // re-decision must move on rather than fail the turn on a route with no key
+    // left. The plan ties it and keeps its configured position, so it serves
+    // the turn before the dearer endpoint.
+    const claude: ExtraSource = {
+      ...CLAUDE,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    }
+    const plan: ExtraSource = {
+      ...PLAN,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    }
+    // A price-free plan ties the failed claude source and keeps its configured
+    // position behind it, so "the next candidate" is the plan rather than the
+    // endpoint; a strictly cheaper plan would win outright, which the ranking
+    // case above already pins.
+    const h = await scenario({
+      sources: [claude, plan],
+      responses: [failureChunks('KEY_QUOTA'), normalChunks()],
+      settings: { rerouteCodes: ['KEY_QUOTA'] },
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[0]?.options.provider).toBe('claude-proxy')
+    expect(h.sent[1]?.options.provider).toBe('xiaomi-plan')
+    expect(h.sent[1]?.options.model).toBe('mimo-v2.6-pro')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    // The failed source is excluded by `route:id`, so the next turn cannot land
+    // on it again before `excludeAfterFailureMs` expires. The other two serve
+    // the same canonical id and are untouched: one route failing says nothing
+    // about another route's copy of the model.
+    expect(h.events.at(-1)).toMatchObject({ boundary: 'failure', excludedTags: ['claude-proxy:mimo-v2.6-pro'] })
+    expect(h.records.at(-1)?.candidates.map(entry => [entry.tag, entry.source, entry.rejection]))
+      .toEqual([
+        ['mimo-v2.6-pro', 'xiaomi-plan', undefined],
+        ['streamlake/fp8', 'openrouter', undefined],
+        ['mimo-v2.6-pro', 'claude-proxy', 'excluded'],
+      ])
+  })
+
+  it('restores a direct-source pin from the log and dispatches it on the same route', async () => {
+    const h = await scenario({
+      state: {
+        decision: {
+          boundary: 'start', requested: 'flash', tier: 'flash', model: 'xiaomi/mimo-v2.6-pro',
+          source: { kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' },
+          endpoint: { tag: 'mimo-v2.6-pro', providerName: 'xiaomi-plan', promptUsd: 4.363636e-7, completionUsd: 8.727273e-7, cacheReadUsd: 3.636364e-9 },
+          considered: 1, runnersUp: [], excludedTags: [],
+        },
+        decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
+        explicitSelection: false, overrides: {},
+      },
+    })
+    await run(h.adapter)
+    expect(h.sent[0]?.options.provider).toBe('xiaomi-plan')
+    expect(h.sent[0]?.options.model).toBe('mimo-v2.6-pro')
+    expect(blockOf(h.sent[0]!)).toBeUndefined()
+    // A restart is not a boundary: the log already decided.
+    expect(h.events).toHaveLength(0)
+  })
+
+  it('re-decides instead of clinching when a settings edit removed the pinned source', async () => {
+    const h = await scenario({
+      sources: [PLAN],
+      settings: { judgeEnabled: false },
+      state: {
+        decision: {
+          boundary: 'start', requested: 'flash', tier: 'flash', model: 'xiaomi/mimo-v2.6-pro',
+          source: { kind: 'claude-proxy', tag: 'mimo-v2.6-pro' },
+          considered: 1, runnersUp: [], excludedTags: [],
+        },
+        decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
+        explicitSelection: false, overrides: {},
+      },
+    })
+    const chunks = await run(h.adapter)
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(h.events).toHaveLength(1)
+    expect(h.events[0]).toMatchObject({ boundary: 'start', source: { kind: 'xiaomi-plan' } })
+  })
+
+  it('never ranks a source whose route the runtime cannot dispatch', async () => {
+    const h = await scenario({
+      sources: [{ ...CLAUDE, route: 'no-such-route' }, PLAN],
+      settings: { judgeEnabled: false },
+    })
+    await run(h.adapter)
+    expect(h.sent[0]?.options.provider).toBe('xiaomi-plan')
+    expect(h.warnings).toContain(
+      'model-routing: extraSource "no-such-route" serves "mimo-v2.6-pro", which no'
+      + ' configured pi-ai route can dispatch, so that source never ranks — @deepseek-ai/dsh-llm-pi-ai'
+      + ' has no route "no-such-route"',
+    )
+  })
+
+  it('gives up after the reroute budget and reports the failure on a direct source', async () => {
+    // The plan is the cheapest candidate here, so the budget is spent entirely
+    // on direct sources and the turn still ends in the reported failure rather
+    // than in an unhandled one.
+    const plan: ExtraSource = {
+      ...PLAN,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    }
+    const h = await scenario({
+      sources: [CLAUDE, plan],
+      responses: [failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA')],
+      settings: { rerouteCodes: ['KEY_QUOTA'] },
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(3)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['xiaomi-plan', 'openrouter', 'claude-proxy'])
+    // The last attempt's exclusion is not recorded — the turn ended in the
+    // failure the budget gave up on, and its candidate is the one the report names.
+    expect(h.events.at(-1)?.excludedTags).toEqual(['streamlake/fp8', 'xiaomi-plan:mimo-v2.6-pro'])
+  })
+
+  it('excludes a direct source whose iterator throws before any content', async () => {
+    const h = await scenario({
+      sources: [CLAUDE, PLAN],
+      responses: [
+        chunksThenThrow([], new LlmError('pi-ai stream idle timeout', 'TIMEOUT')),
+        normalChunks(),
+      ],
+      settings: { rerouteCodes: ['TIMEOUT'] },
+    })
+    const chunks = await run(h.adapter)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['xiaomi-plan', 'openrouter'])
+    expect(h.events.at(-1)?.excludedTags).toEqual(['xiaomi-plan:mimo-v2.6-pro'])
+  })
+
+  it('re-decides a pinned direct source only on the request\'s modality, never on the catalog', async () => {
+    // Only an OpenRouter pin is checked against OpenRouter's catalog for
+    // modalities: a direct source's modality is not something that catalog
+    // knows, so the pin stands and the dispatch goes out unchanged even when
+    // the catalog cannot be read at all.
+    const h = await scenario({ catalogFails: true })
+    await run(h.adapter)
+    await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['xiaomi-plan', 'xiaomi-plan'])
+    expect(h.events).toHaveLength(1)
+    expect(h.warnings).not.toContain(
+      expect.stringContaining('is not shown to accept image input'),
+    )
+  })
+
+  it('keeps a pin whose model is gone from a live settings edit, and restores none', async () => {
+    // The log recorded a decision naming a direct source the current settings no
+    // longer list; nothing remains to dispatch it on, so the pin is rebuilt as
+    // nothing and the request decides again.
+    const h = await scenario({
+      sources: [PLAN],
+      state: {
+        decision: {
+          boundary: 'start', requested: 'flash', tier: 'flash', model: 'xiaomi/mimo-v2.6-pro',
+          source: { kind: 'xiaomi-plan', tag: 'gone-id' },
+          considered: 1, runnersUp: [], excludedTags: [],
+        },
+        decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
+        explicitSelection: false, overrides: {},
+      },
+    })
+    await run(h.adapter)
+    expect(h.events).toHaveLength(1)
+    expect(h.events[0]).toMatchObject({ boundary: 'start', source: { kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' } })
+  })
+
+  it('records the source kind and the blended price a direct source won on', async () => {
+    const h = await scenario()
+    await run(h.adapter)
+    const record = h.records[0]!
+    const winner = record.candidates.find(entry => entry.rejection === undefined)
+    expect(winner).toMatchObject({
+      model: 'xiaomi/mimo-v2.6-pro',
+      tag: 'mimo-v2.6-pro',
+      source: 'xiaomi-plan',
+      promptUsd: 4.363636e-7,
+      completionUsd: 8.727273e-7,
+      cacheReadUsd: 3.636364e-9,
+      rank: 1,
+    })
+    expect(record.candidates.filter(entry => entry.source === 'openrouter')).toHaveLength(1)
   })
 })

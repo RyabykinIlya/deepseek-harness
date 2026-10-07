@@ -33,6 +33,68 @@ export type FreeMode = 'off' | 'prefer' | 'only'
 /** Input modality a tier advertises to the model catalog. */
 export type ModelInput = 'text' | 'image'
 
+/** Prices of one direct source candidate, in USD per token. */
+export interface ExtraSourcePrice {
+  /** Flat per-token USD for input, output and cache alike; the subscription-style spelling. */
+  usdPerToken?: number
+  /** USD per input token; also the cache-read rate when `cacheReadUsdPerToken` is absent. */
+  promptUsdPerToken?: number
+  /** USD per output token; a flat `usdPerToken` also covers it. */
+  completionUsdPerToken?: number
+  /** USD per cached input token; absent charges `promptUsdPerToken` for a cache hit. */
+  cacheReadUsdPerToken?: number
+}
+
+/** One non-OpenRouter candidate source of a tier: a pi-ai route and the models it serves. */
+export interface ExtraSource {
+  /** The pi-ai provider route that dispatches these models, for example `claude-proxy`. */
+  route: string
+  /** Model ids the route serves under their own names. */
+  models: string[]
+  /**
+   * Canonical id to the route's own id, so `xiaomi/mimo-v2.6-pro` and
+   * `mimo-v2.6-pro` rank as one model. A value may append `@` and a JSON price
+   * object to state that candidate's own prices; {@link directSourceModels} is
+   * the only reader of that spelling.
+   */
+  modelMap: Record<string, string>
+  /** Prices every candidate of this source is priced at, when none states its own. */
+  price: ExtraSourcePrice
+  /**
+   * Whether this route's models take tool calls (default `true`).
+   *
+   * An OpenRouter endpoint declares `tools` in `supportedParameters`; a direct
+   * source states no parameters at all, so this is the declaration the `tools`
+   * filter reads. Set it to `false` for a route that cannot serve a request
+   * carrying tools — leaving it unset admits the source, never drops it silently.
+   */
+  tools: boolean
+}
+
+/**
+ * One candidate one `extraSources` entry names: the canonical id it ranks under,
+ * the route's own id, and the prices the entry states — the source's `price`, or
+ * the candidate's own `@{...}` price object. This is the single reader of
+ * `modelMap`, so the `@` spelling has exactly one meaning.
+ */
+export interface DirectSourceModel {
+  /** Canonical model id, exactly as the tier or a request names it. */
+  model: string
+  /** The route's own id for this model. */
+  id: string
+  /** The prices this candidate is blended at, when it states any. */
+  price?: ExtraSourcePrice
+}
+
+/** One price entry as a settings read returns it. */
+export type ExtraSourcePriceSnapshot = VolatileSnapshot<ExtraSourcePrice>
+
+/** One `extraSources` entry as a settings read returns it. */
+export type ExtraSourceSnapshot = VolatileSnapshot<ExtraSource>
+
+/** One direct-source candidate as {@link directSourceModels} returns it. */
+export type DirectSourceModelSnapshot = VolatileSnapshot<DirectSourceModel>
+
 /**
  * Whether a tier's configured model ids stand for themselves or for the family
  * they belong to (default `pinned`).
@@ -70,6 +132,16 @@ export interface TierSettings {
   unknownQuantization: 'reject' | 'trusted' | 'accept'
   /** Free endpoints: `off` rejects them, `prefer` admits them (price 0 always wins), `only` admits only them (default `off`). */
   free: FreeMode
+  /**
+   * Non-OpenRouter candidate sources, ranked alongside the tier's OpenRouter
+   * endpoints (default `[]`). Each entry names the pi-ai route that dispatches
+   * its models, the model ids that route serves — under their own names, or
+   * through a `modelMap` from a canonical id to the route's id — and the
+   * per-token prices the ranking blends. A source whose route is not configured
+   * in `@deepseek-ai/dsh-llm-pi-ai` never ranks: the decision reports it as
+   * undispatchable instead of pinning a request to a route nobody serves.
+   */
+  extraSources: ExtraSource[]
 }
 
 /** One agent preset whose Sessions start on a fixed `tiers` model. */
@@ -213,6 +285,30 @@ export interface RoutingSettings {
   readonly diagnosticsMaxBytes: number
 }
 
+/**
+ * Per-token price of one direct source candidate, as a settings row spells it.
+ *
+ * The field names mirror {@link ExtraSourcePrice} rather than OpenRouter's
+ * endpoint vocabulary: a direct source states what a token costs on its own
+ * route, and `usdPerToken` is the one-number spelling a subscription-style
+ * source uses for input, output and cache alike. `directPricesOf` decides what
+ * an entry means; nothing else interprets these fields.
+ */
+const extraSourcePrice: z<ExtraSourcePrice> = z.object({
+  usdPerToken: z.number(),
+  promptUsdPerToken: z.number(),
+  completionUsdPerToken: z.number(),
+  cacheReadUsdPerToken: z.number(),
+})
+
+const extraSource: z<ExtraSource> = z.object({
+  route: z.string(),
+  models: z.array(z.string()),
+  modelMap: z.dict(z.string()),
+  price: extraSourcePrice,
+  tools: z.boolean().default(true),
+})
+
 const tierSettings: z<TierSettings> = z.object({
   name: z.string(),
   label: z.string(),
@@ -223,6 +319,7 @@ const tierSettings: z<TierSettings> = z.object({
   minQuantization: z.union(QUANTIZATIONS).default('fp8'),
   unknownQuantization: z.union(['reject', 'trusted', 'accept'] as const).default('trusted'),
   free: z.union(['off', 'prefer', 'only'] as const).default('off'),
+  extraSources: z.array(extraSource).default([]),
 })
 
 /**
@@ -317,8 +414,12 @@ export const Config = z.object({
   mixOutput: z.number().default(0.02).volatile(),
   mixMinTokens: z.number().default(1000).volatile(),
   maxReroutes: z.number().default(2).volatile(),
+  // `KEY_QUOTA` names the whole key pool: `dsh-llm-pi-ai` already rotates keys
+  // internally and only surfaces it once every key is exhausted or cooling, so
+  // at this level it means "this route cannot serve the request now" — which is
+  // exactly when the reroute should move on to the next candidate.
   rerouteCodes: z.array(z.string())
-    .default(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR'])
+    .default(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA'])
     .volatile(),
   excludeAfterFailureMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),
@@ -400,12 +501,119 @@ export function readSettings(config: Config): RoutingSettings {
   }
 }
 
+/**
+ * The candidates one tier's `extraSources` name, in configuration order.
+ *
+ * `models` entries rank under their own id; every `modelMap` entry ranks under
+ * its canonical key against the route's own id. A `modelMap` value may append
+ * `@` and a JSON {@link ExtraSourcePrice} object to state that candidate's own
+ * prices — a subscription plan's flat `usdPerToken` is the usual shape — and an
+ * entry without one is priced by the source's `price`. This is the only reader
+ * of `modelMap`, so the `@` spelling has exactly one meaning.
+ * @param source - one configured `extraSources` entry.
+ * @returns the candidates this entry names, in configuration order.
+ * @throws Error prefixed `model-routing: ` for an entry the route cannot serve.
+ */
+export function directSourceModels(source: ExtraSourceSnapshot): DirectSourceModel[] {
+  const candidates: DirectSourceModel[] = []
+  for (const model of source.models) candidates.push({ model, id: model, ...priced(source) })
+  for (const [canonical, value] of Object.entries(source.modelMap)) {
+    const at = value.indexOf('@')
+    const id = at === -1 ? value : value.slice(0, at)
+    const own = at === -1 ? undefined : parsePrice(value.slice(at + 1), `tier extraSource "${source.route}"`, canonical)
+    candidates.push({ model: canonical, id, ...priced({ price: own ?? source.price }) })
+  }
+  return candidates
+}
+
+/** The priced fields of one candidate, omitted when the entry states no prices. */
+function priced(source: { readonly price: ExtraSourcePriceSnapshot }): Pick<DirectSourceModel, 'price'> {
+  return Object.keys(source.price).length === 0 ? {} : { price: source.price }
+}
+
+/**
+ * One candidate's own price object from its `modelMap` value.
+ * @param text - the text after the value's `@`.
+ * @param where - the entry's own naming in a message, `tier "…" extraSource "…"`.
+ * @param canonical - the canonical id whose value is being read.
+ * @returns the parsed prices.
+ * @throws Error prefixed `model-routing: ` for text that is not a price object of non-negative numbers.
+ */
+function parsePrice(text: string, where: string, canonical: string): ExtraSourcePrice {
+  const fail = (reason: string): never => invalid(
+    `${where} modelMap["${canonical}"] price must be ${reason}`,
+  )
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return fail('a JSON object')
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return fail('a JSON object')
+  const known = new Set(['usdPerToken', 'promptUsdPerToken', 'completionUsdPerToken', 'cacheReadUsdPerToken'])
+  const price: ExtraSourcePrice = {}
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!known.has(key) || typeof value !== 'number' || !(value >= 0)) {
+      return fail('a JSON object of the price fields with non-negative numbers')
+    }
+    Object.assign(price, { [key]: value })
+  }
+  return price
+}
+
 /** A tier name is a route model id, so it must read as one and must not shadow `auto`. */
 const TIER_NAME = /^[a-z][a-z0-9-]*$/
 
 /** Fail a configuration the route cannot serve; the prefix every message carries. */
 function invalid(message: string): never {
   throw new Error(`model-routing: ${message}`)
+}
+
+/**
+ * Refuse an `extraSources` entry the route cannot serve.
+ *
+ * A source names models by route, not by OpenRouter id, so the checks are about
+ * identity rather than format: a non-empty route key, a non-empty canonical id
+ * and route id per candidate, and one candidate per canonical id — a duplicate
+ * would make the ranking's candidate map ambiguous. A price object the parser
+ * cannot read is refused here rather than at the first decision that prices it.
+ * @param tier - the tier whose sources to check.
+ * @throws Error prefixed `model-routing: ` naming the first field that cannot be served.
+ */
+function validateExtraSources(tier: TierSettingsSnapshot): void {
+  const seen = new Set<string>()
+  for (const source of tier.extraSources) {
+    if (source.route.trim() === '') {
+      invalid(`tier "${tier.name}" extraSource route must be a non-empty route key`)
+    }
+    if (source.models.length === 0 && Object.keys(source.modelMap).length === 0) {
+      invalid(`tier "${tier.name}" extraSource "${source.route}" names no models`)
+    }
+    const route = `tier "${tier.name}" extraSource "${source.route}"`
+    for (const model of source.models) {
+      if (model.trim() === '') invalid(`${route} model must be a non-empty id`)
+      const key = `${source.route}:${model}`
+      if (seen.has(key)) invalid(`${route} model "${model}" appears twice in the tier's sources`)
+      seen.add(key)
+    }
+    for (const [field, price] of Object.entries(source.price)) {
+      if (typeof price !== 'number' || !(price >= 0)) invalid(`${route} price ${field} must be a non-negative number`)
+    }
+    for (const [canonical, value] of Object.entries(source.modelMap)) {
+      if (canonical.trim() === '') invalid(`${route} modelMap key must be a non-empty canonical id`)
+      const at = value.indexOf('@')
+      const id = at === -1 ? value : value.slice(0, at)
+      if (id.trim() === '') invalid(`${route} modelMap["${canonical}"] must be a non-empty route id`)
+      // Two sources serving one canonical id is the whole point of `extraSources`
+      // — they rank against each other — so the duplication worth refusing is one
+      // route naming the same canonical id twice, which would make its own
+      // candidate list ambiguous.
+      const key = `${source.route}:${canonical}`
+      if (seen.has(key)) invalid(`${route} modelMap["${canonical}"] names a model this source already serves`)
+      seen.add(key)
+      if (at !== -1) parsePrice(value.slice(at + 1), `${route}`, canonical)
+    }
+  }
 }
 
 /**
@@ -443,6 +651,7 @@ export function validateSettings(settings: RoutingSettings): void {
     if (tier.unknownQuantization === 'trusted' && settings.trustedUnknownProviders.length === 0) {
       invalid(`tier "${tier.name}" trusts unknown quantization but trustedUnknownProviders is empty`)
     }
+    validateExtraSources(tier)
   }
   if (settings.efforts.length === 0 || new Set(settings.efforts).size !== settings.efforts.length) {
     invalid('efforts must be a non-empty list of unique ids')

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { routingEndpointOf } from '../src/endpoint.ts'
+import { routingDirectOf, routingEndpointOf, routingSourceOf } from '../src/endpoint.ts'
 
 describe('routingEndpointOf', () => {
   it('carries every fact the endpoint published, discount included', () => {
@@ -29,5 +29,39 @@ describe('routingEndpointOf', () => {
   it('names an unstated price zero and omits every other absent field', () => {
     expect(routingEndpointOf({ slug: 'bare' }))
       .toEqual({ tag: 'bare', promptUsd: 0, completionUsd: 0 })
+  })
+})
+
+describe('routingSourceOf', () => {
+  it('names the OpenRouter kind for an endpoint and the route key for a direct source', () => {
+    expect(routingSourceOf({ slug: 'gmicloud/fp8' })).toEqual({ kind: 'openrouter', tag: 'gmicloud/fp8' })
+    expect(routingSourceOf({
+      kind: 'direct', route: 'claude-proxy', model: 'xiaomi/mimo-v2.6-pro', id: 'mimo-v2.6-pro',
+    })).toEqual({ kind: 'claude-proxy', tag: 'mimo-v2.6-pro' })
+  })
+})
+
+describe('routingDirectOf', () => {
+  it('carries the route and exactly the prices the source declared', () => {
+    expect(routingDirectOf({
+      kind: 'direct',
+      route: 'xiaomi-plan',
+      model: 'xiaomi/mimo-v2.6-pro',
+      id: 'mimo-v2.6-pro',
+      prices: { prompt: 1.455e-9, completion: 2e-9 },
+    })).toEqual({
+      tag: 'mimo-v2.6-pro',
+      providerName: 'xiaomi-plan',
+      promptUsd: 1.455e-9,
+      completionUsd: 2e-9,
+    })
+  })
+
+  it('leaves an unpriced source unpriced rather than free', () => {
+    // A zero here would read as "costs nothing"; silence is what a source that
+    // states no price actually is.
+    expect(routingDirectOf({
+      kind: 'direct', route: 'claude-proxy', model: 'm', id: 'm',
+    })).toEqual({ tag: 'm', providerName: 'claude-proxy' })
   })
 })

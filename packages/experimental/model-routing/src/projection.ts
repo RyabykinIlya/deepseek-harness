@@ -16,9 +16,14 @@
 import { z } from 'zod'
 import type { SessionEvent, SessionEventMap, SessionHeader, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import type { JudgeRule, ModelRoutingState, ModelRoutingView, RoutingBoundary, RoutingEndpoint } from './types.ts'
+import type { JudgeRule, ModelRoutingState, ModelRoutingView, RoutingBoundary, RoutingEndpoint, RoutingSource } from './types.ts'
 
 const routingBoundarySchema = z.enum(['start', 'selection-change', 'compaction', 'idle', 'failure'])
+
+const routingSourceSchema = z.object({
+  kind: z.string(),
+  tag: z.string(),
+}).strict()
 
 const routingEndpointSchema = z.object({
   tag: z.string(),
@@ -55,6 +60,7 @@ const decisionSchema = z.object({
   tier: z.string(),
   judge: judgeVerdictSchema.optional(),
   model: z.string(),
+  source: routingSourceSchema.optional(),
   endpoint: routingEndpointSchema.optional(),
   unpinnedReason: z.string().optional(),
   blendedUsdPerToken: z.number().optional(),
@@ -185,4 +191,4 @@ export const modelRoutingProjectionDefinition = {
   wire: { viewSchema: modelRoutingViewSchema, view: modelRoutingView },
 } satisfies ProjectionDefinition<'modelRouting', ModelRoutingState>
 
-export type { RoutingBoundary, RoutingEndpoint, JudgeRule }
+export type { RoutingBoundary, RoutingEndpoint, RoutingSource, JudgeRule }

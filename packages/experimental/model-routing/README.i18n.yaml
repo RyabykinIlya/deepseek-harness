@@ -21,14 +21,17 @@
   en: 9775893df3cf6dd9
   zh: 5b9de68f6815072e
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/tiers:
-  en: 80c36e4181cee94a
-  zh: 397227323fb67bae
+  en: 3fe99a13878beef0
+  zh: f37c88949f669ee0
+/deepseek-ai-dsh-experimental-model-routing/use-this-package/extra-sources:
+  en: 3e4ba427bc80cf7c
+  zh: c9f0c4559bdb89bb
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/snapshots:
   en: 85084ea8345620f4
   zh: d81cf9839cde1539
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/ranking:
-  en: ce82bb6807cd119f
-  zh: a18829e0f6cf0096
+  en: d0cbc238dfe7bceb
+  zh: a7a496dc5565c70a
 /deepseek-ai-dsh-experimental-model-routing/use-this-package/diagnostics:
   en: 60431cfce4dba94e
   zh: 503d92875f7dab5a
@@ -51,8 +54,8 @@
   en: 97484a3f4ac7c83b
   zh: 78b040a2128b9ddd
 /deepseek-ai-dsh-experimental-model-routing/known-limitations-and-deferred-work:
-  en: c9c14a6b0294724b
-  zh: e78297297f593524
+  en: e2da5fbe785017cc
+  zh: 620a4c5853b42d81
 /deepseek-ai-dsh-experimental-model-routing/known-limitations-and-deferred-work/dev-note:
   en: 0a1253c6f7b5e8b9
   zh: 9f56528562c7c914

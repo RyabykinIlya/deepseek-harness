@@ -41,6 +41,17 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 `validateSettings` 会拒绝该路由无法据以行动的 settings 值，包括不是路由模型 id 的 tier 名称、缺少 `author/` 的模型 id、落在 effort 列表之外的默认 effort、以及一对次序颠倒的 judge 阈值；它用一条消息指出第一个无法服务的字段。
 
+<a id="extra-sources"></a>
+### 额外来源
+
+一个 tier 的候选并不只有 OpenRouter endpoint。`extraSources`（默认 `[]`）列出同一个 tier 参与排序的非 OpenRouter 来源：每一项声明派发其模型的 pi-ai 路由（`route`）、该路由服务的模型 id——可以是它自己的名字（`models`），也可以是一份从规范 id 到该路由自身 id 的 `modelMap`——以及排序所混合的逐 token 价格（`price`）。于是 OpenRouter 上的 `xiaomi/mimo-v2.6-pro` 与直连路由上的 `mimo-v2.6-pro` 是同一个模型的两个来源，由混合价格在它们之间裁决。
+
+`modelMap` 的值可以追加 `@` 与一个 JSON 价格对象来声明该候选自己的价格。按 token 统一费率计价的方案填 `usdPerToken`；按 token 类型加权的方案分别填各桶（`promptUsdPerToken`、`completionUsdPerToken`、`cacheReadUsdPerToken`）——按信用度加权的订阅正是这样定价的，Xiaomi MiMo Token Plan 对缓存命中、缓存未命中与输出 token 分别计信用度，因此其来源填三个桶，例如 `mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}`。没有追加对象时用该来源的 `price`；两者都没有的来源按 `unpriced` 参与排序，绝不会被当成免费。`modelMap` 的 `@` 写法只在这一处被读取，因此它只有一个含义。
+
+直连来源不声明 status、uptime 与 quantization，所以这些过滤器对它是中性的：缺失的测量值不得成为拒绝理由，否则任何直连来源都无法进入排序。能力过滤器仍然生效。`tools` 是路由必须声明的一项——来源上的 `tools`（默认 `true`）——而 `context` 与按模型的 `modality` 规则的约束力与 endpoint 完全相同。`@deepseek-ai/dsh-llm-pi-ai` 未配置的路由所对应的来源从不参与排序：决策会把它报告为不可派发，而不是把请求钉在一条无人服务的路由上。
+
+被选中的直连来源以它自己的路由作为 `provider` 派发，并且不带 OpenRouter 的 `provider` 块：pi-ai 会拒绝把该块加在不讲 `openai-completions` 的模型上。`model-routing/decision` 事件记录获胜来源的种类（`source: { kind, tag }`，`kind` 为 `openrouter` 或路由键），对声明了价格的直连来源还记录其混合价格所依据的逐 token 价格，因此决策日志能说明某个来源为何胜出。
+
 <a id="snapshots"></a>
 ### 快照
 
@@ -61,6 +72,8 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 ### 排序
 
 `rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。`preferModel` 把某个模型的 endpoint 排在其他所有模型的 endpoint 之前，同时在该组内部保持价格顺序不变，这正是防止某个失败的提供方在对话中途把一场会话改路由到另一个模型的原因。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
+
+`extraSources` 的候选项按同一公式、由其声明的价格参与排序；直连来源按 `route:id` 而不是仅按其路由 id 被排除：同一条路由可以以同一个 id 服务多个模型的候选，只有这一对才能说明失败的是哪一个。
 
 模态过滤器是唯一按模型而不是按 endpoint 决定的拒绝原因：当请求携带图片时，目录未证明其接受图片的候选模型，其每个 endpoint 都会以 `modality` 被拒绝，而这些 endpoint 仍全部计入 `considered`。放宽不覆盖它——`rankWithRelaxation` 只丢弃在线率下限——因此没有任何可接受图片的候选的 tier 会直接失败，而不会在去掉该要求后重试。
 
@@ -128,6 +141,8 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 - 在 `snapshotPolicy: 'latest'` 下 tier 会跟随自己的家族，因此一次新发布会改变没有人编辑过的配置背后的模型与价格。目录最多每 `catalogTtlMs` 读取一次，移动会在日志中报告一次并记录进每一次决策，但没有任何东西事先征求同意。必须先批准版本变化的部署应当使用 `pinned`。
 - 家族来自目录的 `canonical_slug`，因此只以不带日期的 id 发布的模型——包括所有 OpenRouter 的 `~别名`——没有家族，也永远不会移动。
 - 诊断文件只追加、从不轮转。每一行有界，文件本身无界：启用它的部署自行负责其保留策略。
+- 直连来源自己声明价格与 `tools` 能力；没有任何东西测量它的 status、uptime 或 quantization，因此这些过滤器对它保持中性。若部署需要其中某一项产生约束，应当把它写进来源的配置，而不是期待测量值出现。
+- 默认 `rerouteCodes` 中包含 `KEY_QUOTA`，因为 `dsh-llm-pi-ai` 内部自行轮换密钥，只有一条路由的全部密钥都耗尽或在冷却时才会把它抛出。在本层它的含义是「这条路由现在无法服务该请求」，于是 reroute 会转向下一个候选——另一个来源或另一个模型——而不是让本轮失败。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -33,20 +33,21 @@ import type {
 import type { OpenRouterEndpoint, OpenRouterRoutingBlock, PiAiDispatch } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { Session, SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import { boundaryOf } from './boundary.ts'
+import { directSourceModels } from './config.ts'
 import type { RoutingSettings, TierSettingsSnapshot } from './config.ts'
 import { mapEffort } from './effort.ts'
 import type { EndpointsCache } from './endpoints-cache.ts'
 import type { FamilyCache } from './family-cache.ts'
 import type { FamilyResolution } from './family.ts'
-import { routingEndpointOf } from './endpoint.ts'
+import { routingDirectOf, routingEndpointOf, routingSourceOf } from './endpoint.ts'
 import { candidatesOf, cheapestRejectedOf } from './diagnostics.ts'
 import { judgeQuestions, judgeState, tierFromVerdict } from './judge.ts'
 import type { JudgeRequest } from './judge.ts'
 import type { KeyInfo } from './key-info.ts'
 import { quantizationsAtOrAbove } from './quantization.ts'
 import { unwrapHistory, wrapReplay } from './replay.ts'
-import { defaultMix, mixFromUsage, policyFor, rankWithRelaxation } from './select.ts'
-import type { RequiredInput } from './select.ts'
+import { directSourcesOf, defaultMix, isDirect, mixFromUsage, policyFor, rankWithRelaxation } from './select.ts'
+import type { DirectSource, RequiredInput } from './select.ts'
 import type { UsageTotals } from './select.ts'
 import type {
   JudgeRule,
@@ -56,6 +57,7 @@ import type {
   RoutingDecision,
   RoutingDiagnosticsRecord,
   RoutingFilters,
+  RoutingSource,
 } from './types.ts'
 
 /** Machine code for a tier whose endpoint lists could not be read at all. */
@@ -74,8 +76,13 @@ type RequestedTarget =
 interface Pin {
   requested: string
   tier: string
+  /** The canonical model id the request resolves to. */
   model: string
+  /** The source the pin dispatches through: OpenRouter, or one direct route. */
+  source: RoutingSource
+  /** The OpenRouter endpoint the pin names; absent on a direct-source or unpinned pin. */
   endpoint?: OpenRouterEndpoint
+  /** The OpenRouter `provider` block, exactly as the OpenRouter route expects it. */
   block: OpenRouterRoutingBlock
   lastActivityAt?: number
 }
@@ -92,21 +99,24 @@ export interface TiersAdapterDeps {
   routingState(session: Session): ModelRoutingState | undefined
   /** The session's measured token spend, from the token-usage projection. */
   usage(session: Session): UsageTotals | undefined
-  /** Reasoning efforts the inner route's model actually supports. */
-  innerEfforts(model: string, signal: AbortSignal): Promise<readonly string[] | undefined>
+  /** Reasoning efforts one route's model actually supports. */
+  innerEfforts(model: string, route: string, signal: AbortSignal): Promise<readonly string[] | undefined>
   /**
-   * Whether the inner route can dispatch one exact model id.
+   * Whether one pi-ai route can dispatch one exact model id.
    *
    * Under `snapshotPolicy: 'latest'` a tier's id is resolved against OpenRouter's
    * live catalog, which runs ahead of the static catalog the inner pi-ai route
    * was built with. A resolved release the inner route has never heard of would
    * be dispatched anyway and fail `UNKNOWN_MODEL` on every turn, so a decision
-   * asks this before ranking.
-   * @param model - the resolved `{author}/{slug}` id, dated release included.
+   * asks this before ranking. The same question applies to an `extraSources`
+   * entry: a route the runtime has never configured is not a candidate either.
+   * @param model - the id the dispatch would carry: a resolved `{author}/{slug}`
+   *   release, or a direct source's own route id.
+   * @param route - the pi-ai route key the request would go out on.
    * @param signal - the request's cancellation.
-   * @returns whether the inner route resolves the id.
+   * @returns whether that route resolves the id.
    */
-  innerCanDispatch(model: string, signal: AbortSignal): Promise<boolean>
+  innerCanDispatch(model: string, route: string, signal: AbortSignal): Promise<boolean>
   endpoints: EndpointsCache
   /** The whole OpenRouter catalog, read behind a cache; decides which snapshot a configured id names. */
   catalog: FamilyCache
@@ -135,6 +145,9 @@ export interface TiersRoute {
   /** The Decisions API endpoint the judge posts to. */
   decisionsUrl: string
 }
+
+/** The `provider` block a direct source carries: an empty one, since the route is not OpenRouter. */
+const EMPTY_BLOCK: OpenRouterRoutingBlock = {}
 
 /** The session-less requests the adapter serves share one pin slot. */
 const NO_SESSION_KEY = ''
@@ -378,12 +391,32 @@ export class TiersAdapter extends LlmAdapter {
 
   /**
    * Rebuild a pin from a decision a previous Host instance wrote to this Session's log.
-   * @returns `undefined` when the decision's tier no longer exists in the current
-   * settings — a live settings edit can rename or remove a tier after the decision
-   * was recorded, and nothing remains to build an unpinned routing block from.
+   *
+   * A decision recorded before the source field existed pins an OpenRouter
+   * endpoint; one that names a direct source rebuilds the pin from the
+   * `extraSources` entry still configured for that route and model, so the
+   * dispatch goes out on the same route it came in on after a Host restart.
+   * @returns `undefined` when the decision's tier or direct source no longer exists in the
+   *   current settings — a live settings edit can rename or remove one after the decision
+   *   was recorded, and nothing remains to build an unpinned routing block from.
    */
   private restorePin(settings: RoutingSettings, decision: SessionEventMap['model-routing/decision']): Pin | undefined {
     const endpoint = decision.endpoint
+    const source = decision.source
+    if (source !== undefined && source.kind !== 'openrouter') {
+      const tier = settings.tiers.find(candidate => candidate.name === decision.tier)
+      const direct = tier === undefined ? undefined : this.directCandidates(tier).get(decision.model)?.find(
+        candidate => candidate.route === source.kind && candidate.id === source.tag,
+      )
+      if (direct === undefined) return undefined
+      return {
+        requested: decision.requested,
+        tier: decision.tier,
+        model: decision.model,
+        source: routingSourceOf(direct),
+        block: EMPTY_BLOCK,
+      }
+    }
     if (endpoint === undefined) {
       const tier = settings.tiers.find(candidate => candidate.name === decision.tier)
       if (tier === undefined) return undefined
@@ -391,25 +424,49 @@ export class TiersAdapter extends LlmAdapter {
         requested: decision.requested,
         tier: decision.tier,
         model: decision.model,
+        source: { kind: 'openrouter', tag: decision.model },
         block: unpinnedBlock(tier),
       }
+
     }
     return {
       requested: decision.requested,
       tier: decision.tier,
       model: decision.model,
+      source: { kind: 'openrouter', tag: endpoint.tag },
       endpoint: {
         slug: endpoint.tag,
         ...endpoint.providerName === undefined ? {} : { providerName: endpoint.providerName },
         ...endpoint.quantization === undefined ? {} : { quantization: endpoint.quantization },
-        promptPrice: endpoint.promptUsd,
-        completionPrice: endpoint.completionUsd,
+        ...endpoint.promptUsd === undefined ? {} : { promptPrice: endpoint.promptUsd },
+        ...endpoint.completionUsd === undefined ? {} : { completionPrice: endpoint.completionUsd },
         ...endpoint.cacheReadUsd === undefined ? {} : { inputCacheReadPrice: endpoint.cacheReadUsd },
         ...endpoint.contextLength === undefined ? {} : { contextLength: endpoint.contextLength },
         ...endpoint.maxCompletionTokens === undefined ? {} : { maxCompletionTokens: endpoint.maxCompletionTokens },
       },
       block: { only: [endpoint.tag], allow_fallbacks: false },
     }
+  }
+
+  /**
+   * The direct-source candidates one tier's `extraSources` name, keyed by canonical model id.
+   *
+   * The map is the one place a request's model id is matched against a route's
+   * own id, so a `modelMap` entry and an OpenRouter model with the same
+   * canonical id rank as one model's two sources.
+   * @param tier - the tier whose sources to read.
+   * @returns the candidates per canonical id, in configuration order.
+   */
+  private directCandidates(tier: TierSettingsSnapshot): Map<string, DirectSource[]> {
+    const map = new Map<string, DirectSource[]>()
+    for (const source of tier.extraSources) {
+      for (const candidate of directSourcesOf(source, directSourceModels(source))) {
+        const candidates = map.get(candidate.model) ?? []
+        candidates.push(candidate)
+        map.set(candidate.model, candidates)
+      }
+    }
+    return map
   }
 
   /** Resolve what the request asked for against the configured tiers. */
@@ -565,7 +622,7 @@ export class TiersAdapter extends LlmAdapter {
     const models = await this.candidateModels(settings, target, tier, signal)
     const lists = await this.deps.endpoints.read(models, settings.endpointsTtlMs, signal)
     const allowFree = await this.freeAdmission({ settings, tier, session })
-    const excludedTags = this.excludedTagsOf(key)
+    const excluded = this.excludedTagsOf(key)
     const mix = mixFromUsage(
       session === undefined ? undefined : this.deps.usage(session),
       defaultMix(settings),
@@ -576,26 +633,58 @@ export class TiersAdapter extends LlmAdapter {
       requiredInput,
       modalities: await this.declaredModalities(settings, models, requiredInput, signal),
     }
+    // Direct sources ride the same ranking, keyed by the canonical id a
+    // request names: a `modelMap` entry and an OpenRouter model of that id are
+    // one model's two sources, and price decides between them. A route the
+    // runtime cannot dispatch is not a candidate at all — the decision reports
+    // it as undispatchable rather than pinning a request to a route nobody serves.
+    const directAll = this.directCandidates(tier)
+    const extraSources = new Map<string, DirectSource[]>()
+    for (const model of models) {
+      const candidates = directAll.get(model)
+      if (candidates === undefined) continue
+      const usable: DirectSource[] = []
+      for (const candidate of candidates) {
+        if (await this.innerKnows(candidate.id, candidate.route, signal)) usable.push(candidate)
+        else this.warnUndispatchableSource(candidate)
+      }
+      if (usable.length > 0) extraSources.set(model, usable)
+    }
     const result = rankWithRelaxation(
       lists,
       models,
       policyFor(tier, settings, {
         allowFree,
-        excludedTags,
+        excludedTags: excluded.tags,
+        ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
         ...preferModel === undefined ? {} : { preferModel },
         ...requirement,
+        ...extraSources.size === 0 ? {} : { extraSources },
       }),
       mix,
     )
     const best = result.ranked[0]
     let decidedModel: string
     let endpoint: OpenRouterEndpoint | undefined
+    let direct: DirectSource | undefined
+    let source: RoutingSource
     let block: OpenRouterRoutingBlock
     let unpinnedReason: string | undefined
-    if (best !== undefined) {
+    if (best !== undefined && isDirect(best.endpoint)) {
       decidedModel = best.model
-      endpoint = best.endpoint
-      block = { only: [best.endpoint.slug], allow_fallbacks: false }
+      direct = best.endpoint
+      source = routingSourceOf(best.endpoint)
+      // A direct source has no OpenRouter `provider` block: pi-ai refuses one on
+      // a model that does not speak `openai-completions`, so the dispatch carries
+      // the route alone.
+      block = EMPTY_BLOCK
+    } else if (best !== undefined) {
+      const chosen = best.endpoint
+      if (isDirect(chosen)) throw new LlmError('model-routing: a direct source reached the OpenRouter branch', 'INVALID_CONFIG')
+      decidedModel = best.model
+      endpoint = chosen
+      source = routingSourceOf(chosen)
+      block = { only: [chosen.slug], allow_fallbacks: false }
     } else if (result.unreadable.length === models.length && result.unreadable.length > 0) {
       const reasons = result.unreadable.map(entry => `${entry.model}: ${entry.reason}`).join('; ')
       if (settings.onEndpointsUnavailable === 'fail') {
@@ -611,6 +700,7 @@ export class TiersAdapter extends LlmAdapter {
         throw new LlmError(`model-routing: tier "${tier.name}" lists no models`, 'INVALID_CONFIG')
       }
       decidedModel = first
+      source = { kind: 'openrouter', tag: first }
       block = unpinnedBlock(tier)
       unpinnedReason = reasons
     } else {
@@ -630,19 +720,28 @@ export class TiersAdapter extends LlmAdapter {
       tier: tier.name,
       ...judge === undefined ? {} : { judge },
       model: decidedModel,
-      ...endpoint === undefined ? {} : { endpoint: routingEndpointOf(endpoint) },
+      source,
+      ...endpoint === undefined
+        ? direct === undefined ? {} : { endpoint: routingDirectOf(direct) }
+        : { endpoint: routingEndpointOf(endpoint) },
       ...unpinnedReason === undefined ? {} : { unpinnedReason },
       ...best === undefined ? {} : { blendedUsdPerToken: best.blendedUsdPerToken },
       ...result.relaxedUptime ? { relaxedUptime: true as const } : {},
       considered: result.considered,
-      runnersUp: result.ranked.slice(1, 4).map(entry => ({
-        model: entry.model,
-        tag: entry.endpoint.slug,
-        blendedUsdPerToken: entry.blendedUsdPerToken,
-        ...entry.endpoint.quantization === undefined ? {} : { quantization: entry.endpoint.quantization },
-        ...entry.endpoint.discount === undefined ? {} : { discount: entry.endpoint.discount },
-      })),
-      excludedTags: [...excludedTags].sort(),
+      runnersUp: result.ranked.slice(1, 4).map((entry) => {
+        const routed = isDirect(entry.endpoint) ? routingDirectOf(entry.endpoint) : routingEndpointOf(entry.endpoint)
+        return {
+          model: entry.model,
+          tag: routed.tag,
+          blendedUsdPerToken: entry.blendedUsdPerToken,
+          ...routed.quantization === undefined ? {} : { quantization: routed.quantization },
+          ...routed.discount === undefined ? {} : { discount: routed.discount },
+        }
+      }),
+      // Both kinds of exclusion, in one list: a reader of the event must see
+      // every candidate a failure took out, and `route:id` is the spelling that
+      // says which copy of a shared canonical id failed.
+      excludedTags: [...excluded.tags, ...excluded.sources].sort(),
       mix,
       rejections: result.rejections,
       cheapestRejected: cheapestRejectedOf(candidates),
@@ -673,6 +772,7 @@ export class TiersAdapter extends LlmAdapter {
       requested: options.model,
       tier: tier.name,
       model: decidedModel,
+      source,
       ...endpoint === undefined ? {} : { endpoint },
       block,
     }
@@ -722,20 +822,37 @@ export class TiersAdapter extends LlmAdapter {
     }
     for (const [index, resolution] of batch.resolutions.entries()) {
       if (resolution.resolved === resolution.configured) continue
-      if (await this.innerKnows(resolution.resolved, signal)) this.announce(resolution)
+      if (await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)) this.announce(resolution)
       else this.warnUndispatchable(resolution, configured[index] ?? resolution.resolved)
     }
     return this.dispatchableModels(batch.resolutions, configured, signal)
   }
 
-  /** Whether the inner route can dispatch one id, answered once per decision. */
-  private innerKnows(model: string, signal: AbortSignal): Promise<boolean> {
-    const cached = this.dispatchable.get(model)
+  /** Whether one route can dispatch one id, answered once per decision. */
+  private innerKnows(model: string, route: string, signal: AbortSignal): Promise<boolean> {
+    const key = `${route}:${model}`
+    const cached = this.dispatchable.get(key)
     if (cached !== undefined) return Promise.resolve(cached)
-    return this.deps.innerCanDispatch(model, signal).then((answer) => {
-      this.dispatchable.set(model, answer)
+    return this.deps.innerCanDispatch(model, route, signal).then((answer) => {
+      this.dispatchable.set(key, answer)
       return answer
     })
+  }
+
+  /**
+   * Report an `extraSources` candidate whose route the runtime cannot dispatch.
+   *
+   * One line per route and model, not per boundary: the same configuration
+   * recurs on every decision of every turn until the route is configured.
+   * @param candidate - the direct candidate that names an unknown route.
+   */
+  private warnUndispatchableSource(candidate: DirectSource): void {
+    this.warnOnce(
+      `inner-unknown-source:${candidate.route}:${candidate.id}`,
+      `model-routing: extraSource "${candidate.route}" serves "${candidate.id}", which no`
+      + ' configured pi-ai route can dispatch, so that source never ranks — @deepseek-ai/dsh-llm-pi-ai'
+      + ` has no route "${candidate.route}"`,
+    )
   }
 
   /**
@@ -778,7 +895,7 @@ export class TiersAdapter extends LlmAdapter {
     const ranked: string[] = []
     for (const [index, resolution] of resolutions.entries()) {
       const dispatchable = resolution.resolved === resolution.configured
-        || await this.innerKnows(resolution.resolved, signal)
+        || await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)
       // `resolutions` is derived one-for-one from `configured`, so the index is
       // always present; `resolved` is the total fallback if that ever changed.
       ranked.push(dispatchable ? resolution.resolved : configured[index] ?? resolution.resolved)
@@ -795,6 +912,11 @@ export class TiersAdapter extends LlmAdapter {
    * re-decision stays inside the pin's own tier: the tier is the deployment's
    * cost and quality contract, and the requirement is about which model inside it
    * may answer, not about which contract this Session is on.
+   *
+   * Only an OpenRouter pin is checked against the catalog: a direct source's
+   * modality is not something OpenRouter's catalog knows, so a direct pin is
+   * never re-decided on this ground and its own decision's `modality` filter is
+   * what admits it.
    * @param settings - the whole settings value.
    * @param pin - the pin this Session is held to.
    * @param requiredInput - the input modality the request carries.
@@ -807,6 +929,7 @@ export class TiersAdapter extends LlmAdapter {
     requiredInput: RequiredInput,
     signal: AbortSignal,
   ): Promise<string | undefined> {
+    if (pin.source.kind !== 'openrouter') return undefined
     const batch = await this.deps.catalog.modalities([pin.model], settings.catalogTtlMs, signal)
     if (acceptsInput(batch.declared.get(pin.model), requiredInput)) return undefined
     this.warnOnce(
@@ -895,14 +1018,19 @@ export class TiersAdapter extends LlmAdapter {
     return allowFree
   }
 
-  /** The tags this session's recent failures excluded, still live. */
-  private excludedTagsOf(key: string): ReadonlySet<string> {
+  /** The candidates this session's recent failures excluded, still live, split by kind. */
+  private excludedTagsOf(key: string): { tags: ReadonlySet<string>; sources: ReadonlySet<string> } {
     const now = this.deps.now()
     const recorded = this.excluded.get(key)
-    if (recorded === undefined) return new Set()
-    const live = new Set<string>()
-    for (const [tag, until] of recorded) if (until > now) live.add(tag)
-    return live
+    const tags = new Set<string>()
+    const sources = new Set<string>()
+    for (const [tag, until] of recorded ?? []) {
+      if (until <= now) continue
+      const at = tag.indexOf(':')
+      if (at === -1) tags.add(tag)
+      else sources.add(tag)
+    }
+    return { tags, sources }
   }
 
   /** Ask the judge, or fall back to the default tier when it cannot be asked. */
@@ -964,13 +1092,17 @@ export class TiersAdapter extends LlmAdapter {
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
     for (let attempt = 0; ; attempt += 1) {
-      const efforts = await this.deps.innerEfforts(pin.model, signal)
+      const efforts = await this.deps.innerEfforts(
+        pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
+        pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
+        signal,
+      )
       const requestedMax = options.maxTokens ?? tier.maxTokens
       const endpointCap = pin.endpoint?.maxCompletionTokens ?? Number.POSITIVE_INFINITY
       const inner: GenerateOptions = {
         ...options,
-        provider: this.route.innerRoute,
-        model: pin.model,
+        provider: pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
+        model: pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
         messages: unwrapHistory(options.messages, this.route.routeName),
         maxTokens: Math.min(requestedMax, endpointCap),
         ...effortOf(mapEffort(options.reasoningEffort, efforts)),
@@ -978,7 +1110,9 @@ export class TiersAdapter extends LlmAdapter {
       // `AsyncIterable` types its iterator's value as `any`, so the inner stream is
       // re-declared through a helper that carries the chunk type the caller knows
       // it produces. Nothing here converts a value; it names one.
-      const iterator = chunkIterator(dispatch.stream(inner, { openRouterRouting: pin.block }))
+      const iterator = chunkIterator(dispatch.stream(inner, pin.source.kind === 'openrouter'
+        ? { openRouterRouting: pin.block }
+        : {}))
       // pi-ai's in-band failure reporting always yields a `usage` chunk before the
       // error `finish` (llm-pi-ai's stream.ts `'error'` case), so "has this attempt
       // produced any content yet" must look past a leading `usage` chunk — reading
@@ -997,7 +1131,7 @@ export class TiersAdapter extends LlmAdapter {
         const reroutable = error instanceof LlmError
           && settings.rerouteCodes.includes(error.code)
           && attempt < settings.maxReroutes
-          && pin.endpoint !== undefined
+          && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
         if (!reroutable) throw error
         this.excludeEndpoint(key, pin, error.code, settings)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
@@ -1009,7 +1143,7 @@ export class TiersAdapter extends LlmAdapter {
       const reroutable = failure !== undefined
         && settings.rerouteCodes.includes(failure)
         && attempt < settings.maxReroutes
-        && pin.endpoint !== undefined
+        && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
       if (reroutable) {
         await iterator.return?.(undefined)
         this.excludeEndpoint(key, pin, failure, settings)
@@ -1018,11 +1152,11 @@ export class TiersAdapter extends LlmAdapter {
       }
       if (failure !== undefined) {
         this.failures.add(key)
-        if (pin.endpoint !== undefined) this.excludeEndpoint(key, pin, failure, settings)
+        this.excludeEndpoint(key, pin, failure, settings)
       }
       for (const usageChunk of leadingUsage) yield usageChunk
       yield chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)
-        ? { ...chunk, replayState: wrapReplay(chunk.replayState, this.route.innerRoute, pin.model) }
+        ? { ...chunk, replayState: wrapReplay(chunk.replayState, pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind, pin.model) }
         : chunk
       let done = false
       try {
@@ -1036,9 +1170,7 @@ export class TiersAdapter extends LlmAdapter {
             // endpoint. Excluding the failed one is still required: without it
             // the next turn's failure boundary re-decides onto the same one.
             this.failures.add(key)
-            if (pin.endpoint !== undefined) {
-              this.excludeEndpoint(key, pin, error instanceof LlmError ? error.code : 'PI_AI_ERROR', settings)
-            }
+            this.excludeEndpoint(key, pin, error instanceof LlmError ? error.code : 'PI_AI_ERROR', settings)
             throw error
           }
           if (next.done === true) {
@@ -1054,10 +1186,10 @@ export class TiersAdapter extends LlmAdapter {
               // replayed on another endpoint. Excluding the failed one is still
               // required: without it the failure boundary re-decides to the same
               // endpoint and the next turn fails on it again.
-              if (pin.endpoint !== undefined) this.excludeEndpoint(key, pin, code, settings)
+              this.excludeEndpoint(key, pin, code, settings)
             }
             yield SUCCESSFUL_FINISH.has(item.reason.kind)
-              ? { ...item, replayState: wrapReplay(item.replayState, this.route.innerRoute, pin.model) }
+              ? { ...item, replayState: wrapReplay(item.replayState, pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind, pin.model) }
               : item
             if (code === undefined) this.failures.delete(key)
           } else {
@@ -1098,9 +1230,18 @@ export class TiersAdapter extends LlmAdapter {
     return this.decide({ ...input, boundary: 'failure' }).then(decision => decision.pin)
   }
 
-  /** Exclude the failed tag for a while, and block free endpoints until tomorrow after a rate limit. */
+  /**
+   * Exclude the failed candidate for a while, and block free endpoints until
+   * tomorrow after a rate limit.
+   *
+   * A direct candidate is excluded by `route:id`, not by its id alone: one route
+   * may serve the same id as several models' candidates, and only the pair says
+   * which one failed.
+   */
   private excludeEndpoint(key: string, pin: Pin, code: string, settings: RoutingSettings): void {
-    const tag = pin.endpoint?.slug
+    const tag = pin.source.kind === 'openrouter'
+      ? pin.endpoint?.slug
+      : `${pin.source.kind}:${pin.source.tag}`
     if (tag === undefined) return
     const recorded = this.excluded.get(key) ?? new Map<string, number>()
     recorded.set(tag, this.deps.now() + settings.excludeAfterFailureMs)

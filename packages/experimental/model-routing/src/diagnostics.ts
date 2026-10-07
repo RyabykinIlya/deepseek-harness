@@ -3,7 +3,7 @@
  * and the append-only JSONL file that keeps it.
  *
  * The session event records what won. Answering *why a cheaper rival lost* needs
- * what the event cannot carry: every endpoint the ranking walked, with its
+ * what the event cannot carry: every candidate the ranking walked, with its
  * prices, its OpenRouter discount, its measurements, and the exact reason it was
  * dropped. That table is what this module builds and writes, one JSON line per
  * decision, so a price decision taken weeks ago can be re-checked against the
@@ -12,7 +12,7 @@
  * Every line is bounded before it is written: candidates are added in ranking
  * order and a line never exceeds the configured byte budget, so a tier that
  * lists dozens of models cannot make one record unbounded. What did not fit is
- * derivable from the line itself — `considered` names every endpoint the
+ * derivable from the line itself — `considered` names every candidate the
  * ranking walked and `candidates` lists those that fit.
  *
  * @module dsh-experimental-model-routing/diagnostics
@@ -20,9 +20,8 @@
 
 import { appendFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import type { OpenRouterEndpoint } from '@deepseek-ai/dsh-llm-pi-ai'
-import { blendedPrice } from './select.ts'
-import type { SelectionResult, TurnMix } from './select.ts'
+import { blendedPrice, isDirect } from './select.ts'
+import type { Candidate, SelectionResult, TurnMix } from './select.ts'
 import type { RoutingCandidate, RoutingDiagnosticsRecord } from './types.ts'
 
 /** One complete JSONL line and what its budget could not hold. */
@@ -33,11 +32,35 @@ export interface DiagnosticsLine {
   dropped: number
 }
 
-/** One endpoint under the route's own names, without its ranking verdict. */
-function candidateOf(model: string, endpoint: OpenRouterEndpoint): RoutingCandidate {
+/**
+ * One candidate under the route's own names, without its ranking verdict.
+ *
+ * The `source` field is what lets a log say where a candidate came from:
+ * `openrouter` for an endpoint, the pi-ai route key for a direct source. A
+ * direct source states only the prices its `extraSources` entry declared, so a
+ * priced one shows the exact numbers its blended price was computed from.
+ * @param model - the canonical model id the candidate ranks under.
+ * @param endpoint - the candidate.
+ * @returns the same facts under the route's own names.
+ */
+export function candidateOf(model: string, endpoint: Candidate): RoutingCandidate {
+  if (isDirect(endpoint)) {
+    const prices = endpoint.prices
+    return {
+      model,
+      tag: endpoint.id,
+      source: endpoint.route,
+      ...prices === undefined ? {} : {
+        promptUsd: prices.prompt,
+        completionUsd: prices.completion,
+        ...prices.cacheRead === undefined ? {} : { cacheReadUsd: prices.cacheRead },
+      },
+    }
+  }
   return {
     model,
     tag: endpoint.slug,
+    source: 'openrouter',
     ...endpoint.providerName === undefined ? {} : { providerName: endpoint.providerName },
     ...endpoint.quantization === undefined ? {} : { quantization: endpoint.quantization },
     ...endpoint.promptPrice === undefined ? {} : { promptUsd: endpoint.promptPrice },
@@ -52,15 +75,15 @@ function candidateOf(model: string, endpoint: OpenRouterEndpoint): RoutingCandid
 }
 
 /**
- * Every endpoint one ranking walked, as a diagnostics record lists them.
+ * Every candidate one ranking walked, as a diagnostics record lists them.
  *
- * Admitted endpoints come first in ranking order, then the dropped ones in the
- * order the walk met them. A dropped endpoint keeps the blended price it *would*
+ * Admitted candidates come first in ranking order, then the dropped ones in the
+ * order the walk met them. A dropped candidate keeps the blended price it *would*
  * have been charged at, which is what makes "a cheaper one was dropped" a fact
  * the record can state rather than an opinion it cannot back.
  * @param result - the outcome of the ranking pass that decided.
  * @param mix - the turn's token buckets the prices are blended under.
- * @returns one entry per considered endpoint.
+ * @returns one entry per considered candidate.
  */
 export function candidatesOf(result: SelectionResult, mix: TurnMix): RoutingCandidate[] {
   const admitted = result.ranked.map((entry, index) => ({
@@ -80,7 +103,7 @@ export function candidatesOf(result: SelectionResult, mix: TurnMix): RoutingCand
 }
 
 /**
- * The cheapest endpoint each rejection reason dropped.
+ * The cheapest candidate each rejection reason dropped.
  *
  * This is the answer to "the leader is not the cheapest — where did the cheaper
  * one go": one entry per reason, cheapest first overall. A dropped endpoint that

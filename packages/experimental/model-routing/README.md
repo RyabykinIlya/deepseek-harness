@@ -41,6 +41,17 @@ When no candidate model of the tier is shown to accept image input, the decision
 
 `validateSettings` refuses a settings value the route cannot act on — a tier name that is not a route model id, a model id without an `author/`, a default effort outside the effort list, an inverted pair of judge thresholds — with one message naming the first field that cannot be served.
 
+<a id="extra-sources"></a>
+### Extra sources
+
+A tier's candidates are not only OpenRouter endpoints. `extraSources` (default `[]`) lists the non-OpenRouter sources the same tier ranks: each entry names the pi-ai route that dispatches its models (`route`), the model ids that route serves — under their own names (`models`), or through a `modelMap` from a canonical id to the route's own id — and the per-token prices the ranking blends (`price`). `xiaomi/mimo-v2.6-pro` on OpenRouter and `mimo-v2.6-pro` on a direct route are therefore one model's two sources, and the blended price decides between them.
+
+A `modelMap` value may append `@` and a JSON price object to state that candidate's own prices. A plan that charges one flat rate per token names `usdPerToken`; a plan that weights tokens by kind names the buckets separately (`promptUsdPerToken`, `completionUsdPerToken`, `cacheReadUsdPerToken`), which is how a credit-weighted subscription is priced — Xiaomi MiMo Token Plan charges credits per cache-hit, cache-miss and output token, so its source states the three buckets, e.g. `mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}`. An entry without a price object is priced by the source's `price`, and a source that states none at all is ranked as `unpriced` — never as free. The per-model object is the only place `modelMap`'s `@` spelling is read, so it has exactly one meaning.
+
+A direct source states no status, uptime or quantization, so those filters are neutral for it: an absent measurement must not reject, or no direct source could ever rank. The capability filters still apply. `tools` is the one a route must declare — `tools` (default `true`) on the source — and `context` and the per-model `modality` rule bind exactly as they do for an endpoint. A source whose route `@deepseek-ai/dsh-llm-pi-ai` has not configured never ranks; the decision reports it as undispatchable instead of pinning a request to a route nobody serves.
+
+A chosen direct source dispatches with `provider` set to its own route and without the OpenRouter `provider` block: pi-ai rejects that block on a model that does not speak `openai-completions`. The `model-routing/decision` event records which kind of source won (`source: { kind, tag }`, `kind: 'openrouter'` or the route key) and, for a priced direct source, the exact per-token prices its blended price was computed from, so a decision log says why a source won.
+
 <a id="snapshots"></a>
 ### Snapshots
 
@@ -61,6 +72,8 @@ The same cached catalog read also states what each release accepts as input, and
 ### Ranking
 
 `rankEndpoints` sorts candidates by a **blended** price per token, `cached · cacheRead + fresh · prompt + output · completion`, because an agent turn is overwhelmingly cached input and the providers that look cheapest on prompt alone frequently publish no cache-read discount at all. `preferModel` puts one model's endpoints ahead of every other model's while leaving price order intact inside that group, which is what keeps a failed provider from re-routing a conversation onto a different model mid-dialog. `rankWithRelaxation` re-runs once without the uptime floor when that floor is what emptied the list, and reports `relaxedUptime` so the decision log says so.
+
+An `extraSources` candidate is ranked under the same formula from the prices its entry declares, and a direct source is excluded by `route:id` rather than by its route id alone: one route may serve the same id as several models' candidates, and only the pair says which one failed.
 
 The modality filter is the one rejection decided per model rather than per endpoint: when the request carries an image, every endpoint of a candidate model the catalog does not show accepting one is rejected as `modality`, and each of those endpoints still counts toward `considered`. Relaxation does not cover it — `rankWithRelaxation` drops only the uptime floor — so a tier with no image-capable candidate fails instead of retrying without the requirement.
 
@@ -128,6 +141,8 @@ None; this package dispatches nothing itself. The route that consumes its rankin
 - Under `snapshotPolicy: 'latest'` a tier follows its families, so a new release changes the model and the price behind a configuration nobody edited. The catalog is read at most every `catalogTtlMs`, and the move is reported once in the log and recorded in every decision, but nothing asks first. A deployment that has to approve a release change belongs on `pinned`.
 - The family comes from the catalog's `canonical_slug`, so a model published only as an undated id — including every OpenRouter `~alias` — has no family and never moves.
 - The diagnostics file is append-only and never rotated. Each line is bounded, the file is not: a deployment that enables it owns its retention.
+- A direct source declares its own prices and its `tools` capability; nothing measures its status, uptime or quantization, so those filters stay neutral for it. A deployment that needs one of those to bind must express it in the source's configuration, not expect a measurement to appear.
+- `KEY_QUOTA` is in the default `rerouteCodes` because `dsh-llm-pi-ai` rotates keys internally and only surfaces it once every key of a route is exhausted or cooling. At this level it means "this route cannot serve the request now", and the reroute moves to the next candidate — a different source or model — rather than failing the turn.
 
 <a id="dev-note"></a>
 ### Dev Note

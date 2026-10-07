@@ -1,5 +1,59 @@
 # Доработки Model Routing: Claude-proxy, ротация ключей, Xiaomi Token Plan
 
+## Актуализация (2026-10-06, вечер): scope расширен по запросу владельца
+
+Владелец подтвердил 2026-10-06: пункты, ранее помеченные «не делаем»/«отложено»,
+возвращаются в работу. Отказы, зафиксированные в
+[../model-routing-claude-proxy/DECISIONS.md](../model-routing-claude-proxy/DECISIONS.md),
+были решением агента-исполнителя, не ограничением задачи. Полный целевой сценарий:
+
+1. **Auto-режим: сначала Claude-подписка** — те же правила `pro`/`flash`, что и для
+   остальных кандидатов (судья и тиры из `model-routing`).
+2. **При исчерпании лимита или отказе Claude** — переход на **Xiaomi против OpenRouter,
+   выбирая дешевле** (потировое сравнение blended-цены).
+3. **Claude: несколько ключей**, ротация по мере исчерпания; исчерпаны **оба** — переход
+   на шаг 2.
+
+### Что уже отгружено (проверено по коду, коммит `74caa55c7c`)
+
+| Что | Где | Статус |
+|---|---|---|
+| Код `KEY_QUOTA`, `isKeyQuotaExceededError`, `ACCOUNT_LIMIT_REACHED` | `packages/llm/llm/src/error.ts` | **готово** |
+| Ветка `KEY_QUOTA` до аккаунт-квоты и 429 в `classifyPiAiError` | `packages/llm/llm-pi-ai/src/stream.ts` | **готово** |
+| `apiKeys: string[]`, resolved-список, `keyCooldownMs` (обязателен при >1 ключе) | `packages/llm/llm-pi-ai/src/config.ts` | **готово** |
+| Цикл ротации с буфером до первого контентного чанка, кулдаун в замыкании `apply` | `packages/llm/llm-pi-ai/src/adapter.ts`, `index.ts` | **готово** |
+
+Ротация сделана правильно: ключ помечается исчерпанным только пока не отдан
+контентный чанк, состояние кулдауна живёт между запросами и умирает с плагином.
+
+### Расхождение, которое нужно закрыть
+
+Message коммита `74caa55c7c` утверждает, что `KEY_QUOTA` попал в `rerouteCodes`. В коде
+этого **нет**: дефолт `rerouteCodes` (`packages/experimental/model-routing/src/config.ts:321`)
+остался `['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR']`, и пакет
+`model-routing` вообще не импортирует `KEY_QUOTA`. Статус B5 в
+[TASKS.md](../model-routing-claude-proxy/TASKS.md#решение-по-b5-не-делаем) — «не делаем».
+Итог: либо дописать код, либо поправить message/доки, чтобы git history не врал.
+
+По целевому сценарию `KEY_QUOTA` в `rerouteCodes` **нужен**, но срабатывать он должен по
+исчерпании **всего пула ключей** маршрута (не одного ключа — это уже ротация внутри
+`llm-pi-ai`). После ротации выдохнулась — запрос уходит в `model-routing` и рероутится на
+другой источник/модель.
+
+### Что возвращается в работу (было отложено)
+
+| Пункт плана | Что делаем |
+|---|---|
+| **Часть 1, маршрут `claude-proxy`** | Маршрут в `llm-pi-ai` + прохождение UA-гейта прокси (`user-agent: claude-cli/x.y.z`). Реализация UA **решена владельцем 2026-10-06**: узкое поле `userAgentOverride` в профиле `llm-pi-ai` (не relay), значение `claude-cli/<ver>` только для этого маршрута |
+| **Часть 3, `subscription`-блок** | Конфиг цены подписки Xiaomi, **по-корзинные** кредитные веса (1:1 был ошибкой; см. «Актуальная цена Xiaomi» ниже), off-peak коэффициент 0.8x |
+| **Часть 4, обобщение «эндпоинт → источник»** | `tiers` принимает кандидатов не только из OpenRouter: `extraSources`, `modelMap`, `Pin` с ключом маршрута, диспатч через свой `innerRoute` |
+| **Часть 4, потировое сравнение цены** | Xiaomi против самой дешёвой модели тира (не против одной модели) |
+| **B5, `KEY_QUOTA` в `rerouteCodes`** | См. выше: срабатывает по исчерпании пула |
+
+Приоритет источников в Auto: **Claude → (Xiaomi | OpenRouter, что дешевле)**. Claude
+выбирается первым, пока у пула есть живой ключ и он отвечает; при `KEY_QUOTA` по всем
+ключам или отказе маршрута — переход к сравнению цены.
+
 ## Правки по итогам валидации (2026-10-06)
 
 Проверено по коду, не по описанию. Ниже — что подтвердилось, что нет, и как меняется
@@ -196,13 +250,13 @@ fiber через `ctx.effect`.
 | OpenAI-совместимый base URL | `https://token-plan-sgp.xiaomimimo.com/v1` |
 | Anthropic-совместимый base URL | `https://token-plan-sgp.xiaomimimo.com/anthropic` (соответствует `/anthropic/v1/messages`; `GET .../anthropic/v1/models` — 404, каталог моделей только на `/v1/models`) |
 | Модели | `mimo-v2.6-pro`, `mimo-v2.6-flash`, `mimo-v2.5-pro`, `mimo-v2.5`, `mimo-v2.5-asr`, `mimo-v2.5-tts`, `mimo-v2.5-tts-voiceclone`, `mimo-v2.5-tts-voicedesign` (TTS/ASR в Model Routing не нужны) |
-| План | 11 млрд кредитов, $16; скидка 20% в не-пик: 9:00–17:00 PDT |
+| План | 11 млрд кредитов, $16 (Standard); тарифы: Lite $6/4.1B, Pro $50/38B, Max $100/82B; ночная скидка **0.8x** в 00:00–08:00 Пекин (= 19:00–03:00 МСк) |
 | Auth | `Authorization: Bearer <token>` (OpenAI-путь) или `x-api-key` (Anthropic-путь) |
 | Поведение исчерпания | `429 {"code":"429","message":"quota exhausted","type":"limitation"}` — per-account; клиентской UA-проверки нет |
 | Тестовый токен | работает: `GET /v1/models` → 200; генерация → 429 «quota exhausted» (на токене нет денег — ожидаемо) |
 
 **Экономика подписки** (из сессии `session-b20d1488-0e6f-4dc6-a9c6-f6f29df2d709`):
-эффективная ставка = $16 / 11e9 кредитов ≈ **$1.45e-6 за кредит**.
+1 кредит = $16 / 11e9 = **$1.454545e-9**; вес токена в кредитах зависит от корзины — см. «Актуальная цена Xiaomi» ниже.
 Замер за сутки на OpenRouter для `xiaomi/mimo-v2.6-pro`: 113.18M токенов (89% cache-read) обошлись в $5.96; на подписке те же токены — ~$0.16 (≈36× дешевле). Разбивка фактурации OpenRouter для этой модели: uncached input ≈ $0.43/1M, output ≈ $0.87/1M, cache-read ≈ $0.0036/1M.
 **Важно:** план считает *кредиты*, а не токены; правило конверсии кредитов (вес input/output/cache по моделям) нужно уточнить у платформы — см. «Открытые вопросы».
 
@@ -281,17 +335,28 @@ fiber через `ctx.effect`.
 В конфигурацию маршрута/источника добавить блок подписки (deployment-owned, валидируемый схемой):
 
 ```yaml
-subscription:
-  creditsUsd: 16            # $ за пакет
-  credits: 11000000000      # кредитов в пакете
-  creditToTokenRatio: 1     # НЕИЗВЕСТНО — см. открытые вопросы; поле обязательно, значение уточнить
-  offPeakDiscount: 0.2
-  offPeakWindow: "09:00-17:00 America/Los_Angeles"
+extraSources:
+  - route: xiaomi-plan
+    modelMap:
+      # per-bucket USD/token derived from credit weights × ($16/11e9); НЕ плоская usdPerToken
+      xiaomi/mimo-v2.6-pro@'{"cacheReadUsdPerToken":3.636364e-9,"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7}': mimo-v2.6-pro
+      xiaomi/mimo-v2.6-flash@'{"cacheReadUsdPerToken":2.909091e-9,"promptUsdPerToken":1.454545e-7,"completionUsdPerToken":2.909091e-7}': mimo-v2.6-flash
 ```
 
-Эффективная blended-цена подписки (тот же формат, что `blendedPrice` в `packages/experimental/model-routing/src/select.ts:180`):
-`effectiveUsdPerToken = creditsUsd / (credits * creditToTokenRatio) * (1 - offPeakDiscount ? вне пика : 0)`.
-В отличие от OpenRouter-цен, подписка не различает cache/fresh/output — одна ставка на токен; для blended-сравнения подставлять её во все три компоненты микса (`mixCached/mixFresh/mixOutput`).
+**Актуальная цена Xiaomi (обновлено 2026-10-06).** Кредит — вес токена по корзине, а не токен.
+[Token Plan](https://mimo.mi.com/docs/en-US/price/token-plan) (сверено с
+[PAYG](https://mimo.mi.com/docs/en-US/price/pay-as-you-go)):
+
+| Модель | cache hit (Credits/токен) | cache miss | output | → `cacheReadUsdPerToken` / `promptUsdPerToken` / `completionUsdPerToken` |
+|---|---|---|---|---|
+| `mimo-v2.6-pro` | 2.5 | 300 | 600 | 3.636364e-9 / 4.363636e-7 / 8.727273e-7 |
+| `mimo-v2.6-flash` | 2 | 100 | 200 | 2.909091e-9 / 1.454545e-7 / 2.909091e-7 |
+
+1 кредит = $16 / 11e9 = $1.454545e-9. Плоская `usdPerToken` для Xiaomi **неприменима**:
+подписка различает вход/выход/кэш через кредитные веса. Смешанная цена считается через
+`blendedPrice` (`select.ts:180`) по миксу `mixCached/mixFresh/mixOutput` — итог зависит от
+доли кэша. Ночной коэффициент **0.8x** (00:00–08:00 Пекин = 19:00–03:00 МСк) умножает
+всё; пер-закупка/годовая −12%.
 
 ### C.3 Учёт кредитов и fallback
 
@@ -349,7 +414,7 @@ subscription:
 
 ## Открытые вопросы (уточнить до старта)
 
-1. **Кредиты Xiaomi ≠ токены?** Как платформа конвертирует кредиты в фактуруцию по моделям/типам токенов (input/output/cache)? Без этого эффективная цена подписки — оценка. Поле `creditToTokenRatio` в C.2 обязательно как раз из-за этого.
+1. ~~**Кредиты Xiaomi ≠ токены?**~~ **ЗАКРЫТ 2026-10-06.** Кредит — вес токена по корзине (см. «Актуальная цена Xiaomi»): pro 2.5/300/600, flash 2/100/200 за hit/miss/out. Цена подписки по-корзинна; плоское `creditToTokenRatio` не нужно.
 2. **Окно/сброс кредитов** — 11 млрд в месяц? на аккаунт навсегда? когда обновляется лимит ключа у Claude-proxy (текст ошибки «Raise the limit» намекает на пользовательский лимит на ключ)?
 3. **Anthropic-протокол Xiaomi** — `GET /anthropic/v1/models` отдаёт 404; если выбирать `anthropic-messages` ради cache_control, каталог моделей придётся объявлять вручную (уже поддержано `models:` в профиле). Какой протокол фиксируем как основной?
 4. **Хранение ключей** — несколько ключей Claude-proxy сейчас в `.env` (`CLAUDE_PROXY_API_KEY`); заводить `CLAUDE_PROXY_API_KEY_2..N` там же или в credentials service (web Models page)? От этого зависит форма `apiKeys`.

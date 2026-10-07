@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Config, readSettings, validateSettings } from '../src/config.ts'
-import type { RoutingSettings } from '../src/config.ts'
+import { Config, directSourceModels, readSettings, validateSettings } from '../src/config.ts'
+import type { ExtraSource, RoutingSettings } from '../src/config.ts'
 
 /** Default settings, with the case's overrides laid over them. */
 function settings(over: Record<string, unknown> = {}): RoutingSettings {
@@ -152,5 +152,168 @@ describe('model-routing settings validation', () => {
       .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')
     expect(() =>{  validateSettings(settings({ diagnosticsMaxBytes: 1.5 })) })
       .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')
+  })
+})
+
+describe('tier extraSources', () => {
+  /** One source that serves the pro model under its own route id. */
+  const CLAUDE: ExtraSource = {
+    route: 'claude-proxy',
+    models: [],
+    modelMap: { 'deepseek/deepseek-v4-pro': 'mimo-v2.6-pro' },
+    price: {},
+    tools: true,
+  }
+
+  it('accepts a source and reads its candidates back', () => {
+    // The judge's defaults name `flash`; a single-tier case points every tier
+    // reference at `pro` so validation reaches the source at all.
+    const value = settings({
+      tiers: [{ ...PRO, extraSources: [CLAUDE] }],
+      defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+    })
+    expect(() => { validateSettings(value) }).not.toThrow()
+    expect(directSourceModels(value.tiers[0]!.extraSources[0]!)).toEqual([
+      { model: 'deepseek/deepseek-v4-pro', id: 'mimo-v2.6-pro' },
+    ])
+  })
+
+  it('carries a source-wide price and a per-model one, in that precedence', () => {
+    const priced: ExtraSource = { ...CLAUDE, price: { usdPerToken: 1e-7 } }
+    expect(directSourceModels(priced)).toEqual([
+      { model: 'deepseek/deepseek-v4-pro', id: 'mimo-v2.6-pro', price: { usdPerToken: 1e-7 } },
+    ])
+    const own: ExtraSource = {
+      ...priced,
+      modelMap: { 'deepseek/deepseek-v4-pro': 'mimo-v2.6-pro@{"usdPerToken":1.455e-9}' },
+    }
+    expect(directSourceModels(own)).toEqual([
+      { model: 'deepseek/deepseek-v4-pro', id: 'mimo-v2.6-pro', price: { usdPerToken: 1.455e-9 } },
+    ])
+  })
+
+  it('lists `models` entries under their own id', () => {
+    const value = settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, models: ['claude/opus-4.6'] }] }] })
+    expect(directSourceModels(value.tiers[0]!.extraSources[0]!)).toEqual([
+      { model: 'claude/opus-4.6', id: 'claude/opus-4.6' },
+      { model: 'deepseek/deepseek-v4-pro', id: 'mimo-v2.6-pro' },
+    ])
+  })
+
+  it('refuses a source with an empty route key or no models', () => {
+    expect(() => { validateSettings(settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, route: ' ' }] }] })) })
+      .toThrow('model-routing: tier "pro" extraSource route must be a non-empty route key')
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ route: 'claude-proxy', models: [], modelMap: {}, price: {} }] }],
+      }))
+    }).toThrow('model-routing: tier "pro" extraSource "claude-proxy" names no models')
+  })
+
+  it('refuses an empty id, a repeated one, and an empty map key', () => {
+    expect(() => {
+      validateSettings(settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, models: [''] }] }] }))
+    }).toThrow('model-routing: tier "pro" extraSource "claude-proxy" model must be a non-empty id')
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, models: ['z-ai/glm-5.3', 'z-ai/glm-5.3'] }] }],
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" model "z-ai/glm-5.3"'
+      + ' appears twice in the tier\'s sources',
+    )
+    expect(() => {
+      validateSettings(settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { '': 'x' } }] }] }))
+    }).toThrow('model-routing: tier "pro" extraSource "claude-proxy" modelMap key must be a non-empty canonical id')
+    expect(() => {
+      validateSettings(settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': '' } }] }] }))
+    }).toThrow('model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"] must be a non-empty route id')
+  })
+
+  it('accepts two sources serving one canonical id, and refuses one source naming it twice', () => {
+    // Two sources of one model rank against each other; the ambiguity worth
+    // refusing is a single source naming the same canonical id twice.
+    const two = settings({
+      tiers: [{ ...PRO, extraSources: [CLAUDE, { ...CLAUDE, route: 'xiaomi-plan' }] }],
+      defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+    })
+    expect(() => { validateSettings(two) }).not.toThrow()
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{
+          ...PRO,
+          extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'a', 'z-ai/glm-5.3': 'b' } }],
+        }],
+        defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+      }))
+    }).not.toThrow()
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{
+          ...PRO,
+          extraSources: [{ ...CLAUDE, models: ['deepseek/deepseek-v4-pro'], modelMap: { 'deepseek/deepseek-v4-pro': 'm' } }],
+        }],
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' names a model this source already serves',
+    )
+  })
+
+  it('refuses a price object that is not one, and a negative price', () => {
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'm@nope' } }] }],
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' price must be a JSON object',
+    )
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'm@{"usdPerToken":-1}' } }] }],
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' price must be a JSON object of the price fields with non-negative numbers',
+    )
+    expect(() => {
+      validateSettings(settings({ tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, price: { usdPerToken: -1 } }] }] }))
+    }).toThrow('model-routing: tier "pro" extraSource "claude-proxy" price usdPerToken must be a non-negative number')
+  })
+
+  it('refuses a price object with an unknown field, and one whose number is missing', () => {
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'm@{"tokens":1}' } }] }],
+        defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' price must be a JSON object of the price fields with non-negative numbers',
+    )
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'm@{"usdPerToken":null}' } }] }],
+        defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' price must be a JSON object of the price fields with non-negative numbers',
+    )
+    // An array is a JSON value but not a price object.
+    expect(() => {
+      validateSettings(settings({
+        tiers: [{ ...PRO, extraSources: [{ ...CLAUDE, modelMap: { 'deepseek/deepseek-v4-pro': 'm@[1]' } }] }],
+        defaultTier: 'pro', judgeProTier: 'pro', judgeFlashTier: 'pro',
+      }))
+    }).toThrow(
+      'model-routing: tier "pro" extraSource "claude-proxy" modelMap["deepseek/deepseek-v4-pro"]'
+      + ' price must be a JSON object',
+    )
+  })
+
+  it('carries a source-wide KEY_QUOTA reroute code in the defaults', () => {
+    expect(settings().rerouteCodes).toEqual(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA'])
   })
 })

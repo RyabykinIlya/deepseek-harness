@@ -60,7 +60,7 @@ export type {
   TurnMix,
   UsageTotals,
 } from './select.ts'
-export { DiagnosticsFile, candidatesOf, cheapestRejectedOf, diagnosticsLine } from './diagnostics.ts'
+export { DiagnosticsFile, candidateOf, candidatesOf, cheapestRejectedOf, diagnosticsLine } from './diagnostics.ts'
 export type { DiagnosticsFileDeps, DiagnosticsLine } from './diagnostics.ts'
 export {
   applyModelRoutingEvent,
@@ -83,7 +83,7 @@ export type { EndpointsReader } from './endpoints-cache.ts'
 export { KeyInfo } from './key-info.ts'
 export type { KeyInfoDeps } from './key-info.ts'
 export { resolveApiKeyRef, resolveKey } from './credentials.ts'
-export { routingEndpointOf } from './endpoint.ts'
+export { routingDirectOf, routingEndpointOf, routingSourceOf } from './endpoint.ts'
 export { ModelRoutingService } from './service.ts'
 
 // The profile row id (`model-routing`) names the settings namespace these

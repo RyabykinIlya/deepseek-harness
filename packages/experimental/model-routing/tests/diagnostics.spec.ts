@@ -9,7 +9,7 @@ import {
   cheapestRejectedOf,
   diagnosticsLine,
 } from '../src/diagnostics.ts'
-import type { SelectionResult, TurnMix } from '../src/select.ts'
+import type { DirectSource, SelectionResult, TurnMix } from '../src/select.ts'
 import type { RoutingCandidate, RoutingDiagnosticsRecord } from '../src/types.ts'
 
 const MIX: TurnMix = { cached: 0.9, fresh: 0.08, output: 0.02 }
@@ -80,19 +80,22 @@ describe('candidatesOf', () => {
     }), MIX)
     expect(candidates).toEqual([
       {
-        model: 'm', tag: 'streamlake/fp8', providerName: 'StreamLake', quantization: 'fp8',
+        model: 'm', tag: 'streamlake/fp8', source: 'openrouter',
+        providerName: 'StreamLake', quantization: 'fp8',
         promptUsd: 1e-7, completionUsd: 3e-7, cacheReadUsd: 5e-8, discount: 0.42, status: 0, uptimeLast30m: 99,
         blendedUsdPerToken: 2.8e-8, rank: 1,
       },
       {
-        model: 'm', tag: 'deepinfra/fp4', providerName: 'DeepInfra', quantization: 'fp4',
+        model: 'm', tag: 'deepinfra/fp4', source: 'openrouter',
+        providerName: 'DeepInfra', quantization: 'fp4',
         promptUsd: 1e-7, completionUsd: 3e-7, cacheReadUsd: 5e-8, discount: 0.5, status: 0, uptimeLast30m: 99,
         blendedUsdPerToken: 0.9 * 5e-8 + 0.08 * 1e-7 + 0.02 * 3e-7, rejection: 'quantization',
       },
       // A dropped endpoint records the price it would have paid, or none at all
       // when it published too little to state one.
       {
-        model: 'm', tag: 'mystery/tag', cacheReadUsd: 5e-8, status: 0, uptimeLast30m: 99, rejection: 'unpriced',
+        model: 'm', tag: 'mystery/tag', source: 'openrouter',
+        cacheReadUsd: 5e-8, status: 0, uptimeLast30m: 99, rejection: 'unpriced',
       },
     ])
   })
@@ -101,7 +104,7 @@ describe('candidatesOf', () => {
     const candidates = candidatesOf(resultOf({
       rejected: [{ model: 'm', endpoint: { slug: 'bare' }, reason: 'status' }],
     }), MIX)
-    expect(candidates).toEqual([{ model: 'm', tag: 'bare', rejection: 'status' }])
+    expect(candidates).toEqual([{ model: 'm', tag: 'bare', source: 'openrouter', rejection: 'status' }])
   })
 })
 
@@ -256,5 +259,59 @@ describe('DiagnosticsFile', () => {
     // `considered` still names every endpoint the ranking walked.
     expect(written.considered).toBe(20)
     expect(warnings).toEqual([])
+  })
+})
+
+describe('a direct source in the candidate table', () => {
+  /** The subscription candidate the target scenario prices per bucket (credit-weighted). */
+  const PLAN: DirectSource = {
+    kind: 'direct',
+    route: 'xiaomi-plan',
+    model: 'xiaomi/mimo-v2.6-pro',
+    id: 'mimo-v2.6-pro',
+    prices: { prompt: 4.363636e-07, completion: 8.727273e-07, cacheRead: 3.636364e-09 },
+  }
+
+  it('records the route as its source and the prices its blended price used', () => {
+    const candidates = candidatesOf(resultOf({
+      ranked: [{ model: 'm', endpoint: PLAN, blendedUsdPerToken: 5.56363616e-08, free: false }],
+      considered: 1,
+    }), MIX)
+    expect(candidates).toEqual([{
+      model: 'm', tag: 'mimo-v2.6-pro', source: 'xiaomi-plan',
+      promptUsd: 4.363636e-07, completionUsd: 8.727273e-07, cacheReadUsd: 3.636364e-09,
+      blendedUsdPerToken: 5.56363616e-08, rank: 1,
+    }])
+  })
+
+  it('keeps a cache term out of the table when the source states none', () => {
+    const candidates = candidatesOf(resultOf({
+      ranked: [{
+        model: 'm',
+        endpoint: { ...PLAN, prices: { prompt: 1e-9, completion: 2e-9, cacheRead: 5e-10 } },
+        blendedUsdPerToken: 1e-9,
+        free: false,
+      }],
+      considered: 1,
+    }), MIX)
+    expect(candidates[0]).toMatchObject({ cacheReadUsd: 5e-10 })
+    const withoutCache = candidatesOf(resultOf({
+      ranked: [{ model: 'm', endpoint: { ...PLAN, prices: { prompt: 1e-9, completion: 2e-9 } }, blendedUsdPerToken: 1e-9, free: false }],
+      considered: 1,
+    }), MIX)
+    expect(withoutCache[0]).not.toHaveProperty('cacheReadUsd')
+  })
+
+  it('blends a dropped direct source at the price it would have paid', () => {
+    const candidates = candidatesOf(resultOf({
+      rejected: [{ model: 'm', endpoint: PLAN, reason: 'tools' }],
+      considered: 1,
+    }), MIX)
+    expect(candidates).toEqual([{
+      model: 'm', tag: 'mimo-v2.6-pro', source: 'xiaomi-plan',
+      promptUsd: 4.363636e-07, completionUsd: 8.727273e-07, cacheReadUsd: 3.636364e-09,
+      blendedUsdPerToken: 5.56363616e-08,
+      rejection: 'tools',
+    }])
   })
 })

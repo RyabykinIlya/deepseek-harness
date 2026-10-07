@@ -33,6 +33,7 @@ const DECISION: SessionEventMap['model-routing/decision'] = {
   tier: 'flash',
   judge: { model: 'typesafe/jev-1.13', answeredBy: 'typesafe/jev-1.13-20260917', pPro: 0, confidence: 1, latencyMs: 512, rule: 'start-flash' },
   model: 'deepseek/deepseek-v4-flash',
+  source: { kind: 'openrouter', tag: 'streamlake/fp8' },
   endpoint: { tag: 'streamlake/fp8', providerName: 'StreamLake', quantization: 'fp8', promptUsd: 1e-8, completionUsd: 2e-8 },
   blendedUsdPerToken: 8.4e-9,
   considered: 42,
@@ -134,5 +135,26 @@ describe('modelRoutingProjectionDefinition', () => {
     const { wire } = modelRoutingProjectionDefinition
     const decided = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', DECISION, 11))
     expect(wire.viewSchema.parse(wire.view(decided))).toEqual(modelRoutingView(decided))
+  })
+})
+
+describe('a decision that named a direct source', () => {
+  it('folds and projects the source the pin came from', () => {
+    const decision: SessionEventMap['model-routing/decision'] = {
+      boundary: 'start',
+      requested: 'flash',
+      tier: 'flash',
+      model: 'xiaomi/mimo-v2.6-pro',
+      source: { kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' },
+      endpoint: { tag: 'mimo-v2.6-pro', providerName: 'xiaomi-plan', promptUsd: 4.363636e-7, completionUsd: 8.727273e-7, cacheReadUsd: 3.636364e-9 },
+      blendedUsdPerToken: 5.56363616e-08,
+      considered: 1,
+      runnersUp: [],
+      excludedTags: [],
+    }
+    const applied = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', decision, 10))
+    expect(applied.decision?.source).toEqual({ kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' })
+    const view = modelRoutingView(applied)
+    expect(view).toMatchObject({ model: 'xiaomi/mimo-v2.6-pro', providerName: 'xiaomi-plan', unpinned: false })
   })
 })

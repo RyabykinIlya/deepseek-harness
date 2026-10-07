@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { OpenRouterEndpoint } from '@deepseek-ai/dsh-llm-pi-ai'
 import { Config, readSettings } from '../src/config.ts'
-import type { RoutingSettings, TierSettings } from '../src/config.ts'
+import { directSourceModels } from '../src/config.ts'
+import type { ExtraSource, RoutingSettings, TierSettings } from '../src/config.ts'
 import { quantizationsAtOrAbove } from '../src/quantization.ts'
 import {
   blendedPrice,
   defaultMix,
+  directPricesOf,
+  directSourcesOf,
+  isDirect,
   mixFromUsage,
   policyFor,
   rankEndpoints,
   rankWithRelaxation,
+  type DirectSource,
   type EndpointLists,
   type RequiredInput,
   type SelectionPolicy,
@@ -33,6 +38,7 @@ const PRO: TierSettings = {
   minQuantization: 'fp8',
   unknownQuantization: 'reject',
   free: 'off',
+  extraSources: [],
 }
 
 const SIX = [
@@ -89,7 +95,7 @@ async function rank(
   )
   return {
     length: result.ranked.length,
-    top: result.ranked.slice(0, 4).map(entry => `${entry.model} ${entry.endpoint.slug}=${entry.blendedUsdPerToken}`),
+    top: result.ranked.slice(0, 4).map(entry => `${entry.model} ${tagOfEntry(entry.endpoint)}=${entry.blendedUsdPerToken}`),
     rejections: Object.fromEntries(Object.entries(result.rejections).filter(([, count]) => count > 0)),
   }
 }
@@ -374,3 +380,212 @@ describe('quantizationsAtOrAbove', () => {
       .toEqual(['int4', 'int8', 'fp4', 'mxfp4', 'nvfp4', 'fp6', 'fp8', 'mxfp8', 'fp16', 'bf16', 'fp32'])
   })
 })
+
+describe('direct sources beside OpenRouter endpoints', () => {
+  /** One direct candidate under the canonical id the tier also ranks on OpenRouter. */
+  const CLAUDE: DirectSource = {
+    kind: 'direct',
+    route: 'claude-proxy',
+    model: 'deepseek/deepseek-v4-pro',
+    id: 'mimo-v2.6-pro',
+  }
+
+  /** The tier's sources as the ranking sees them, keyed by canonical id. */
+  function sourcesOf(...sources: ExtraSource[]): ReadonlyMap<string, readonly DirectSource[]> {
+    const map = new Map<string, DirectSource[]>()
+    for (const source of sources) {
+      for (const candidate of directSourcesOf(source, directSourceModels(source))) {
+        map.set(candidate.model, [...map.get(candidate.model) ?? [], candidate])
+      }
+    }
+    return map
+  }
+
+  /**
+   * The source entry the target scenario configures: a credit-weighted
+   * subscription plan, priced per bucket (Xiaomi MiMo Token Plan charges credits
+   * per cache-hit, cache-miss and output token). $/token = credits-per-token x
+   * ($16/11e9).
+   */
+  const PLAN: ExtraSource = {
+    route: 'xiaomi-plan',
+    models: [],
+    modelMap: {
+      'deepseek/deepseek-v4-pro':
+        'mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}',
+    },
+    price: {},
+    tools: true,
+  }
+
+
+  /**
+   * A synthetic direct source priced below every recorded endpoint, used where a
+   * test asserts the mechanism — a direct source ranks beside endpoints and can
+   * win on price — rather than any real plan's economics.
+   */
+  const CHEAP: ExtraSource = {
+    route: 'xiaomi-plan',
+    models: [],
+    modelMap: { 'deepseek/deepseek-v4-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-9}' },
+    price: {},
+    tools: true,
+  }
+
+  it('ranks an unpriced direct source as unpriced, not as free', () => {
+    const lists: EndpointLists = new Map([['deepseek/deepseek-v4-pro', []]])
+    const result = rankEndpoints(lists, PRO.models, policyFor(PRO, settingsOf(), {
+      allowFree: true,
+      excludedTags: new Set(),
+      extraSources: sourcesOf(PLAN.price === undefined ? PLAN : { ...PLAN, modelMap: { 'deepseek/deepseek-v4-pro': 'mimo-v2.6-pro' } }),
+    }), MIX)
+    expect(result.ranked).toEqual([])
+    expect(result.rejections).toEqual({ ...emptyOf(), unpriced: 1 })
+  })
+
+  it('is neutral on the measurement filters, so a source nothing measured still ranks', () => {
+    // `status`, `uptime` and `quantization` are measurements OpenRouter
+    // publishes; a direct source states none, and an absent measurement must not
+    // reject it. The capability filters below still bind: see the `tools` case.
+    const policy = policyFor(PRO, settingsOf({ minUptime: 101 }), { allowFree: true, excludedTags: new Set() })
+    const result = rankEndpoints(new Map([['deepseek/deepseek-v4-pro', []]]), ['deepseek/deepseek-v4-pro'], {
+      ...policy,
+      requireNormalStatus: true,
+      minQuantization: 'fp32',
+      unknownQuantization: 'reject',
+      extraSources: sourcesOf(PLAN),
+    }, MIX)
+    expect(result.ranked).toHaveLength(1)
+    expect(result.rejections).toEqual(emptyOf())
+  })
+
+  it('still applies the tools filter to a source that does not take tool calls', () => {
+    const policy = policyFor(PRO, settingsOf(), { allowFree: true, excludedTags: new Set() })
+    const prices = directPricesOf(PLAN.price)
+    const result = rankEndpoints(new Map([['deepseek/deepseek-v4-pro', []]]), ['deepseek/deepseek-v4-pro'], {
+      ...policy,
+      extraSources: new Map([['deepseek/deepseek-v4-pro', [{
+        ...CLAUDE,
+        ...prices === undefined ? {} : { prices },
+        tools: false,
+      }]]]),
+    }, MIX)
+    expect(result.ranked).toEqual([])
+    expect(result.rejections).toEqual({ ...emptyOf(), tools: 1 })
+    expect(result.rejected[0]?.endpoint).toMatchObject({ kind: 'direct', id: 'mimo-v2.6-pro' })
+  })
+
+  it('resolves a flat price into all three buckets and a partial one into the buckets it names', () => {
+    // `usdPerToken` is the flat spelling: one rate for input, output and cache
+    // alike (a truly flat plan). The prompt/completion pair is the ordinary
+    // spelling; a cache term the entry does not name falls back to the prompt
+    // rate. A credit-weighted plan states all three buckets instead.
+    expect(directPricesOf({ usdPerToken: 1.455e-9 }))
+      .toEqual({ prompt: 1.455e-9, completion: 1.455e-9 })
+    expect(directPricesOf({ promptUsdPerToken: 2, completionUsdPerToken: 4 }))
+      .toEqual({ prompt: 2, completion: 4, cacheRead: 2 })
+    expect(directPricesOf({ promptUsdPerToken: 2, completionUsdPerToken: 4, cacheReadUsdPerToken: 0.5 }))
+      .toEqual({ prompt: 2, completion: 4, cacheRead: 0.5 })
+    // A half-stated pair is not silently completed from anything: the entry
+    // states exactly what the ranking charges, or it states nothing.
+    expect(directPricesOf({ promptUsdPerToken: 2 })).toBeUndefined()
+    expect(directPricesOf(undefined)).toBeUndefined()
+  })
+
+  it('sorts two direct sources by their route id when the price ties', () => {
+    const first: DirectSource = { ...CLAUDE, prices: { prompt: 1, completion: 1 }, contextLength: 1_048_576 }
+    const second: DirectSource = {
+      ...CLAUDE,
+      route: 'zzz-route',
+      prices: { prompt: 1, completion: 1 },
+      contextLength: 1_048_576,
+    }
+    const result = rankEndpoints(new Map([['deepseek/deepseek-v4-pro', []]]), ['deepseek/deepseek-v4-pro'], {
+      ...policyFor(PRO, settingsOf(), { allowFree: true, excludedTags: new Set() }),
+      extraSources: new Map([['deepseek/deepseek-v4-pro', [second, first]]]),
+    }, MIX)
+    // Equal price and no measurement on either side: the tag order decides, and
+    // both candidates carry the same route id, so the configured order stands.
+    expect(result.ranked.map(entry => `${(entry.endpoint as DirectSource).route}:${(entry.endpoint as DirectSource).id}`))
+      .toEqual(['zzz-route:mimo-v2.6-pro', 'claude-proxy:mimo-v2.6-pro'])
+  })
+
+  it('sorts an unmeasured direct source behind an equally priced endpoint', () => {
+    // Both state the same blended price; the endpoint measures an uptime and the
+    // direct source measures nothing, and an absent measurement sorts last.
+    const endpoint: OpenRouterEndpoint = {
+      slug: 'a/fp8', promptPrice: 1, completionPrice: 1, uptimeLast30m: 99, quantization: 'fp8',
+      supportedParameters: ['tools'], contextLength: 1_048_576,
+    }
+    const direct: DirectSource = {
+      ...CLAUDE,
+      prices: { prompt: 1, completion: 1 },
+      contextLength: 1_048_576,
+    }
+    const result = rankEndpoints(new Map([['deepseek/deepseek-v4-pro', [endpoint]]]), ['deepseek/deepseek-v4-pro'], {
+      ...policyFor(PRO, settingsOf(), { allowFree: true, excludedTags: new Set() }),
+      extraSources: new Map([['deepseek/deepseek-v4-pro', [direct]]]),
+    }, MIX)
+    expect(result.ranked.map(entry => tagOfEntry(entry.endpoint))).toEqual(['a/fp8', 'mimo-v2.6-pro'])
+  })
+
+  it('still applies the context filter to a source whose window is too small', () => {
+    const policy = policyFor(PRO, settingsOf(), { allowFree: true, excludedTags: new Set() })
+    const prices = directPricesOf(PLAN.price)
+    const result = rankEndpoints(new Map([['deepseek/deepseek-v4-pro', []]]), ['deepseek/deepseek-v4-pro'], {
+      ...policy,
+      extraSources: new Map([['deepseek/deepseek-v4-pro', [{
+        ...CLAUDE,
+        ...prices === undefined ? {} : { prices },
+        contextLength: 4096,
+      }]]]),
+    }, MIX)
+    expect(result.ranked).toEqual([])
+    expect(result.rejections).toEqual({ ...emptyOf(), context: 1 })
+  })
+
+  it('ranks a priced direct source against the tier\'s OpenRouter endpoints', async () => {
+    // A direct source's per-token rates are blended under the same mix as every
+    // endpoint, so price decides between the two sources of one model. The
+    // source here is a synthetic one priced below every endpoint, so it wins.
+    const lists = new Map<string, readonly OpenRouterEndpoint[] | Error>([
+      ['deepseek/deepseek-v4-pro', await endpointsOf('deepseek/deepseek-v4-pro')],
+    ])
+    const result = rankEndpoints(lists, ['deepseek/deepseek-v4-pro'], policyFor(PRO, settingsOf(), {
+      allowFree: true,
+      excludedTags: new Set(),
+      extraSources: sourcesOf(CHEAP),
+    }), MIX)
+    const top = result.ranked[0]
+    expect(top?.endpoint).toMatchObject({ kind: 'direct', route: 'xiaomi-plan', id: 'mimo-v2.6-pro' })
+    expect(top?.blendedUsdPerToken).toBeCloseTo(1e-9)
+    expect(result.considered).toBe((lists.get('deepseek/deepseek-v4-pro') as OpenRouterEndpoint[]).length + 1)
+    expect(result.ranked[1]?.blendedUsdPerToken).toBeGreaterThan(top?.blendedUsdPerToken ?? 0)
+  })
+
+  it('excludes a direct source by its route id, and leaves the endpoints of the model alone', async () => {
+    const lists = new Map<string, readonly OpenRouterEndpoint[] | Error>([
+      ['deepseek/deepseek-v4-pro', await endpointsOf('deepseek/deepseek-v4-pro')],
+    ])
+    const result = rankEndpoints(lists, ['deepseek/deepseek-v4-pro'], policyFor(PRO, settingsOf(), {
+      allowFree: true,
+      excludedTags: new Set(['mimo-v2.6-pro']),
+      extraSources: sourcesOf(PLAN),
+    }), MIX)
+    expect(result.ranked.every(entry => !isDirect(entry.endpoint))).toBe(true)
+    expect(result.rejections.excluded).toBe(1)
+  })
+})
+
+/** The tag one ranked candidate carries: an endpoint slug, a direct source's route id. */
+function tagOfEntry(entry: { kind?: string; slug?: string; id?: string }): string {
+  return entry.kind === 'direct' ? entry.id ?? '' : entry.slug ?? ''
+}
+
+/** Every rejection key at zero, spelled out for a direct-source case. */
+function emptyOf(): Record<string, number> {
+  return {
+    modality: 0, excluded: 0, status: 0, uptime: 0, tools: 0, context: 0,
+    quantization: 0, 'untrusted-unknown': 0, unpriced: 0, free: 0, paid: 0,
+  }
+}
