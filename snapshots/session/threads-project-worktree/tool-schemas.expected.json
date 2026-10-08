@@ -376,6 +376,10 @@
           "run_in_background": {
             "type": "boolean",
             "description": "Always runs in the background; omit this parameter. `false` is refused, because only the background route runs the child inside the isolation this provider establishes."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Repository this subagent works in, named as a path inside your working directory — usually a subdirectory name. Required when your working directory is not itself a repository but holds several; omit it when your working directory is already the repository you mean."
           }
         },
         "required": [

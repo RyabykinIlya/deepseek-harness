@@ -165,7 +165,7 @@ const ThreadProviderStandIn = {
   apply(ctx: Context, config: { providerName: string; childAgentPreset?: string }): void {
     const provider: SubagentProvider = {
       name: config.providerName,
-      capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+      capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository: false },
       inheritsParentContext: false,
       start: () => Promise.reject(new Error('the Thread stand-in only prepares continuable children')),
       prepareContinuable: (): Promise<ContinuableCreateSpec> => Promise.resolve(

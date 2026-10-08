@@ -140,11 +140,13 @@ export function coordinatorContract(config: Config = {}): string {
   const tier = TIER_SENTENCES[config.tierContract ?? 'none']
   return '## Threads\n'
     + '\n'
-    + 'You coordinate this Project. A Thread is a background agent that works in its own git worktree on its own branch, so its edits do not appear in the Project checkout until you merge its branch.\n'
+    + 'You coordinate this Project. A Thread is a background agent that works in one repository of the Project, in its own git worktree on its own branch, so its edits do not appear in that repository\'s checkout until you merge its branch.\n'
     + '\n'
     + 'Restate the goal in your own words, propose a split into independent Threads (tasks that do not need each other\'s results and, where possible, touch different files), and start each Thread with the `subagent` tool. '
     + `${SPAWN_SENTENCES[config.spawn ?? 'ask']}\n`
     + (tier === '' ? '' : `\n${tier}\n`)
+    + '\n'
+    + 'The Project\'s working directory may hold several git repositories. Name the repository a Thread works in with the `repository` parameter of `subagent`, usually the subdirectory name; when the working directory is itself the repository, no name is needed.\n'
     + '\n'
     + 'A Thread starts with no history of this conversation. Write each task to be self-contained: the goal, the relevant paths, the constraints, and how to verify the result.\n'
     + '\n'
@@ -157,7 +159,7 @@ export function coordinatorContract(config: Config = {}): string {
     + '\n'
     + 'Review a finished Thread with `thread_diff`, which lists its commits and changed files. Use `send_message` to give a running Thread more instructions and `interrupt_agent` to stop it.\n'
     + '\n'
-    + 'Integrate a reviewed Thread by importing its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. '
+    + 'Integrate a reviewed Thread by importing its branch from its worktree into the checkout of the repository that Thread worked in with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. '
     + `${MERGE_SENTENCES[config.mergePolicy ?? 'ask']}\n`
     + '\n'
     + 'After a Thread\'s branch is merged, suggest that the user archive that Thread. Archiving is done by the user from the interface; you cannot do it.'
