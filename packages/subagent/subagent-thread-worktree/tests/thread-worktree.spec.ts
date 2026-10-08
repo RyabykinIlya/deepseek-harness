@@ -40,9 +40,9 @@ function temporary(prefix: string): string {
   return dir
 }
 
-/** A real git repository with a tracked `README.md` and `pkg/lib/code.txt`. */
-function repository(): string {
-  const dir = temporary('dsh-tw-repo-')
+/** Git-init `dir` with a tracked `README.md` and `pkg/lib/code.txt`. */
+function initRepository(dir: string): string {
+  mkdirSync(dir, { recursive: true })
   git(['init', '--quiet', '--initial-branch=main'], dir)
   git(['config', 'user.email', 't@example.test'], dir)
   git(['config', 'user.name', 'T'], dir)
@@ -52,6 +52,25 @@ function repository(): string {
   git(['add', '.'], dir)
   git(['commit', '--quiet', '-m', 'seed'], dir)
   return dir
+}
+
+/** A real git repository with a tracked `README.md` and `pkg/lib/code.txt`. */
+function repository(): string {
+  return initRepository(temporary('dsh-tw-repo-'))
+}
+
+/**
+ * A workspace directory — not a repository itself — holding the `alpha` and `beta`
+ * repositories, which is the shape a Project session's cwd takes when it coordinates
+ * Threads across several repositories.
+ */
+function workspace(): { dir: string; alpha: string; beta: string } {
+  const dir = temporary('dsh-tw-ws-')
+  // Workspace entries that are not repositories — a file and a plain subdirectory —
+  // must never appear among the candidates.
+  writeFileSync(join(dir, 'README.md'), 'workspace\n')
+  mkdirSync(join(dir, 'scratch'))
+  return { dir, alpha: initRepository(join(dir, 'alpha')), beta: initRepository(join(dir, 'beta')) }
 }
 
 /** The real service mounted over a temp worktree root. */
@@ -117,8 +136,18 @@ function providerFor(
   )
 }
 
-function request(parentCwd: string | undefined, signal: AbortSignal, sessionId = 'abcdef12-3456'): ContinuableCreateRequest {
-  return { sessionId, parent: parent(parentCwd), signal } as ContinuableCreateRequest
+function request(
+  parentCwd: string | undefined,
+  signal: AbortSignal,
+  sessionId = 'abcdef12-3456',
+  repository?: string,
+): ContinuableCreateRequest {
+  return {
+    sessionId,
+    parent: parent(parentCwd),
+    signal,
+    ...repository === undefined ? {} : { repository },
+  } as ContinuableCreateRequest
 }
 
 /** A one-shot start request, which carries the resolved descriptor the service appends. */
@@ -136,6 +165,10 @@ describe('thread worktree provider', () => {
     expect(providerFor(fakeWorktrees()).inheritsParentContext).toBe(false)
   })
 
+  it('advertises repository selection so the delegation tool publishes the parameter', () => {
+    expect(providerFor(fakeWorktrees()).capabilities.repository).toBe(true)
+  })
+
   it('starts a one-shot child on the shared driver with no fork seed', async () => {
     const worktrees = fakeWorktrees()
     const started = startRequest(worktrees.repoRoot, new AbortController().signal)
@@ -144,6 +177,29 @@ describe('thread worktree provider', () => {
 
     // One-shot children share the parent's cwd: the driver cannot relocate a child.
     expect(startInProcessRun).toHaveBeenCalledWith(started, {})
+  })
+
+  it('refuses a repository on the one-shot route instead of accepting and ignoring it', () => {
+    const worktrees = fakeWorktrees()
+    const started: ResolvedSubagentStartRequest = {
+      ...startRequest(worktrees.repoRoot, new AbortController().signal),
+      repository: 'alpha',
+    }
+    vi.mocked(startInProcessRun).mockClear()
+
+    let thrown: unknown
+    try {
+      // `start` throws before it can return the driver's promise; `void` only marks
+      // that promise ignored for the linter, it runs the call either way.
+      void providerFor(worktrees).start(started)
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toMatchObject({
+      message: 'thread worktrees: repository is not available on the one-shot route, which runs the child '
+        + 'in the parent\'s working directory with no worktree; start the child in the background instead',
+    })
+    expect(startInProcessRun).not.toHaveBeenCalled()
   })
 
   it('creates a worktree rooted at the parent cwd and returns it as the child cwd', async () => {
@@ -273,12 +329,16 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
     const worktrees = fakeWorktrees()
     const outside = temporary('dsh-tw-outside-')
 
-    // Loud, not a cwd that climbed out of the worktree: the relative path has to
-    // be measured from the parent's OWN repository top level.
+    // Loud before any worktree exists: the refusal names what the coordinator may
+    // choose from, so there is no clone to roll back.
     await expect(providerFor(worktrees).prepareContinuable(request(outside, new AbortController().signal, 'no-repo')))
-      .rejects.toMatchObject({ code: 'NOT_A_GIT_REPO' })
-    // The provider owns the rollback: the worktree it already made goes away.
-    expect(worktrees.removes).toEqual([{ threadId: 'no-repo', force: true }])
+      .rejects.toMatchObject({
+        code: 'NOT_A_GIT_REPO',
+        message: `thread worktrees: the repository for this Thread is not resolvable from ${outside}; `
+          + `name a repository inside ${outside} with the repository parameter. `
+          + `Repositories under ${outside}: none found.`,
+      })
+    expect(worktrees.creates).toEqual([])
   })
 
   it('rolls back the worktree and fails loud when the subdirectory is not in the base commit', async () => {
@@ -318,6 +378,119 @@ describe('thread worktree provider with a real worktree service', { timeout: GIT
     await providerFor({ service } as never, { base: 'head-with-uncommitted' })
       .prepareContinuable(request(repo, new AbortController().signal, 'clean'))
     expect((await service.get('clean'))?.baseSha).toBe(git(['rev-parse', 'HEAD'], repo))
+  })
+})
+
+describe('thread worktree provider repository selection', { timeout: GIT_TIMEOUT_MS }, () => {
+  it('creates the worktree from the repository the delegation names', async () => {
+    const ws = workspace()
+    const service = await realService()
+    const provider = providerFor({ service } as never)
+
+    const spec = await provider.prepareContinuable(request(ws.dir, new AbortController().signal, 'sel-1', 'beta'))
+    const record = await service.get('sel-1')
+
+    expect(record?.repoRoot).toBe(git(['rev-parse', '--show-toplevel'], ws.beta))
+    expect(spec.cwd).toBe(record?.path)
+    expect(git(['remote', 'get-url', 'origin'], spec.cwd as string)).toBe(ws.beta)
+  })
+
+  it('refuses to start a Thread when the workspace names no repository', async () => {
+    const ws = workspace()
+    const service = await realService()
+    const provider = providerFor({ service } as never)
+
+    await expect(provider.prepareContinuable(request(ws.dir, new AbortController().signal, 'unnamed')))
+      .rejects.toMatchObject({
+        code: 'NOT_A_GIT_REPO',
+        message: `thread worktrees: the repository for this Thread is not resolvable from ${ws.dir}; `
+          + `name a repository inside ${ws.dir} with the repository parameter. `
+          + `Repositories under ${ws.dir}: alpha, beta.`,
+      })
+    // The refusal precedes the service, which would otherwise report its own
+    // NOT_A_GIT_REPO for the workspace instead of naming the repositories.
+    expect(await service.get('unnamed')).toBeUndefined()
+  })
+
+  it('refuses a repository name that resolves to a repository outside the parent directory', async () => {
+    const outer = temporary('dsh-tw-outer-')
+    const sibling = initRepository(join(outer, 'sibling'))
+    const dir = join(outer, 'ws')
+    mkdirSync(dir)
+    const worktrees = fakeWorktrees()
+    const provider = providerFor(worktrees)
+
+    for (const repositoryName of ['../sibling', sibling]) {
+      await expect(provider.prepareContinuable(request(dir, new AbortController().signal, 'escapes', repositoryName)))
+        .rejects.toMatchObject({
+          code: 'NOT_A_GIT_REPO',
+          message: `thread worktrees: the repository for this Thread is not resolvable from ${sibling}; `
+            + `name a repository inside ${dir} with the repository parameter. `
+            + `Repositories under ${dir}: none found.`,
+        })
+    }
+    expect(worktrees.creates).toEqual([])
+  })
+
+  it('refuses a parent working directory that does not exist', async () => {
+    const missing = join(temporary('dsh-tw-missing-'), 'gone')
+
+    await expect(providerFor(fakeWorktrees()).prepareContinuable(request(missing, new AbortController().signal, 'no-cwd')))
+      .rejects.toMatchObject({
+        code: 'NOT_A_GIT_REPO',
+        message: `thread worktrees: the repository for this Thread is not resolvable from ${missing}; `
+          + `name a repository inside ${missing} with the repository parameter. `
+          + `Repositories under ${missing}: none found.`,
+      })
+  })
+
+  it('refuses a repository name that is a file', async () => {
+    const ws = workspace()
+
+    await expect(providerFor(fakeWorktrees())
+      .prepareContinuable(request(ws.dir, new AbortController().signal, 'file-repo', 'README.md')))
+      .rejects.toMatchObject({
+        code: 'NOT_A_GIT_REPO',
+        message: `thread worktrees: the repository for this Thread is not resolvable from ${join(ws.dir, 'README.md')}; `
+          + `name a repository inside ${ws.dir} with the repository parameter. `
+          + `Repositories under ${ws.dir}: alpha, beta.`,
+      })
+  })
+
+  it('maps a repository subdirectory to the matching subdirectory of the worktree', async () => {
+    const ws = workspace()
+    const service = await realService()
+    const provider = providerFor({ service } as never)
+
+    const spec = await provider.prepareContinuable(request(ws.dir, new AbortController().signal, 'sub-repo', 'alpha/pkg/lib'))
+    const record = await service.get('sub-repo')
+
+    expect(record?.repoRoot).toBe(git(['rev-parse', '--show-toplevel'], ws.alpha))
+    expect(spec.cwd).toBe(join(record?.path ?? '', 'pkg', 'lib'))
+  })
+
+  it('runs Threads named in two different repositories in disjoint worktrees and branches', async () => {
+    const ws = workspace()
+    const service = await realService()
+    const provider = providerFor({ service } as never)
+
+    const alpha = await provider.prepareContinuable(request(ws.dir, new AbortController().signal, 'two-a', 'alpha'))
+    const beta = await provider.prepareContinuable(request(ws.dir, new AbortController().signal, 'two-b', 'beta'))
+    const alphaRecord = await service.get('two-a')
+    const betaRecord = await service.get('two-b')
+
+    expect(alphaRecord?.repoRoot).toBe(git(['rev-parse', '--show-toplevel'], ws.alpha))
+    expect(betaRecord?.repoRoot).toBe(git(['rev-parse', '--show-toplevel'], ws.beta))
+    expect(alpha.cwd).not.toBe(beta.cwd)
+    expect(alphaRecord?.branch).toBe('dsh/thread-two-a')
+    expect(betaRecord?.branch).toBe('dsh/thread-two-b')
+    // Each clone's origin is the repository its Thread named, so neither worktree
+    // was created from the workspace or from the other repository.
+    expect(git(['remote', 'get-url', 'origin'], alpha.cwd as string)).toBe(ws.alpha)
+    expect(git(['remote', 'get-url', 'origin'], beta.cwd as string)).toBe(ws.beta)
+    // The branch exists only in its own clone: the two branch namespaces do not meet.
+    expect(git(['branch', '--list', 'dsh/thread-two-a'], alpha.cwd as string)).not.toBe('')
+    expect(git(['branch', '--list', 'dsh/thread-two-a'], beta.cwd as string)).toBe('')
   })
 })
 
