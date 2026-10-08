@@ -297,6 +297,40 @@ interface DelegationRunSpec {
   readonly runInBackground: boolean
 }
 
+interface DelegationRepositoryRequest {
+  readonly repository?: string
+}
+
+/**
+ * Resolve the model's optional repository choice, refusing one this provider
+ * cannot honor.
+ * @param request - the model-supplied arguments.
+ * @param options - whether the mounted provider accepts a repository, and its name for the refusal.
+ * @returns the named repository, or undefined when the model named none.
+ */
+function resolveDelegationRepository(
+  request: DelegationRepositoryRequest,
+  options: { readonly supported: boolean; readonly provider: string },
+): string | undefined {
+  const repository = request.repository
+  if (repository === undefined) return undefined
+  if (!options.supported) {
+    // The validator permits undeclared keys, so schema omission also needs
+    // execution-time enforcement.
+    throw new Error(
+      `repository is not available for provider "${options.provider}", which does not select a`
+      + ' repository per subagent; omit the parameter',
+    )
+  }
+  if (repository.trim().length === 0) {
+    throw new Error(
+      'repository was empty; name a repository inside your working directory, or omit the parameter'
+      + ' to use your working directory',
+    )
+  }
+  return repository
+}
+
 /** Resolve the model's optional scheduling request into one execution route. */
 function resolveDelegationRun(
   request: DelegationRunRequest,
@@ -405,6 +439,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
       assertSubagentProviderConfiguration(subagentProvider)
       const wording = providerWording(subagentProvider.inheritsParentContext)
       const isolatesForeground = subagentProvider.isolatesContinuableCwd === true
+      const repositorySupported = subagentProvider.capabilities.repository
       const providerRouteDefaults = subagentProvider.agentRouteDefaults
       const selectionDescription = providerRouteDefaults !== undefined
         ? ' Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and this provider\'s route defaults. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model\'s default effort.'
@@ -464,6 +499,15 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                 : continuable
                   ? 'Defaults to true. Set false only when your next action depends on the result.'
                   : 'Run as a background job and return its id (collect with job_output, stop with job_kill). Defaults to false.',
+            },
+          } : {},
+          ...repositorySupported ? {
+            repository: {
+              type: 'string' as const,
+              description: 'Repository this subagent works in, named as a path inside your working directory —'
+                + ' usually a subdirectory name. Required when your working directory is not itself a'
+                + ' repository but holds several; omit it when your working directory is already the'
+                + ' repository you mean.',
             },
           } : {},
         },
@@ -553,6 +597,10 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
           }
           exec.signal.throwIfAborted()
           const maxDepth = runtimeCtx.subagents.resolveMaxDepth(config.maxDepth)
+          const repository = resolveDelegationRepository(args as DelegationRepositoryRequest, {
+            supported: repositorySupported,
+            provider: subagentProvider.name,
+          })
           const request = {
             label: args.description,
             prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
@@ -561,6 +609,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             ...config.persona !== undefined ? { persona: config.persona } : {},
             ...config.toolFilter !== undefined ? { toolFilter: config.toolFilter } : {},
             ...maxDepth !== undefined ? { maxDepth } : {},
+            ...repository !== undefined ? { repository } : {},
           }
 
           const runSpec = resolveDelegationRun(args, {
