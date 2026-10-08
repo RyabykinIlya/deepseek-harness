@@ -140,6 +140,7 @@ export class SubagentContinuationManager {
         sessionId: childId,
         parent,
         signal: spec.signal,
+        ...spec.request.repository !== undefined ? { repository: spec.request.repository } : {},
       })
       spec.signal.throwIfAborted()
       this.activations.assertAdmitting(parent)

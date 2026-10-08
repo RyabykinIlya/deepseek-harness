@@ -133,6 +133,7 @@ export interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  readonly repository: boolean
 }
 
 /**
@@ -198,6 +199,19 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Optional repository the child's isolated working tree is created from,
+   * named as a path inside the parent's working directory — usually a
+   * subdirectory name, and any directory inside the repository works because
+   * the provider resolves it to that repository's top level. Requires
+   * {@link SubagentCapabilities.repository}; rejected at start otherwise.
+   *
+   * It exists for a parent whose working directory is NOT a repository itself
+   * but holds several (a workspace directory): the parent names which one the
+   * child works in. Omission keeps the provider's existing resolution, which
+   * for a worktree provider is the parent's own working directory.
+   */
+  readonly repository?: string
 }
 
 /**
@@ -226,6 +240,14 @@ export interface ContinuableCreateRequest {
    * the initial prompt into the child's inbox.
    */
   readonly signal: AbortSignal
+  /**
+   * Repository named on the delegation, as a path inside the parent's working
+   * directory. A provider that isolates the child in a git worktree resolves it
+   * here, because preparation is the only moment it decides which repository
+   * the child works in; the manager carries the value without interpreting it.
+   * Absent — the provider keeps its existing resolution.
+   */
+  readonly repository?: string
 }
 
 /**

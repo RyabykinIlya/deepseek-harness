@@ -55,7 +55,7 @@ async function setup(spec: () => ContinuableCreateSpec, parentCwd?: string) {
   const prepare = vi.fn(() => Promise.resolve(spec()))
   ctx.subagents.registerProvider({
     name: 'custom',
-    capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
+    capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false, repository: false },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('one-shot start is not used')),
     prepareContinuable: prepare,
