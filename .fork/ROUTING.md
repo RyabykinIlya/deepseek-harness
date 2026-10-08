@@ -56,9 +56,14 @@
 
 ```yaml
 tiers:
-  - { name: pro,   models: [ deepseek/deepseek-v4-pro, z-ai/glm-5.3 ], …, unknownQuantization: reject, free: 'off' }
-  - { name: flash, models: [ deepseek/deepseek-v4-flash, z-ai/glm-5.3-flash, stealth/space-bunny-alpha ], …, free: prefer }
+  - { name: pro,   models: [ deepseek/deepseek-v4-pro, z-ai/glm-5.3, xiaomi/mimo-v2.6-pro, … ], …, unknownQuantization: reject, free: 'off' }
+  - { name: flash, models: [ z-ai/glm-5.3-flash, stealth/space-bunny-alpha, deepseek/deepseek-v4.1-flash, xiaomi/mimo-v2.6-flash, … ], …, free: prefer }
+  # каждый тир несёт extraSources — прямые источники рядом с OpenRouter-эндпоинтами:
+  # claude-proxy (claude-opus-5 / claude-sonnet-5 через modelMap) и Anthropic-token-plan-sgp
 trustedUnknownProviders: [ stealth ]
+rerouteCodes: [ RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, PI_AI_ERROR, KEY_QUOTA, QUOTA ]
+efforts: [ high, xhigh, max ]
+defaultEffort: high
 snapshotPolicy: latest
 judgeModel: typesafe/jev-1.13
 presetRoutes:
@@ -69,7 +74,7 @@ diagnosticsMaxBytes: 262144
 
 `trustedUnknownProviders` перекрыт на `[ stealth ]`, то есть список из `config.ts` здесь не действует: `unknown` по квантизации принимается только у `stealth`. Список по умолчанию выведен замером и содержит 15 площадок ([MEASUREMENTS.md](MEASUREMENTS.md#квантизации-кто-объявляет-unknown)); сужение до одной записано как открытый вопрос в [STATUS.md](STATUS.md#открытые-баги).
 
-Отдельно стоит посмотреть на строку `agent-default-model` того же профиля: там стоит `provider: tiers, model: stealth/space-bunny-alpha`. Это `fixed`, а не `auto`, поэтому в обычной сессии судья не вызывается и ранжирование идёт по эндпоинтам одной модели. Автоматический выбор ступени включается заменой `model` на `auto`.
+Отдельно стоит посмотреть на строку `agent-default-model` того же профиля: там стоит `provider: tiers, model: auto, reasoningEffort: high`. Это `auto`, то есть судья выбирает ступень, а внутри ступени работает ранжирование по смешанной цене. Замена `model` на конкретный id вернёт режим `fixed`: судья не вызывается, ранжирование идёт по провайдерам одной модели.
 
 Список id **не трогайте при выходе нового релиза** — ради этого `latest` и нужен. Меняйте только если меняется модель или фильтры тира.
 
@@ -118,8 +123,8 @@ pnpm run test:snapshot -t tiers
 
 ## Границы
 
-- Изменение **не закоммичено**: инвентарь в [INVENTORY.md](INVENTORY.md) считает только коммиты, поэтому цифры в нём эту работу ещё не видят.
-- Профиль переключён на `latest`, но **хост не перезапущен**: работающее приложение собрано до правки. Без перезапуска политика не действует, а лог молчит.
+- Работа закоммичена; поверхность конфликтов с апстримом считает [INVENTORY.md](INVENTORY.md).
+- Профиль переключён на `latest`, хост перезапущен 2026-10-06: живые решения 2026-10-07 показывают `deepseek/deepseek-v4-pro-0813` в кандидатах и `source: {kind: 'claude-proxy'}` в победителях, то есть политика снапшотов и прямые источники действуют.
 - Резолв семейства — локальная доработка `llm-pi-ai`; апстрим её не знает, и при отчуждении она едет вместе с `fetchOpenRouterEndpoints` (см. [plans/model-routing.md](plans/model-routing.md)).
 
 ## Что маршрут знает и где это читать
