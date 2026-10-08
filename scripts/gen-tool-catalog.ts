@@ -134,14 +134,15 @@ class CatalogWorkflowEngine extends WorkflowEngine {
 
 /**
  * Register the descriptor needed to mount schema-producing consumers. Declares
- * the full capability set of the shipped in-process providers so consumers
- * mount under their shipped defaults (tool-subagent's default numeric maxDepth
- * requires `depthLimit`).
+ * the capability set consumers need to mount under their shipped defaults
+ * (tool-subagent's default numeric maxDepth requires `depthLimit`); `repository`
+ * mirrors the shipped default binding (`spawn`) so the harvested schema is the
+ * default one, with the per-package note recording the other branch.
  */
 function registerCatalogSubagentProvider(ctx: Context, name: string): void {
   const provider: SubagentProvider = {
     name,
-    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository: false },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('tool-catalog provider cannot start a child')),
     // Declared so consumers configured for continuable background mode mount.
@@ -542,7 +543,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       registerListSubagentModels(ctx, { routes: [{ provider: 'mock', model: 'mock' }] })
     },
     note:
-      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
+      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`. The `repository` parameter is provider-gated: it appears only when the chosen provider selects a repository per subagent (the Threads `thread` backend), and the default binding (`spawn`) omits it.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',

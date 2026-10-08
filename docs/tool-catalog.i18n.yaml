@@ -9,8 +9,8 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 75120ef94b3c2830
-  zh: c5db28dd6853e91a
+  en: e0a3bc4c1781444a
+  zh: 86a702d236c9fa36
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -228,8 +228,8 @@
   en: c89084b31ffccbce
   zh: d7b3b7000f2d2be9
 /tool-schema-catalog/deepseek-ai-dsh-tool-subagent/subagent:
-  en: 55cbd29d70bcf3d7
-  zh: 886a1b57446bd5e1
+  en: e08cf9ce073facd7
+  zh: 5107a1ff6620cbe3
 /tool-schema-catalog/deepseek-ai-dsh-tool-subagent-control:
   en: ab82e130c3413f04
   zh: ab82e130c3413f04
@@ -282,8 +282,32 @@
   en: 2eac7360ba68b1bd
   zh: b5d676bf288c245e
 /tool-schema-catalog/deepseek-ai-dsh-experimental-tool-agent-team/wait-agent:
-  en: fbc4d75a9bcf6816
-  zh: 672131ac2705f411
+  en: 201a6cedc0270019
+  zh: 053a56677bf87e48
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool:
+  en: dd110d77ecff6739
+  zh: dd110d77ecff6739
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/library-list:
+  en: ab44e208454e5ec1
+  zh: 46691c763b9a1096
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-diff:
+  en: 98fdd00cab6261e3
+  zh: ef7fdd5bdeebff12
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-status:
+  en: 7deba1bd540e63d2
+  zh: 40d1874b04f520f6
+/tool-schema-catalog/deepseek-ai-dsh-experimental-threads-tool/thread-tier:
+  en: bebec4d7f860bda5
+  zh: 58205fa68263fc4e
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory:
+  en: 1077659a1f7e02d7
+  zh: 1077659a1f7e02d7
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory/memory-read:
+  en: 60e11eb24680294c
+  zh: e73a57a5297a1815
+/tool-schema-catalog/deepseek-ai-dsh-experimental-project-memory/memory-write:
+  en: dd12b5f081023a15
+  zh: dde4cd9b11b0ac4c
 /tool-schema-catalog/deepseek-ai-dsh-tool-todo:
   en: dea62d26fb18ff68
   zh: dea62d26fb18ff68

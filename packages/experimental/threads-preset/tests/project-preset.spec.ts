@@ -25,7 +25,7 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { ContinuableCreateSpec, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type { ContinuableCreateSpec, SubagentCapabilities, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import { TestSessionQuery } from '../../../subagent/subagent/tests/test-session-query.ts'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import ThreadsPreset, {
@@ -82,11 +82,13 @@ const BASE_ROWS = [
 
 /** A continuable provider that records its preparations and answers with a fixed spec. */
 class RecordingProvider implements SubagentProvider {
-  readonly capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true }
+  readonly capabilities: SubagentCapabilities
   readonly inheritsParentContext = false
   prepared = 0
 
-  constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}) {}
+  constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}, repository = false) {
+    this.capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository }
+  }
 
   start(): Promise<SubagentRun> {
     return Promise.reject(new Error(`${this.name} drives only the continuable path`))
@@ -131,7 +133,7 @@ async function harness(
   await ctx.plugin(AgentPresets, { default: BASE_ID })
   await ctx.agentPresets.register({ id: BASE_ID, plugins: BASE_ROWS })
   const spawn = new RecordingProvider('spawn')
-  const thread = new RecordingProvider(THREAD_PROVIDER, threadSpec)
+  const thread = new RecordingProvider(THREAD_PROVIDER, threadSpec, true)
   ctx.subagents.registerProvider(spawn)
   ctx.subagents.registerProvider(thread)
   await ctx.plugin(ThreadsPreset, config)
@@ -504,9 +506,11 @@ describe('the contracts', () => {
     expect(coordinatorContract()).toBe([
       '## Threads',
       '',
-      'You coordinate this Project. A Thread is a background agent that works in its own git worktree on its own branch, so its edits do not appear in the Project checkout until you merge its branch.',
+      'You coordinate this Project. A Thread is a background agent that works in one repository of the Project, in its own git worktree on its own branch, so its edits do not appear in that repository\'s checkout until you merge its branch.',
       '',
       'Restate the goal in your own words, propose a split into independent Threads (tasks that do not need each other\'s results and, where possible, touch different files), and start each Thread with the `subagent` tool. Before starting any Thread, show the user the proposed split and wait for their approval.',
+      '',
+      'The Project\'s working directory may hold several git repositories. Name the repository a Thread works in with the `repository` parameter of `subagent`, usually the subdirectory name; when the working directory is itself the repository, no name is needed.',
       '',
       'A Thread starts with no history of this conversation. Write each task to be self-contained: the goal, the relevant paths, the constraints, and how to verify the result.',
       '',
@@ -518,13 +522,32 @@ describe('the contracts', () => {
       '',
       'Review a finished Thread with `thread_diff`, which lists its commits and changed files. Use `send_message` to give a running Thread more instructions and `interrupt_agent` to stop it.',
       '',
-      'Integrate a reviewed Thread by importing its branch from its worktree into the Project checkout with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
+      'Integrate a reviewed Thread by importing its branch from its worktree into the checkout of the repository that Thread worked in with `git fetch <worktree> <branch>:<branch>` and merging with `git merge --no-ff <branch>`, resolving conflicts, and running the tests. thread_status and thread_diff show each Thread\'s worktree path. When several Threads changed the same files, propose a merge order before you merge any of them. Ask the user before you merge each Thread.',
       '',
       'After a Thread\'s branch is merged, suggest that the user archive that Thread. Archiving is done by the user from the interface; you cannot do it.',
     ].join('\n'))
     expect(contract.THREADS_CONTRACT_CONTEXT).toBe(coordinatorContract())
     expect(coordinatorContract()).not.toContain('You see only its status')
     expect(coordinatorContract()).not.toContain('{{')
+  })
+
+  it('names the repository a Thread works in, under every sentence variant', () => {
+    const selection = 'Name the repository a Thread works in with the `repository` parameter of `subagent`, usually the subdirectory name; when the working directory is itself the repository, no name is needed.'
+    const integration = 'into the checkout of the repository that Thread worked in'
+
+    for (const variant of [
+      coordinatorContract(),
+      coordinatorContract({ spawn: 'auto' }),
+      coordinatorContract({ checkIn: 'each-thread' }),
+      coordinatorContract({ mergePolicy: 'auto' }),
+      coordinatorContract({ tierContract: 'tiers' }),
+    ]) {
+      expect(variant).toContain('The Project\'s working directory may hold several git repositories.')
+      expect(variant).toContain(selection)
+      expect(variant).toContain(integration)
+      // The ambiguous single-repository phrase must not survive anywhere in the coordinator text.
+      expect(variant).not.toContain('into the Project checkout')
+    }
   })
 
   it('pins the worker contract verbatim', () => {

@@ -26,7 +26,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { ContinuableCreateSpec, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type { ContinuableCreateSpec, SubagentCapabilities, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { TestSessionQuery } from '../../../subagent/subagent/tests/test-session-query.ts'
 import ThreadsPreset, {
@@ -71,10 +71,12 @@ const BASE_ROWS = [
 
 /** A continuable provider that answers with a fixed creation spec. */
 class RecordingProvider implements SubagentProvider {
-  readonly capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true }
+  readonly capabilities: SubagentCapabilities
   readonly inheritsParentContext = false
 
-  constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}) {}
+  constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}, repository = false) {
+    this.capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository }
+  }
 
   start(): Promise<SubagentRun> {
     return Promise.reject(new Error(`${this.name} drives only the continuable path`))
@@ -104,7 +106,7 @@ async function harness(config: Partial<ThreadsPresetInput> = {}): Promise<Contex
   await ctx.plugin(AgentPresets, { default: BASE_ID })
   await ctx.agentPresets.register({ id: BASE_ID, plugins: BASE_ROWS })
   ctx.subagents.registerProvider(new RecordingProvider('spawn'))
-  ctx.subagents.registerProvider(new RecordingProvider(THREAD_PROVIDER_NAME))
+  ctx.subagents.registerProvider(new RecordingProvider(THREAD_PROVIDER_NAME, {}, true))
   await ctx.plugin(ThreadsPreset, { basePreset: BASE_ID, ...config })
   return ctx
 }

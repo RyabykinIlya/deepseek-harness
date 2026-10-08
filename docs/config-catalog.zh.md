@@ -3582,7 +3582,7 @@ export interface Config {
 
 - `inject`: `subagents` · `worktrees`
 - `refs`: [`WorktreeBasePolicy`](../packages/subagent/worktree-manager/src/index.ts)
-- `source`: [`packages/subagent/subagent-thread-worktree/src/index.ts:60`](../packages/subagent/subagent-thread-worktree/src/index.ts)
+- `source`: [`packages/subagent/subagent-thread-worktree/src/index.ts:64`](../packages/subagent/subagent-thread-worktree/src/index.ts)
 
 ```ts config-catalog
 /** Config: the registry name plus the worktree layout policy. */
