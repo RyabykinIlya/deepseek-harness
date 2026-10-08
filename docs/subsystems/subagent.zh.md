@@ -32,12 +32,13 @@ interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  readonly repository: boolean
 }
 ```
 
 ## 单次启动请求
 
-工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 Agent 提供方、模型、推理强度与 token 覆盖、output schema、depth、工具过滤器和 persona 需要对应的能力 flag 匹配。进程内后端会把 `agentOptions` 合并到父 Agent 选项之上，将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。DSH SDK 后端会把四个 Agent 路由字段合并到实例默认值之上，并在子运行时初始化期间校验；ACP、Codex 与 Claude Code 会在启动传输前拒绝 `agentOptions`。
+工具层根据模型输入和自身配置构建此请求；服务在 `start` 之前针对指定提供方进行校验。必填的 `parent` 提供会话 cwd、谱系与委派深度。可选的 Agent 提供方、模型、推理强度与 token 覆盖、output schema、depth、工具过滤器、persona 和 repository 需要对应的能力 flag 匹配。进程内后端会把 `agentOptions` 合并到父 Agent 选项之上，将 filter 和 persona 的作用域限定在子 agent 创建阶段，并通过强制 capture 工具实现所支持的 object-rooted schema。DSH SDK 后端会把四个 Agent 路由字段合并到实例默认值之上，并在子运行时初始化期间校验；ACP、Codex 与 Claude Code 会在启动传输前拒绝 `agentOptions`。
 
 ```ts type-equiv
 /**
@@ -103,6 +104,19 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Optional repository the child's isolated working tree is created from,
+   * named as a path inside the parent's working directory — usually a
+   * subdirectory name, and any directory inside the repository works because
+   * the provider resolves it to that repository's top level. Requires
+   * {@link SubagentCapabilities.repository}; rejected at start otherwise.
+   *
+   * It exists for a parent whose working directory is NOT a repository itself
+   * but holds several (a workspace directory): the parent names which one the
+   * child works in. Omission keeps the provider's existing resolution, which
+   * for a worktree provider is the parent's own working directory.
+   */
+  readonly repository?: string
 }
 ```
 
@@ -242,6 +256,14 @@ interface ContinuableCreateRequest {
    * the initial prompt into the child's inbox.
    */
   readonly signal: AbortSignal
+  /**
+   * Repository named on the delegation, as a path inside the parent's working
+   * directory. A provider that isolates the child in a git worktree resolves it
+   * here, because preparation is the only moment it decides which repository
+   * the child works in; the manager carries the value without interpreting it.
+   * Absent — the provider keeps its existing resolution.
+   */
+  readonly repository?: string
 }
 ```
 
@@ -475,6 +497,20 @@ interface SubagentProvider {
    * data belonging only to `request.sessionId`.
    */
   prepareContinuable?(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+  /**
+   * Whether a continuable child of this provider runs somewhere the ONE-SHOT
+   * route would not put it — a git worktree, a container, any working
+   * directory the provider establishes only while preparing a continuable
+   * creation. `true` promises that {@link SubagentProvider.start} would run
+   * the child unisolated, so a caller that must not lose the isolation refuses
+   * the one-shot route instead of taking it.
+   *
+   * Descriptive, like {@link SubagentProvider.inheritsParentContext}: the
+   * provider states the fact and the model-facing tool derives its own wording
+   * and refusal from it. A provider that isolates nothing omits this, and its
+   * children then run identically on either route.
+   */
+  readonly isolatesContinuableCwd?: boolean
 }
 ```
 

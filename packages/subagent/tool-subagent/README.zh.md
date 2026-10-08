@@ -63,6 +63,12 @@ kind: "package-reference"
 
 `maxDepth` 限制递归深度（`0` 禁止委派）；省略时，每次委派读取 Host 当前的 `subagent.maxDepth` 设置，初始值为 `1`。数值深度要求提供方具备 `depthLimit` 能力；`'provider-managed'` 把预算留给进程外提供方。当提供方支持时，`persona` 与 `toolFilter` 会配置每个子 agent；工具在达到上限时仍然可见——每次尝试启动都会检查调用 agent 的当前深度，被拒绝时返回出错的工具结果。
 
+### 命名仓库
+
+可选参数 `repository` 命名子 agent 所用的 git 仓库；它的取值是委派 agent 工作目录内的路径，通常是子目录名，该仓库内的任意目录都可以，因为提供方会把它解析到该仓库的顶层。当你的工作目录本身就是你所指的仓库时请省略它；当你的工作目录是存放多个仓库的 workspace 目录时则需要给出仓库名。[thread worktree 后端](../subagent-thread-worktree/README.zh.md)是会解析该参数的提供方。
+
+只有提供方声明了 `repository` 能力的实例，其 schema 才包含该参数；即便如此传入该参数也会被拒绝而不是忽略：`repository is not available for provider "<provider>", which does not select a repository per subagent; omit the parameter`。空值会被拒绝：`repository was empty; name a repository inside your working directory, or omit the parameter to use your working directory`。
+
 ### 选择子级 LLM
 
 改用 `allowedModels` 可以把这份授权交给配置而不是宿主设置：非空列表让本实例的每个 Session 都拿到同样这几个精确路由，因此不需要在 Settings 页逐 Session 采样，也不会记录任何 `subagent/model-selection-policy` 事件。
@@ -132,11 +138,11 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-委派工具的描述使用 `running` 与 `inactive` 表达后续投递的可用状态；`inactive` 不表示任务结果。当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent)。启用的 Session 策略会添加 `provider`、`model` 与 `reasoning_effort`，以及继承和选择指引；提供方必须支持 `agentOptions`。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
+委派工具的描述使用 `running` 与 `inactive` 表达后续投递的可用状态；`inactive` 不表示任务结果。当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent)。启用的 Session 策略会添加 `provider`、`model` 与 `reasoning_effort`，以及继承和选择指引；提供方必须支持 `agentOptions`。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。声明了 `repository` 能力的提供方会添加 `repository`，它命名子 agent 所用的仓库。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
 
 #### Token 影响
 
-每个父级请求支付固定的 schema 成本；模型选择会增加三个参数。每个提供方实例增加一个 schema，每个可继续实例还增加一个简短的系统提示词 section。
+每个父级请求支付固定的 schema 成本；模型选择会增加三个参数，提供方支持按仓库选择时再增加一个。每个提供方实例增加一个 schema，每个可继续实例还增加一个简短的系统提示词 section。
 
 #### KV Cache 影响
 

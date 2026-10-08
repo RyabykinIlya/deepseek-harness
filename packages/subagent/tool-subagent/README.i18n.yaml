@@ -23,6 +23,9 @@
 /deepseek-ai-dsh-tool-subagent/use-this-package/foreground-and-background-modes:
   en: 8e7319bc2887ae5c
   zh: 87d5abdfbe7562df
+/deepseek-ai-dsh-tool-subagent/use-this-package/naming-the-repository:
+  en: cdf1816774a307be
+  zh: 67c47de033bf1488
 /deepseek-ai-dsh-tool-subagent/use-this-package/selecting-a-child-llm:
   en: 0d37e3b3957515e4
   zh: 12376d84f9932b5e
@@ -54,11 +57,11 @@
   en: e4c7376d4f29dbd5
   zh: 6b7a9eaf69c9ea53
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/what-the-model-sees:
-  en: 5d88050d9496b928
-  zh: 1278b3b7da4335db
+  en: 117de8781fa0cf50
+  zh: cca4271993a26d51
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/token-effect:
-  en: 1aa53b7a4c24cc25
-  zh: bebd5c5ce6443259
+  en: aa7222268d09cf6b
+  zh: 8ecee0e3ae5a60ec
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/kv-cache-effect:
   en: 46f736c6c389052a
   zh: a7765541030e9104

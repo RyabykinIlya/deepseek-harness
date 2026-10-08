@@ -63,6 +63,12 @@ Under `continuable` policy, an omitted or `true` `run_in_background` starts a du
 
 `maxDepth` caps recursion (`0` forbids delegation); omission reads the current Host `subagent.maxDepth` setting, initially `1`, at each delegation. A numeric depth requires a provider with the `depthLimit` capability; `'provider-managed'` leaves the budget to an out-of-process provider. `persona` and `toolFilter` configure every child when the provider supports them, and the tool stays visible at the cap — each attempted start checks the calling agent's current depth and rejects with an errored result.
 
+### Naming the repository
+
+The optional `repository` parameter names the git repository the child works in; its value is a path inside the delegating agent's working directory, usually the subdirectory name, and any directory inside that repository works because the provider resolves it to the repository's top level. Omit it when your working directory is already the repository you mean, and name one when your working directory is a workspace directory that holds several repositories. The [thread worktree backend](../subagent-thread-worktree/README.md) is the provider that resolves it.
+
+The parameter is in the schema only for an instance whose provider declares the `repository` capability, and supplying it anyway is refused rather than ignored: `repository is not available for provider "<provider>", which does not select a repository per subagent; omit the parameter`. A blank value is refused with `repository was empty; name a repository inside your working directory, or omit the parameter to use your working directory`.
+
 ### Selecting a child LLM
 
 Set `modelSelectionSettings: true` to sample the Host's `subagent-model-selection` preference when each fresh top-level Session is composed. A restored Session without a recorded policy remains disabled, including an explicitly empty restore. When enabled, the non-empty exact provider/model route list is recorded in the Session, inherited by child Sessions, and unchanged by later settings edits. The tool then exposes optional `provider`, `model`, and `reasoning_effort` fields and registers the shared `list_subagent_models` tool. This mode requires a backend that advertises `agentOptions`; both in-process backends and DSH SDK support it, while ACP, Codex, and Claude Code reject it rather than ignore it.
@@ -130,11 +136,11 @@ Read these pages when the package-level contract is not enough; they move from t
 
 #### What the model sees
 
-The delegation description uses `running` and `inactive` for follow-up availability; `inactive` does not imply a task result. The generated default [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent) under this instance's configured name while its provider exists. An enabled Session policy adds `provider`, `model`, and `reasoning_effort` plus inheritance and selection guidance; the provider must support `agentOptions`. Provider context inheritance changes the tool and prompt descriptions. Enabled background mode adds `run_in_background`: continuable mode documents its `true` default, runtime settlement notice, and explicit foreground override, while one-shot mode documents its `false` default and the job id collected with `job_output` or stopped with `job_kill`. While the tool is visible in an assembly's scope, a `tool:<toolName>` system-prompt section tells the model to start independent continuable delegations together, keep working while they run, and choose foreground only when its next action depends on the result; a tool restriction removes both its schema and this guidance.
+The delegation description uses `running` and `inactive` for follow-up availability; `inactive` does not imply a task result. The generated default [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent) under this instance's configured name while its provider exists. An enabled Session policy adds `provider`, `model`, and `reasoning_effort` plus inheritance and selection guidance; the provider must support `agentOptions`. Provider context inheritance changes the tool and prompt descriptions. Enabled background mode adds `run_in_background`: continuable mode documents its `true` default, runtime settlement notice, and explicit foreground override, while one-shot mode documents its `false` default and the job id collected with `job_output` or stopped with `job_kill`. A provider that declares the `repository` capability adds `repository`, which names the repository the child works in. While the tool is visible in an assembly's scope, a `tool:<toolName>` system-prompt section tells the model to start independent continuable delegations together, keep working while they run, and choose foreground only when its next action depends on the result; a tool restriction removes both its schema and this guidance.
 
 #### Token effect
 
-Fixed schema cost per parent request; model selection adds three parameters. Each provider instance adds one schema, and each continuable instance adds one short system-prompt section.
+Fixed schema cost per parent request; model selection adds three parameters, and a repository-selecting provider adds one more. Each provider instance adds one schema, and each continuable instance adds one short system-prompt section.
 
 #### KV Cache effect
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当需要让某个 agent 的每个 continuable 子代理都隔离在自己的自包含克隆中时，使用本包。该后端在创建子代理的过程中创建这个克隆，把它的绝对路径作为子代理持久化的 `cwd` 返回，并在创建被中止时负责回滚该克隆。由于会话的 `cwd` 同时也是其沙箱写入根目录，这个克隆正是约束子代理写入范围的东西。本包自身不是 worktree 管理器：git 操作、持久化的意图记录与启动时对账都由它依赖的 `@deepseek-ai/dsh-worktree-manager` 负责。
+当需要让某个 agent 的每个 continuable 子代理都隔离在自己的自包含克隆中时，使用本包。该后端解析委派所命名的仓库，在创建子代理的过程中创建这个克隆，把它的绝对路径作为子代理持久化的 `cwd` 返回，并在创建被中止时负责回滚该克隆。由于会话的 `cwd` 同时也是其沙箱写入根目录，这个克隆正是约束子代理写入范围的东西。本包自身不是 worktree 管理器：git 操作、持久化的意图记录与启动时对账都由它依赖的 `@deepseek-ai/dsh-worktree-manager` 负责。
 
 ## 目录
 
@@ -58,16 +58,26 @@ kind: "package-reference"
 
 ### Thread 得到什么
 
-每个 continuable 子代理都会获得一个 worktree，从父会话的仓库按配置的 `baseRef` 检出。子代理的 `cwd` 是 worktree 路径加上父级 cwd 相对仓库顶层的路径，因此位于 `packages/app` 的父级会得到 `<worktree>/packages/app` 中的子代理。若该目录不在基点提交中，worktree 会被移除，创建以 `WORKTREE_SUBDIRECTORY_MISSING` 失败。该 `cwd`沙箱据此推导可写根目录，因此子代理无法写到自己的树之外。子代理不从父级继承历史，这正是它的上下文窗口保持独立的原因。
+每个 continuable 子代理都会获得一个 worktree，从委派所选择的仓库按配置的 `baseRef` 检出。子代理的 `cwd` 是 worktree 根目录加上所选仓库相对该仓库顶层的路径：命名仓库本身得到 worktree 根目录，命名其内部的目录则得到该子目录，因此命名 `packages/app` 的委派会得到位于 `<worktree>/packages/app` 的子代理。若该目录不在基点提交中，worktree 会被移除，创建以 `WORKTREE_SUBDIRECTORY_MISSING` 失败。沙箱正是从这个 `cwd` 推导可写根目录，因此子代理无法写到自己的树之外。子代理不从父级继承历史，这正是它的上下文窗口保持独立的原因。
+
+### 选择仓库
+
+`prepareContinuable` 会把委派中可选的 `repository`（父会话工作目录内的路径，通常是子目录名）解析到该仓库的顶层，并据此创建 worktree。父会话的工作目录本身就是仓库时请省略该参数，此时 worktree 就来自该仓库；工作目录是存放多个仓库的 workspace 目录时则需要给出它。
+
+当仓库无法解析时——委派在工作目录持有多个仓库时未命名仓库，或命名的路径不存在、是文件、位于父级工作目录之外、或不在任何 git 工作树内——创建会以 `NOT_A_GIT_REPO` 被拒绝，错误会列出候选仓库：
+
+`thread worktrees: the repository for this Thread is not resolvable from <target>; name a repository inside <parentCwd> with the repository parameter. Repositories under <parentCwd>: <candidates>.`
+
+其中 `<target>` 是委派解析出的路径——委派未命名仓库时是父会话的工作目录，否则是该目录与所命名仓库的连接结果；`<parentCwd>` 是父会话的工作目录；`<candidates>` 是其直接子目录名中属于仓库顶层的部分，按排序用逗号分隔，或为 `none found`。
 
 ### 创建失败时
 
-所有失败都是响亮且带类型的；本包绝不退化为一个未隔离的子代理。没有 `cwd` 的父会话、不是 git 工作树的仓库、已存在的分支、被占用的 worktree 路径，都会在创建期间或之前各自拒绝。如果调用方的信号在 worktree 已存在之后中止，provider 会在向上抛出之前把它移除——continuation manager 无法代劳，因为它对从未被发布的子代理不持有任何句柄。
+所有失败都是响亮且带类型的；本包绝不退化为一个未隔离的子代理。没有 `cwd` 的父会话、无法解析的 `repository`、不是 git 工作树的仓库、已存在的分支、被占用的 worktree 路径，都会在创建期间或之前各自拒绝。命名了 `repository` 的 one-shot 启动同样会被拒绝：该路径不创建 worktree，会忽略这个名字。如果调用方的信号在 worktree 已存在之后中止，provider 会在向上抛出之前把它移除——continuation manager 无法代劳，因为它对从未被发布的子代理不持有任何句柄。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-provider 对一个 continuable 子代理的全部参与就是 `prepareContinuable`：它通过 `ctx.worktrees` 创建 worktree、返回 `{ cwd }`，并为自己的失败提供补偿。身份预留、组合、提示投递、冷恢复、所有权与释放全都属于 continuation manager，因此本包自身不承载任何生命周期。
+provider 对一个 continuable 子代理的全部参与就是 `prepareContinuable`：它解析委派命名的仓库、通过 `ctx.worktrees` 创建 worktree、返回 `{ cwd }`，并为自己的失败提供补偿。身份预留、组合、提示投递、冷恢复、所有权与释放全都属于 continuation manager，因此本包自身不承载任何生命周期。
 
 one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提供隔离：one-shot 子代理必然与父级共享工作目录。隔离是 continuable Thread 独有的属性，而本后端的 one-shot 委派并不是获得 worktree 的受支持方式。
 
@@ -90,11 +100,11 @@ one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提�
 
 #### 模型看到什么
 
-模型看不到本包带来的任何新工具。它使用配置为指向本 provider 的普通委派工具；工具的 `run_in_background` 与 `backgroundMode: continuable` 设置决定调用是否立即返回子代理 id。选择哪个后端并不会改变工具的描述与 schema。
+模型看不到本包带来的任何新工具。它使用配置为指向本 provider 的普通委派工具；工具的 `run_in_background` 与 `backgroundMode: continuable` 设置决定调用是否立即返回子代理 id。本后端还会给该工具带来 `repository` 参数，用它命名 Thread 所用的仓库。
 
 #### Token 影响
 
-本包本身不产生 schema 开销。continuable Thread 的各个回合只在该子代理自己的会话内消耗 token。
+`repository` 参数在委派 schema 中占一个固定条目；本包本身不新增工具。continuable Thread 的各个回合只在该子代理自己的会话内消耗 token。
 
 #### KV 缓存影响
 
@@ -105,7 +115,8 @@ one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提�
 <a id="known-limitations-and-deferred-work"></a>
 
 - **one-shot 委派不受隔离。** 通过 one-shot 路径启动的子代理共享父级检出目录。请使用 `backgroundMode: continuable`。
-- **不做回合并。** 分支为子代理创建后就地保留；没有任何东西把它合并回父级检出目录，也没有任何东西在子代理停止时删除它。
+- **一个 Thread 一个仓库。** 每次委派命名单个仓库，并在 Thread 启动时解析；一个 Thread 绝不会同时看到多个仓库。
+- **不做回合并。** 分支为子代理创建后就地保留；没有任何东西把它合并回所选仓库的检出目录，也没有任何东西在子代理停止时删除它。
 - **移除需要 worktree 管理器。** 在正常运行期间本包从不移除 worktree；移除是对管理器的显式调用。
 - **未提交改动需要 `baseRef: head-with-uncommitted`。** 使用默认值时，子代理看不到父级检出目录中的改动；即便启用它，未跟踪文件也不会被复制。
 - **隔离只覆盖写入。** 读取与网络未被隔离；object store 是子代理自己的，位于其目录内部，只有 `/tmp` 是共享的。`git push` 指向其克隆的 `origin`，即父仓库的路径，位于子代理沙箱根之外，因此沙箱会拒绝它，worker 契约在任何会话中都禁止 push。

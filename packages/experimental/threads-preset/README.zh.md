@@ -135,11 +135,11 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 
 #### 模型看到的内容
 
-Project 看到一个名为 `threads:contract` 的 runtime context。它说明：Project 负责协调工作；Thread 是在自己的 git worktree 和分支上工作的后台 agent，其改动只有经过合并才会进入检出目录；模型应重述目标、提出拆分方案，并用 `subagent` 工具启动 Thread，该调用是异步的，返回的是 id 而不是工作结果；Thread 完成时会自行回报，因此模型不得循环轮询；`thread_status` 有界且可能省略部分 Thread；`thread_diff` 用于审阅已完成的 Thread；整合方式是先用 `git fetch <worktree> <branch>` 从 Thread 的 worktree 取回其分支，再用 `git merge --no-ff <branch>` 合并，需解决冲突并运行测试；`thread_status` 与 `thread_diff` 显示每个 Thread 的 worktree 路径；当多个 Thread 改了同一批文件时应先提出合并顺序；已合并 Thread 的归档由用户在界面上完成。Thread 看到的是一个名为 `threads:worker-contract` 的 runtime context。它说明：模型是 Project 的 Thread，负责一项被委派的任务；它的检出目录与分支属于自己；每个完成的步骤都要提交；除非被要求，不推送、不改动其他分支；它的检出目录是完整的独立仓库，普通 git 命令无需任何提权即可使用；绝不创建任何仓库的 worktree、clone 或副本，也绝不为 git 操作申请更宽的文件写入权限，无法在自己的检出目录内写入时向协调者报告；完成后用 `send_message` 给父代理发送自包含的总结：改了什么、如何验证、剩余风险，以及来自 `git branch --show-current` 的分支名。该行的 `Config` 提供三种句子变体：汇报节奏（`milestones`、`each-thread`、`quiet`）、启动 Thread 前是否等待批准（`ask`、`auto`），以及合并前是否询问（`ask`、`auto`）；每个变体都是替换进契约的固定句子，其余文本完全相同。委派描述、schema 以及 `thread_status` 的 schema 属于这两个预设挂载的行，而不属于本包。
+Project 看到一个名为 `threads:contract` 的 runtime context。它说明：Project 负责协调工作；Thread 是在 Project 的某一个仓库里、在自己的 git worktree 和分支上工作的后台 agent，其改动只有经过合并才会进入该仓库的检出目录；模型应重述目标、提出拆分方案，并用 `subagent` 工具启动 Thread，该调用是异步的，返回的是 id 而不是工作结果；Project 的工作目录可能存放多个 git 仓库，因此模型要用 `subagent` 的 `repository` 参数命名 Thread 所用的仓库，通常是子目录名，而当工作目录本身就是仓库时不必命名；Thread 完成时会自行回报，因此模型不得循环轮询；`thread_status` 有界且可能省略部分 Thread；`thread_diff` 用于审阅已完成的 Thread；整合方式是先用 `git fetch <worktree> <branch>:<branch>` 从 Thread 的 worktree 取回其分支，再用 `git merge --no-ff <branch>` 把它合并进该 Thread 所用仓库的检出目录，需解决冲突并运行测试；`thread_status` 与 `thread_diff` 显示每个 Thread 的 worktree 路径；当多个 Thread 改了同一批文件时应先提出合并顺序；已合并 Thread 的归档由用户在界面上完成。Thread 看到的是一个名为 `threads:worker-contract` 的 runtime context。它说明：模型是 Project 的 Thread，负责一项被委派的任务；它的检出目录与分支属于自己；每个完成的步骤都要提交；除非被要求，不推送、不改动其他分支；它的检出目录是完整的独立仓库，普通 git 命令无需任何提权即可使用；绝不创建任何仓库的 worktree、clone 或副本，也绝不为 git 操作申请更宽的文件写入权限，无法在自己的检出目录内写入时向协调者报告；完成后用 `send_message` 给父代理发送自包含的总结：改了什么、如何验证、剩余风险，以及来自 `git branch --show-current` 的分支名。该行的 `Config` 提供三种句子变体：汇报节奏（`milestones`、`each-thread`、`quiet`）、启动 Thread 前是否等待批准（`ask`、`auto`），以及合并前是否询问（`ask`、`auto`）；每个变体都是替换进契约的固定句子，其余文本完全相同。委派描述、schema 以及 `thread_status` 的 schema 属于这两个预设挂载的行，而不属于本包。
 
 #### Token 影响
 
-协调者契约约 2.2 kB prompt 文本，每个 Project 会话添加一次，且只对 Project 会话添加。worker 契约约 1.2 kB，每个 Thread 添加一次。选择其他预设的会话不承担任何开销。
+协调者契约约 2.5 kB prompt 文本，每个 Project 会话添加一次，且只对 Project 会话添加。worker 契约约 1.2 kB，每个 Thread 添加一次。选择其他预设的会话不承担任何开销。
 
 #### KV Cache 影响
 
@@ -154,7 +154,7 @@ Project 看到一个名为 `threads:contract` 的 runtime context。它说明：
 - **没有新的会话类型** — Project 只是一种预设选择；呈现不同 Project 界面的客户端依据的是 `SessionHeader.agentPreset`。持久化格式中没有任何东西区分 Project。
 - **名单可由用户编辑** — profile 可以用另一个 id 插入同一组合，此时该会话在本命名下就不是 Project。请匹配 id，而不是包名。若 profile 改了 worker id，必须同时重写提供方的 `childAgentPreset`，否则 Thread 会退回为继承父级预设。
 - **隔离由后端保证，而非预设** — 两个预设只向模型陈述 worktree 规则并挂载工具；worktree 本身由 `@deepseek-ai/dsh-subagent-thread-worktree` 创建与回滚。
-- **已完成的 Thread 不会被合并** — worktree 与分支在 Thread 结束后仍然存在，把改动搬回 Project 检出目录仍是模型手动执行的 git 步骤。
+- **已完成的 Thread 不会被合并** — worktree 与分支在 Thread 结束后仍然存在，把改动搬回该 Thread 所用仓库的检出目录仍是模型手动执行的 git 步骤。
 - **`basePreset` 只在加载时读取一次** — 之后编辑 base 预设不会传播到已挂载的 Threads 预设；需重新加载该行才能生效。
 
 <a id="dev-note"></a>

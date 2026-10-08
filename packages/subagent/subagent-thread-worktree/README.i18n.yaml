@@ -9,8 +9,8 @@
   en: 89535b382fa5285a
   zh: 4ac31a311ceb4c1c
 /deepseek-ai-dsh-subagent-thread-worktree/summary:
-  en: fb7d866576eda328
-  zh: 7e71a8ce8f5ef4ac
+  en: 82c75e430319abfc
+  zh: a72882168158b27e
 /deepseek-ai-dsh-subagent-thread-worktree/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,14 +18,17 @@
   en: 4828442d1338b0f3
   zh: d978b719605dc955
 /deepseek-ai-dsh-subagent-thread-worktree/use-this-package/what-a-thread-gets:
-  en: 0859c6f26fd44ffa
-  zh: fcf461855d41503f
+  en: 4c0affdcdbc91805
+  zh: 11b026044cd6cbb4
+/deepseek-ai-dsh-subagent-thread-worktree/use-this-package/selecting-the-repository:
+  en: ed5f115d5ed9aeaf
+  zh: 5a24272efd2c6aec
 /deepseek-ai-dsh-subagent-thread-worktree/use-this-package/when-creation-fails:
-  en: b46673a959f9ded0
-  zh: c3f5cff725f5a12f
+  en: df2dbd3c1c6704d9
+  zh: 35fe3a44b7c26e95
 /deepseek-ai-dsh-subagent-thread-worktree/understand-the-implementation:
-  en: f43963cc21b4f423
-  zh: a051ecfeb18d7e03
+  en: 5f60abc906c80d64
+  zh: 29b79bfa47aa54c2
 /deepseek-ai-dsh-subagent-thread-worktree/further-exploration:
   en: ccb7884ff6bdd4a2
   zh: 386afa53ccecc409
@@ -36,17 +39,17 @@
   en: 1a64d3a5d7e6ff6d
   zh: 5b49351042f43dbf
 /deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/what-the-model-sees:
-  en: 17cc163c722da2cb
-  zh: f67c6488b51c014a
+  en: 23128a7a05cdc2ca
+  zh: 3149d4e83c62c146
 /deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/token-effect:
-  en: 90234a2cbf1a5492
-  zh: fd31881750c56f8a
+  en: a58b60872573665b
+  zh: 62259ee5a4f412e0
 /deepseek-ai-dsh-subagent-thread-worktree/model-experience/starting-a-thread/kv-cache-effect:
   en: ec9b8ef9b1768b67
   zh: 23bfabe59adb7cbe
 /deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work:
-  en: 7a3a5a7f416af511
-  zh: 12b21cec7fed96c6
+  en: c6716220229bc5ac
+  zh: 39beb99aa060f2e4
 /deepseek-ai-dsh-subagent-thread-worktree/known-limitations-and-deferred-work/dev-note:
   en: a493241f982ab547
   zh: 22cf96e18235c6ae

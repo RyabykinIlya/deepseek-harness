@@ -32,12 +32,13 @@ interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
+  readonly repository: boolean
 }
 ```
 
 ## The one-shot start request
 
-The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional Agent provider, model, reasoning-effort, and token overrides, output schema, depth, tool filter, and persona require matching capability flags. In-process backends merge `agentOptions` over the parent Agent's options, scope filters and personas to child creation, and implement the supported object-rooted schema with a forced capture tool. The DSH SDK backend merges the four Agent route fields over its instance defaults and validates them in the child runtime's initialization; ACP, Codex, and Claude Code reject `agentOptions` before starting their transports.
+The tool layer builds this request from the model input and its own config; the service validates it against the named provider before `start`. Required `parent` supplies the session cwd, lineage, and delegation depth. Optional Agent provider, model, reasoning-effort, and token overrides, output schema, depth, tool filter, persona, and repository require matching capability flags. In-process backends merge `agentOptions` over the parent Agent's options, scope filters and personas to child creation, and implement the supported object-rooted schema with a forced capture tool. The DSH SDK backend merges the four Agent route fields over its instance defaults and validates them in the child runtime's initialization; ACP, Codex, and Claude Code reject `agentOptions` before starting their transports.
 
 ```ts type-equiv
 /**
@@ -103,6 +104,19 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Optional repository the child's isolated working tree is created from,
+   * named as a path inside the parent's working directory — usually a
+   * subdirectory name, and any directory inside the repository works because
+   * the provider resolves it to that repository's top level. Requires
+   * {@link SubagentCapabilities.repository}; rejected at start otherwise.
+   *
+   * It exists for a parent whose working directory is NOT a repository itself
+   * but holds several (a workspace directory): the parent names which one the
+   * child works in. Omission keeps the provider's existing resolution, which
+   * for a worktree provider is the parent's own working directory.
+   */
+  readonly repository?: string
 }
 ```
 
@@ -242,6 +256,14 @@ interface ContinuableCreateRequest {
    * the initial prompt into the child's inbox.
    */
   readonly signal: AbortSignal
+  /**
+   * Repository named on the delegation, as a path inside the parent's working
+   * directory. A provider that isolates the child in a git worktree resolves it
+   * here, because preparation is the only moment it decides which repository
+   * the child works in; the manager carries the value without interpreting it.
+   * Absent — the provider keeps its existing resolution.
+   */
+  readonly repository?: string
 }
 ```
 
@@ -471,6 +493,20 @@ interface SubagentProvider {
    * data belonging only to `request.sessionId`.
    */
   prepareContinuable?(request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
+  /**
+   * Whether a continuable child of this provider runs somewhere the ONE-SHOT
+   * route would not put it — a git worktree, a container, any working
+   * directory the provider establishes only while preparing a continuable
+   * creation. `true` promises that {@link SubagentProvider.start} would run
+   * the child unisolated, so a caller that must not lose the isolation refuses
+   * the one-shot route instead of taking it.
+   *
+   * Descriptive, like {@link SubagentProvider.inheritsParentContext}: the
+   * provider states the fact and the model-facing tool derives its own wording
+   * and refusal from it. A provider that isolates nothing omits this, and its
+   * children then run identically on either route.
+   */
+  readonly isolatesContinuableCwd?: boolean
 }
 ```
 
