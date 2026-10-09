@@ -12,3 +12,9 @@
   white-space: nowrap;
   user-select: none;
 }
+
+/* Naming the answered model and the one a waiting selection will apply needs
+   more room than naming one; the ellipsis still bounds it on a narrow bar. */
+.chipPending {
+  max-width: 340px;
+}
