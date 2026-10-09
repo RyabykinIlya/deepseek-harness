@@ -61,7 +61,7 @@ tiers:
   # каждый тир несёт extraSources — прямые источники рядом с OpenRouter-эндпоинтами:
   # claude-proxy (claude-opus-5 / claude-sonnet-5 через modelMap) и Anthropic-token-plan-sgp
 trustedUnknownProviders: [ stealth ]
-rerouteCodes: [ RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, PI_AI_ERROR, KEY_QUOTA, QUOTA ]
+rerouteCodes: [ RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, PI_AI_ERROR, KEY_QUOTA, QUOTA, CLIENT_GATE ]
 efforts: [ high, xhigh, max ]
 defaultEffort: high
 snapshotPolicy: latest
