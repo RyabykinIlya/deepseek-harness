@@ -213,7 +213,24 @@ export interface Config {
   mixOutput: Volatile<number>
   mixMinTokens: Volatile<number>
   maxReroutes: Volatile<number>
-  rerouteCodes: Volatile<string[]>
+  noRerouteCodes: Volatile<string[]>
+  /**
+   * How many consecutive failures one candidate may record before it is benched
+   * for {@link excludeAfterFailureMs} (default 5).
+   *
+   * The count is per candidate and per Session, and a success clears it, so one
+   * blip does not displace a route that has been answering. `1` benches on the
+   * first failure.
+   */
+  excludeAfterFailures: Volatile<number>
+  /**
+   * How long a benched candidate stays out of the ranking, in milliseconds
+   * (default 600000).
+   *
+   * Benching exists so a retry can reach a different candidate: the failure
+   * boundary outranks every reason to keep the current pin, so without it the
+   * next decision would pick the endpoint that just failed again.
+   */
   excludeAfterFailureMs: Volatile<number>
   freeForSubagents: Volatile<boolean>
   freeMinRemaining: Volatile<number>
@@ -271,7 +288,8 @@ export interface RoutingSettings {
   readonly mixOutput: number
   readonly mixMinTokens: number
   readonly maxReroutes: number
-  readonly rerouteCodes: readonly string[]
+  readonly noRerouteCodes: readonly string[]
+  readonly excludeAfterFailures: number
   readonly excludeAfterFailureMs: number
   readonly freeForSubagents: boolean
   readonly freeMinRemaining: number
@@ -414,16 +432,18 @@ export const Config = z.object({
   mixOutput: z.number().default(0.02).volatile(),
   mixMinTokens: z.number().default(1000).volatile(),
   maxReroutes: z.number().default(2).volatile(),
-  // `KEY_QUOTA` names the whole key pool: `dsh-llm-pi-ai` already rotates keys
-  // internally and only surfaces it once every key is exhausted or cooling, so
-  // at this level it means "this route cannot serve the request now" — which is
-  // exactly when the reroute should move on to the next candidate.
-  // `CLIENT_GATE` names the same situation from the gateway side: the route's
-  // client-identity gate rejected this deployment's client, and the request
-  // itself stays servable by the next candidate.
-  rerouteCodes: z.array(z.string())
-    .default(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA', 'CLIENT_GATE'])
+  // Rerouting is the default for every failure that arrives before the first
+  // content chunk: nothing has streamed yet, so another candidate serves the
+  // request without costing the turn. This list names the codes no candidate
+  // can serve — the request itself is the problem, not the endpoint — so they
+  // surface to the caller instead of spending the reroute budget. A cancelled
+  // request and an image budget every route shares belong here for the same
+  // reason; a code missing from this list reroutes, so a new provider rejection
+  // is covered by default rather than becoming a failed turn.
+  noRerouteCodes: z.array(z.string())
+    .default(['CONTEXT_WINDOW_EXCEEDED', 'IMAGE_OFFLOAD_REQUIRED', 'ABORTED'])
     .volatile(),
+  excludeAfterFailures: z.number().default(5).volatile(),
   excludeAfterFailureMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),
   freeMinRemaining: z.number().default(20).volatile(),
@@ -491,7 +511,8 @@ export function readSettings(config: Config): RoutingSettings {
     mixOutput: config.mixOutput.get(),
     mixMinTokens: config.mixMinTokens.get(),
     maxReroutes: config.maxReroutes.get(),
-    rerouteCodes: config.rerouteCodes.get(),
+    noRerouteCodes: config.noRerouteCodes.get(),
+    excludeAfterFailures: config.excludeAfterFailures.get(),
     excludeAfterFailureMs: config.excludeAfterFailureMs.get(),
     freeForSubagents: config.freeForSubagents.get(),
     freeMinRemaining: config.freeMinRemaining.get(),
@@ -685,6 +706,13 @@ export function validateSettings(settings: RoutingSettings): void {
   }
   if (!Number.isInteger(settings.maxReroutes) || settings.maxReroutes < 0) {
     invalid('maxReroutes must be a non-negative integer')
+  }
+  if (!Number.isInteger(settings.excludeAfterFailures) || settings.excludeAfterFailures < 1) {
+    invalid('excludeAfterFailures must be a positive integer')
+  }
+  if (settings.noRerouteCodes.some(code => code.length === 0)
+    || new Set(settings.noRerouteCodes).size !== settings.noRerouteCodes.length) {
+    invalid('noRerouteCodes must contain unique non-empty codes')
   }
   if (!Number.isInteger(settings.diagnosticsMaxBytes) || settings.diagnosticsMaxBytes < 1) {
     invalid('diagnosticsMaxBytes must be a positive integer')

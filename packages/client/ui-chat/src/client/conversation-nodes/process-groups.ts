@@ -10,7 +10,11 @@ import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import { isVisibleChatNode } from '../contract/chat-visibility.ts'
 import { processActivity } from './process-activity.ts'
 
-const INDEPENDENT = new Set(['user', 'steering', 'turn-trigger', 'model-retry', 'turn-error', 'turn-max-tokens', 'turn-tail'])
+// `model-switch` is contributed by the experimental model-routing UI package.
+// Like `model-retry`, a route change is a fact about the turn's model rather
+// than work the turn did, so it keeps its own segment instead of folding into a
+// process group's summary.
+const INDEPENDENT = new Set(['user', 'steering', 'turn-trigger', 'model-retry', 'model-switch', 'turn-error', 'turn-max-tokens', 'turn-tail'])
 type ProcessInput = ConversationGroupInput<ChatConversationViewNode>
 
 function turnOf(node: ChatNode): number | undefined {

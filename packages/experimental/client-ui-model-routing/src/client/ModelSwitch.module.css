@@ -1,0 +1,45 @@
+/* The model-switch row states a durable fact about the conversation: which
+   model and route took over. It reads as a notice rather than a control, so it
+   carries no border or background and takes the same tertiary label colour as
+   the composer chip it complements. */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  user-select: none;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.movement {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Both servings are identifiers, so they are set in the code face the rest of
+   the transcript uses for ids, and each is allowed to ellipsize on a narrow
+   bar rather than pushing the reason out of the row. */
+.serving {
+  overflow: hidden;
+  max-width: 220px;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arrow {
+  opacity: 0.7;
+}
+
+.reason {
+  opacity: 0.85;
+}

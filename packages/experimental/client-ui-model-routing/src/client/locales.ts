@@ -17,6 +17,7 @@ export type ModelRoutingLocaleKey =
   | 'title'
   | 'summary'
   | 'chip.unpinned'
+  | 'chip.pending'
   | 'boundary.start'
   | 'boundary.selection-change'
   | 'boundary.compaction'
@@ -58,6 +59,7 @@ export type ModelRoutingLocaleKey =
   | 'saving'
   | 'empty'
   | 'threadModel'
+  | 'switch.title'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -71,6 +73,7 @@ export const en: LocaleDictOf<typeof NS> = {
   title: 'Model routing',
   summary: '{tiers} tiers, {models} models',
   'chip.unpinned': 'no provider pinned',
+  'chip.pending': 'next request: {model}',
   'boundary.start': 'session start',
   'boundary.selection-change': 'model changed',
   'boundary.compaction': 'after compaction',
@@ -112,6 +115,7 @@ export const en: LocaleDictOf<typeof NS> = {
   saving: 'Saving…',
   empty: 'No tier is configured, so this page has nothing to edit.',
   threadModel: 'model',
+  'switch.title': 'Model switched',
 }
 
 /** Chinese copy. */
@@ -119,6 +123,7 @@ export const zh: LocaleDictOf<typeof NS> = {
   title: '模型路由',
   summary: '{tiers} 个层级，{models} 个模型',
   'chip.unpinned': '未固定服务商',
+  'chip.pending': '下一个请求：{model}',
   'boundary.start': '会话开始',
   'boundary.selection-change': '模型已更改',
   'boundary.compaction': '压缩之后',
@@ -160,4 +165,5 @@ export const zh: LocaleDictOf<typeof NS> = {
   saving: '保存中…',
   empty: '未配置层级，此页面没有可编辑的内容。',
   threadModel: '模型',
+  'switch.title': '模型已切换',
 }

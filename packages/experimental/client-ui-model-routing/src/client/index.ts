@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the composer's input-bar slot map (`conversation.input.right`).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: the Chat node registry this plugin augments (`ChatNodeDataMap`).
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: the `ctx.remote` merge and session projection props.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: the generated `modelRouting` Remote namespace.
@@ -26,6 +28,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import modelRoutingRemote from '@deepseek-ai/dsh-experimental-model-routing/remote'
 import { ModelRoutingCard } from './ModelRoutingCard.tsx'
 import { ModelRoutingChip } from './ModelRoutingChip.tsx'
+import { ModelSwitchNotice } from './ModelSwitchNotice.tsx'
+import { modelSwitchDefinition } from './model-switch.ts'
 import { MODEL_ROUTING_NS, ModelRoutingCardController } from './model-routing-card-controller.ts'
 import { en, NS, zh } from './locales.ts'
 
@@ -44,7 +48,7 @@ export { en, zh } from './locales.ts'
 export type { ModelRoutingLocaleKey } from './locales.ts'
 
 /** Services required before the surfaces register. */
-export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms']
+export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms', 'uiConversation']
 
 /**
  * Mount the `modelRouting` Remote namespace and register both surfaces.
@@ -68,7 +72,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       order: 50,
       locale: NS,
     }, ModelRoutingChip))
+    // The switch row pairs with the `model-retry` rows the retry plugin writes:
+    // those name the retries that stayed on one model, this one names the moment
+    // the model itself changed, so the turn's route history reads as one story.
+    scope.slots.inject('conversation.chat.node', () => scope.slots.register({
+      name: 'conversation.chat.node',
+      key: 'model-switch',
+      locale: NS,
+    }, ModelSwitchNotice))
   })
+  ctx.effect(() => ctx.uiConversation.events.register(modelSwitchDefinition), 'ui-model-routing: model-switch node')
 
   // The page edits the Host's own `model-routing` namespace, so it appears only
   // while that namespace is served. The controller calls that namespace for

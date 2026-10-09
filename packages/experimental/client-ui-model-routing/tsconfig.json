@@ -45,6 +45,9 @@
       "path": "../../client/ui-conversation/tsconfig.client.json"
     },
     {
+      "path": "../../client/ui-chat/tsconfig.client.json"
+    },
+    {
       "path": "../../client/ui-session"
     },
     {

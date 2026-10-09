@@ -48,7 +48,21 @@ async function bench(served?: string[], mountNamespace = true) {
     return Promise.resolve(async () => { mounted.length = 0 })
   }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, describeSettings, models, modelRouting, remote, mounted }
+  // The Conversation registry this plugin contributes its model-switch node to.
+  // The double records definitions so a case can assert what was registered and
+  // that unloading the fiber takes it back out.
+  const definitions: unknown[] = []
+  ctx.provide('uiConversation', {
+    events: {
+      register: (definition: unknown) => {
+        definitions.push(definition)
+        return () => { definitions.splice(definitions.indexOf(definition), 1) }
+      },
+    },
+  })
+  return {
+    ctx, slots: ctx.get('slots') as SlotRegistry, describeSettings, models, modelRouting, remote, mounted, definitions,
+  }
 }
 
 /** The Plugins page's item slot, as its owner declares it. */
@@ -67,13 +81,21 @@ function declareInput(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
+/** The Chat transcript's keyed node slot, as ui-chat declares it. */
+function declareChatNode(slots: SlotRegistry): () => void {
+  return slots.register({
+    name: 'root',
+    children: { 'conversation.chat.node': { kind: 'keyed', scope: 'session' } },
+  } as never, () => null)
+}
+
 describe('ui-model-routing apply', () => {
   it('keeps the host Loader entry inert', () => {
     expect(hostApply).not.toThrow()
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.session', 'configForms'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.session', 'configForms', 'uiConversation'])
   })
 
   it('registers the settings page while the Host serves the namespace', async () => {
@@ -120,5 +142,20 @@ describe('ui-model-routing apply', () => {
     await vi.waitFor(() => { expect(slots.entries('conversation.input.right')).toHaveLength(1) })
     expect(slots.entries('conversation.input.right')[0]?.options)
       .toMatchObject({ id: 'model-routing', order: 50 })
+  })
+
+  it('registers the model-switch row and its Definition, and gives both back on unload', async () => {
+    const { ctx, slots, definitions } = await bench(['model-routing'])
+    declareChatNode(slots)
+
+    const fiber = await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => { expect(slots.entries('conversation.chat.node')).toHaveLength(1) })
+    expect(slots.entries('conversation.chat.node')[0]?.options)
+      .toMatchObject({ key: 'model-switch' })
+    expect(definitions).toHaveLength(1)
+
+    await fiber.dispose()
+    expect(slots.entries('conversation.chat.node')).toHaveLength(0)
+    expect(definitions).toHaveLength(0)
   })
 })

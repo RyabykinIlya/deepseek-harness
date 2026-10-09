@@ -147,6 +147,13 @@ describe('model-routing settings validation', () => {
       .toThrow('model-routing: maxReroutes must be a non-negative integer')
   })
 
+  it('refuses a failure count that is zero or fractional', () => {
+    expect(() =>{  validateSettings(settings({ excludeAfterFailures: 0 })) })
+      .toThrow('model-routing: excludeAfterFailures must be a positive integer')
+    expect(() =>{  validateSettings(settings({ excludeAfterFailures: 1.5 })) })
+      .toThrow('model-routing: excludeAfterFailures must be a positive integer')
+  })
+
   it('refuses a diagnostics budget that is zero or fractional', () => {
     expect(() =>{  validateSettings(settings({ diagnosticsMaxBytes: 0 })) })
       .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')
@@ -313,7 +320,16 @@ describe('tier extraSources', () => {
     )
   })
 
-  it('carries a source-wide KEY_QUOTA reroute code in the defaults', () => {
-    expect(settings().rerouteCodes).toEqual(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA', 'CLIENT_GATE'])
+  it('reroutes every pre-content failure except the codes no candidate can serve', () => {
+    expect(settings().noRerouteCodes).toEqual(['CONTEXT_WINDOW_EXCEEDED', 'IMAGE_OFFLOAD_REQUIRED', 'ABORTED'])
+  })
+
+  it('refuses a noRerouteCodes list with an empty or repeated code', () => {
+    expect(() => { validateSettings(settings({ noRerouteCodes: [''] })) })
+      .toThrow('model-routing: noRerouteCodes must contain unique non-empty codes')
+    expect(() => { validateSettings(settings({ noRerouteCodes: ['ABORTED', 'ABORTED'] })) })
+      .toThrow('model-routing: noRerouteCodes must contain unique non-empty codes')
+    // An empty list is a legitimate deployment choice: it reroutes everything.
+    expect(() => { validateSettings(settings({ noRerouteCodes: [] })) }).not.toThrow()
   })
 })

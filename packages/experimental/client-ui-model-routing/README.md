@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-client-ui-model-routing` is the browser half of the `tiers` model route: it mounts the `modelRouting` Remote namespace, registers the composer chip that names the running tier and the model that answered, and registers the "Model routing" settings page on the Plugins page, where a person decides which models belong to which tier and sees what each would cost. It shows nothing on a Host that does not serve the `model-routing` namespace. It is published under its experimental name and carries no stability promise.
+`dsh-experimental-client-ui-model-routing` is the browser half of the `tiers` model route: it mounts the `modelRouting` Remote namespace, registers the composer chip that names the running tier and the model that answered, registers the transcript row that names a change of model or route, and registers the "Model routing" settings page on the Plugins page, where a person decides which models belong to which tier and sees what each would cost. It shows nothing on a Host that does not serve the `model-routing` namespace. It is published under its experimental name and carries no stability promise.
 
 ## Table of Contents
 
@@ -33,7 +33,14 @@ Choose it when a deployment runs the `tiers` route and a person needs to see or 
 <a id="chip"></a>
 ### The composer chip
 
-The chip reads one projection and shows `<tier> · <model>`, with the model stripped of its `author/` prefix — the tier already says which vendor's tier this is. The provider, the quantization, and the boundary that produced the decision live in the tooltip, because they are what a person reads when a turn went wrong, not what they read while composing the next one.
+The chip reads two projections and shows `<tier> · <model>`, with the model stripped of its `author/` prefix — the tier already says which vendor's tier this is. The provider, the quantization, and the boundary that produced the decision live in the tooltip, because they are what a person reads when a turn went wrong, not what they read while composing the next one. A model picked in the composer is not in force until the next request, because the route decides at a request boundary, so while a selection is waiting the chip names it after an arrow — `<tier> · <answered> → <next>` — and the tooltip says it applies to the next request. Without that, a chip naming only the answered model reads as if the pick had been ignored.
+
+<a id="switch"></a>
+### The transcript row
+
+The chip names the model that is answering, but only ever the latest one, so a turn that began on one route and finished on another left no trace of the change in the transcript. The row closes that gap: one row per decision that moved the session onto a different model or a different route, naming both sides and the boundary that allowed the move — `claude-proxy/claude-opus-5 → xiaomi-token-plan-sgp/mimo-v2.6-pro`, after a provider failure.
+
+The row reads the decision before it through the Conversation Context reader instead of a new event, because `model-routing/decision` already records every boundary and the preceding decision is reachable from the current one. A session's first decision publishes nothing, and neither does a re-decision that keeps the same route and model. The row keeps its own segment beside the retry rows the `llm-retry` plugin writes, so a turn that retried one route and then moved reads as that sequence.
 
 <a id="page"></a>
 ### The settings page
@@ -55,8 +62,10 @@ The observable behavior is fully covered in [Use this package](#use-this-package
 | File | Role |
 |---|---|
 | `src/index.ts` | Host entry; contributes nothing |
-| `src/client/index.ts` | Remote mount, chip seat, settings page seat |
+| `src/client/index.ts` | Remote mount, chip seat, transcript-row seat, settings page seat |
 | `src/client/ModelRoutingChip.tsx` | The composer chip |
+| `src/client/model-switch.ts` | The transcript row's Definition: which decision moved the session, and to what |
+| `src/client/ModelSwitchNotice.tsx` | The transcript row |
 | `src/client/ModelRoutingCard.tsx` | The settings card |
 | `src/client/model-routing-card-controller.ts` | The staged draft, the catalog join, and the quotes |
 | `src/client/locales.ts` | English and Chinese copy |
@@ -67,7 +76,7 @@ Both surfaces register through `whileServed([…])` or a scoped `slots.inject`, 
 
 ### Projection reads
 
-The chip reads the `modelRouting` Session projection through the session standard `useProjection` seat. The Thread roster reads the same value out of the Session list's projection map, defensively — see `thread-model.ts` in `dsh-experimental-client-ui-threads` — because that map is untyped and a Host without the plugin simply has no such block.
+The chip reads the `modelRouting` Session projection through the session standard `useProjection` seat, and the `modelSelection` projection beside it for the selection no request has consumed yet. The Thread roster reads the routing value out of the Session list's projection map, defensively — see `thread-model.ts` in `dsh-experimental-client-ui-threads` — because that map is untyped and a Host without the plugin simply has no such block.
 
 </details>
 
@@ -88,6 +97,7 @@ None; this package neither assembles nor sends a provider request.
 
 - Adding or removing a tier is not offered here. A tier is a policy, not a per-session preference, so reshaping the policy itself stays a configuration-file decision; membership, filters, label, context window, output cap, and the route-wide judge and cache settings are all editable.
 - The page prices through one live read per tier per draft. A tier with many models therefore costs one endpoint read per model on every edit; a debounced, shared price cache would be the next step.
+- The transcript row states a change of model or route, not every retry: a request that retries the same candidate before moving publishes the same route twice, and only the move is a row. The retry rows the `llm-retry` plugin writes carry that half. The row also folds with its turn's process disclosure once the turn completes, exactly as those retry rows do, so a reader of a finished turn finds it by expanding that turn.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -9,8 +9,8 @@
   en: efc0bfdcfa4b445c
   zh: 0c412b992841d609
 /deepseek-ai-dsh-experimental-client-ui-model-routing/summary:
-  en: 716aa86db9ffe64a
-  zh: 7a723ec97b8557f9
+  en: 5d7892566c98e38c
+  zh: dc39bd36dd532391
 /deepseek-ai-dsh-experimental-client-ui-model-routing/table-of-contents:
   en: 76368b6b1da79c80
   zh: 52384aee991ac542
@@ -21,8 +21,11 @@
   en: 574cbfd251738ba2
   zh: c730d22e092be7a8
 /deepseek-ai-dsh-experimental-client-ui-model-routing/use-this-package/the-composer-chip:
-  en: 872c4c9003eefcb1
-  zh: c72adeb63ebac49a
+  en: 00ecea4bc6e48129
+  zh: fb07ac227df69f5f
+/deepseek-ai-dsh-experimental-client-ui-model-routing/use-this-package/the-transcript-row:
+  en: 168685cb14141449
+  zh: e1dd79a49398a85b
 /deepseek-ai-dsh-experimental-client-ui-model-routing/use-this-package/the-settings-page:
   en: 7260afac0fe6a7e2
   zh: a049bf62a67c4b9e
@@ -30,14 +33,14 @@
   en: 12e50a47625c8dff
   zh: 5ef95b092be65341
 /deepseek-ai-dsh-experimental-client-ui-model-routing/understand-the-implementation/source-map:
-  en: 7b470232c1579a95
-  zh: 5acfd3c4707f675d
+  en: 07caf8c18647e6b3
+  zh: 86b5fbb6aea005e5
 /deepseek-ai-dsh-experimental-client-ui-model-routing/understand-the-implementation/conditional-registration:
   en: 5c67a73b6c0a1e82
   zh: 7618a853f7efb2ff
 /deepseek-ai-dsh-experimental-client-ui-model-routing/understand-the-implementation/projection-reads:
-  en: 7dde22d53e0134c2
-  zh: 576e2505c6dffd65
+  en: 1f21122cf845f556
+  zh: 4579d8d10cc2da60
 /deepseek-ai-dsh-experimental-client-ui-model-routing/model-experience:
   en: 3ddb3317c7a9ac86
   zh: d4a60261cb98b83e
@@ -45,8 +48,8 @@
   en: ca75c51c89c2c9b0
   zh: f57cc48a1b5cbfa9
 /deepseek-ai-dsh-experimental-client-ui-model-routing/known-limitations-and-deferred-work:
-  en: 4276e51328bfcc85
-  zh: 6a36ef6cb747509e
+  en: 3a47b495335a03bd
+  zh: 0a23f99085441621
 /deepseek-ai-dsh-experimental-client-ui-model-routing/known-limitations-and-deferred-work/dev-note:
   en: 0a1253c6f7b5e8b9
   zh: 9f56528562c7c914

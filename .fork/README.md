@@ -42,7 +42,7 @@
 | [MERGE-RUNBOOK.md](MERGE-RUNBOOK.md) | Процедура обновления ядра, по шагам |
 | [ROUTING.md](ROUTING.md) | Как работает model routing сейчас: путь запроса, судья, снапшоты, конфигурация, ловушки |
 | [plans/](plans/) | План отчуждения по каждому плагину отдельно |
-| [adr/](adr/) | Architecture Decision Records: одно решение на файл, с отвергнутыми вариантами и условиями пересмотра. Открывается [adr/0001-thread-v-multi-repo-workspace.md](adr/0001-thread-v-multi-repo-workspace.md) |
+| [adr/](adr/) | Architecture Decision Records: одно решение на файл, с отвергнутыми вариантами и условиями пересмотра. Рекорды: [0001](adr/0001-thread-v-multi-repo-workspace.md) — репозиторий Thread'а; [0002](adr/0002-reroute-pre-content-provider-failures.md) — политика рероута при отказе провайдера (proposed) |
 | [model-routing-claude-proxy/](model-routing-claude-proxy/) | Рабочая папка по ключам, ротации и источникам Model Routing: [STATUS.md](model-routing-claude-proxy/STATUS.md), [DECISIONS.md](model-routing-claude-proxy/DECISIONS.md), [TASKS.md](model-routing-claude-proxy/TASKS.md) |
 | [hooks/](hooks/README.md), `hooks.json` | Запрет на правку `vendor/`, `patches/` и `node_modules/` — того, чем форк не владеет. `hooks.json` — канонический экземпляр настроек, `.claude/settings.json` из него копируется |
 

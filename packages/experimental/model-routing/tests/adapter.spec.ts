@@ -97,6 +97,11 @@ async function harness(over: {
     minUptime: 95,
     trustedUnknownProviders: ['stealth'],
     judgeUserMessages: 3,
+    // Cases in this suite describe what ONE failure does to the ranking and the
+    // reroute budget, so they pin benching to the first failure. The shipped
+    // default is five consecutive failures; the streak cases at the end of this
+    // file cover that behavior on its own.
+    excludeAfterFailures: 1,
     // The judge defaults name `pro`/`flash`; a tier list that has neither would
     // otherwise fail validation before the case under test ever runs.
     defaultTier: names.includes('flash') ? 'flash' : names[0],
@@ -183,7 +188,9 @@ async function harness(over: {
       ?? { model: 'typesafe/jev-1.13', pPro: 0, confidence: 1, precision: 0.07, latencyMs: 1 }),
     apiKey: () => Promise.resolve('key'),
     headers: () => ({}),
-    now: () => clock,
+    // The adapter reads its clock through the harness so a case can advance it:
+    // benching and prompt-cache idleness are both measured against this value.
+    now: () => record.clock.now,
     diagnostics: (entry) => { records.push(entry) },
     warn: (message) => {
       record.warnings.push(message)
@@ -518,6 +525,54 @@ describe('TiersAdapter rerouting', () => {
     expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
     // Only the successful attempt's chunks reached the caller.
     expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('reroutes a provider that rejects the request before any content, keeping the turn alive', async () => {
+    // The observed Morph case: an upstream provider answers 400 to a body that
+    // another provider of the same model serves. The code carries no evidence
+    // that the request is bad everywhere, and nothing has streamed yet, so the
+    // attempt is replayable and the turn must not die on it.
+    const h = await harness({ responses: [failureChunks('INVALID_REQUEST'), normalChunks()] })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent.map(entry => entry.options.model)).toEqual([
+      'deepseek/deepseek-v4-flash',
+      'deepseek/deepseek-v4-flash',
+    ])
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('surfaces a context-window overflow instead of spending the reroute budget on it', async () => {
+    // Every candidate of the tier serves the same model window, so another
+    // provider cannot serve this request: the remedy is compaction, and the
+    // failure has to reach the loop that performs it.
+    const h = await harness({ responses: [failureChunks('CONTEXT_WINDOW_EXCEEDED'), normalChunks()] })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(1)
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'CONTEXT_WINDOW_EXCEEDED' } },
+    })
+
+    // Excluding the endpoint still happens, so the next turn's failure
+    // boundary cannot pin straight back onto it.
+    await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+  })
+
+  it('reroutes a context-window overflow when the deployment empties noRerouteCodes', async () => {
+    // The list is the whole policy: emptying it must change behavior, not just
+    // document it.
+    const h = await harness({
+      responses: [failureChunks('CONTEXT_WINDOW_EXCEEDED'), normalChunks()],
+      settings: { noRerouteCodes: [] },
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
@@ -1189,7 +1244,6 @@ describe('TiersAdapter direct sources', () => {
     const h = await scenario({
       sources: [claude, plan],
       responses: [failureChunks('KEY_QUOTA'), normalChunks()],
-      settings: { rerouteCodes: ['KEY_QUOTA'] },
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(2)
@@ -1225,7 +1279,6 @@ describe('TiersAdapter direct sources', () => {
     const h = await scenario({
       sources: [claude, plan],
       responses: [failureChunks('CLIENT_GATE'), normalChunks()],
-      settings: { rerouteCodes: ['CLIENT_GATE'] },
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(2)
@@ -1301,7 +1354,6 @@ describe('TiersAdapter direct sources', () => {
     const h = await scenario({
       sources: [CLAUDE, plan],
       responses: [failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA')],
-      settings: { rerouteCodes: ['KEY_QUOTA'] },
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(3)
@@ -1319,7 +1371,6 @@ describe('TiersAdapter direct sources', () => {
         chunksThenThrow([], new LlmError('pi-ai stream idle timeout', 'TIMEOUT')),
         normalChunks(),
       ],
-      settings: { rerouteCodes: ['TIMEOUT'] },
     })
     const chunks = await run(h.adapter)
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
@@ -1361,6 +1412,159 @@ describe('TiersAdapter direct sources', () => {
     await run(h.adapter)
     expect(h.events).toHaveLength(1)
     expect(h.events[0]).toMatchObject({ boundary: 'start', source: { kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' } })
+  })
+
+  it('holds the pinned source until it fails the configured number of times in a row', async () => {
+    // The shipped default is five consecutive failures, so a source that blips
+    // once keeps the pin and the retry stays on it. Only the fifth failure in a
+    // row benches it, which is what lets the next attempt reach another source.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 5 },
+      responses: [
+        failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), failureChunks('TRANSPORT'),
+        failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), normalChunks(),
+      ],
+    })
+    await run(h.adapter)
+    // One request retries the pinned source until its failure count reaches the
+    // threshold, because a re-decision that lands on the same candidate is not a
+    // move and does not spend `maxReroutes`. The fifth failure benches it, and
+    // the attempt after that reaches the next source in the same request.
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'claude-proxy', 'claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+    expect(h.events.at(-1)?.excludedTags).toEqual(['claude-proxy:mimo-v2.6-pro'])
+    expect(h.records.at(-1)?.candidates.map(entry => [entry.tag, entry.source, entry.rejection]))
+      .toEqual([
+        ['mimo-v2.6-pro', 'xiaomi-plan', undefined],
+        ['streamlake/fp8', 'openrouter', undefined],
+        ['mimo-v2.6-pro', 'claude-proxy', 'excluded'],
+      ])
+  })
+
+  it('spends the reroute budget on candidate changes, not on attempts', async () => {
+    // The failure count and the reroute budget are independent: one request may
+    // retry a candidate past `maxReroutes` attempts, because only the move to a
+    // different candidate is what the budget pays for. Charging every attempt
+    // would let a budget of one end the request after its second attempt, before
+    // the third failure could bench the source and reach the other one.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 3, maxReroutes: 1 },
+      responses: [
+        failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), normalChunks(),
+      ],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)?.excludedTags).toEqual(['claude-proxy:mimo-v2.6-pro'])
+  })
+
+  it('starts the failure count over once a bench has lapsed', async () => {
+    // A lapsed bench means the candidate is eligible again, and the count that
+    // benched it belongs to the run that just ended. Keeping it would make the
+    // threshold a one-time allowance: every later failure would bench at once,
+    // which is exactly the behavior the count exists to prevent.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 2 },
+      responses: [
+        failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), normalChunks(),
+        failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), normalChunks(),
+      ],
+    })
+    await run(h.adapter)
+    // Two failures bench the source, and the move that follows serves the turn.
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+
+    // Past both the bench and the prompt-cache idle window: the next request
+    // re-decides and finds the first source eligible again.
+    h.clock.now += 700_000
+    await run(h.adapter)
+    // A fresh count, so it takes two failures again rather than the one a
+    // surviving count would have benched on.
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'xiaomi-plan', 'claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+  })
+
+  it('retries a source that throws its key-pool exhaustion, then moves on', async () => {
+    // A route with every key cooling throws `KEY_QUOTA` from the first read
+    // rather than reporting it in-band. The retry budget must not be spent by
+    // those retries: charging them ended the request after `maxReroutes + 1`
+    // attempts, so the failure count never reached its threshold and the turn
+    // died on a route the ranking would have replaced one attempt later.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const exhausted = () => chunksThenThrow([], new LlmError('route exhausted every key', 'KEY_QUOTA'))
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 2 },
+      responses: [exhausted(), exhausted(), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)?.excludedTags).toEqual(['claude-proxy:mimo-v2.6-pro'])
+  })
+
+  it('clears the consecutive-failure count when the source answers again', async () => {
+    // A count that survived a success would bench a healthy source on the first
+    // failure of a later turn, which is the behavior the count exists to avoid.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 2 },
+      responses: [
+        failureChunks('TRANSPORT'), normalChunks(),
+        failureChunks('TRANSPORT'), normalChunks(),
+      ],
+    })
+    await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'claude-proxy'])
+    // Two failures separated by a success never add up: each request benches
+    // nothing, because the success between them reset the count to zero.
+    await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider))
+      .toEqual(['claude-proxy', 'claude-proxy', 'claude-proxy', 'claude-proxy'])
+    for (const event of h.events) expect(event.excludedTags).toEqual([])
+  })
+
+  it('benches a source on its Nth consecutive failure, skipping the counts below it', async () => {
+    // The same shape as the threshold case above, with the count set to two: the
+    // second failure in a row benches, so the attempt after it moves on.
+    const tied = (source: ExtraSource): ExtraSource => ({
+      ...source,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    })
+    const h = await scenario({
+      sources: [tied(CLAUDE), tied(PLAN)],
+      settings: { excludeAfterFailures: 2 },
+      responses: [failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), normalChunks()],
+    })
+    await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+    expect(h.events.at(-1)?.excludedTags).toEqual(['claude-proxy:mimo-v2.6-pro'])
   })
 
   it('records the source kind and the blended price a direct source won on', async () => {

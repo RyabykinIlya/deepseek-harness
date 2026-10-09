@@ -30,6 +30,7 @@ function tierRow(over: Partial<TierRow> = {}): TierRow {
     minQuantization: 'fp8',
     unknownQuantization: 'trusted',
     free: 'prefer',
+    extraSources: [],
     filter: '',
     dirty: false,
     contextWindowText: '1000000',

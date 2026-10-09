@@ -250,6 +250,8 @@ export class TiersAdapter extends LlmAdapter {
   private readonly pins = new Map<string, Pin>()
   private readonly failures = new Set<string>()
   private readonly excluded = new Map<string, Map<string, number>>()
+  /** Consecutive failures per Session and tag, cleared by that tag's next success. */
+  private readonly failureStreaks = new Map<string, Map<string, number>>()
   private readonly snapshots = new Map<string, string>()
   private readonly reported = new Set<string>()
   /** Whether the inner route dispatches one id, remembered for this adapter's life. */
@@ -275,6 +277,7 @@ export class TiersAdapter extends LlmAdapter {
     this.pins.delete(sessionId)
     this.excluded.delete(sessionId)
     this.failures.delete(sessionId)
+    this.failureStreaks.delete(sessionId)
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -1025,11 +1028,22 @@ export class TiersAdapter extends LlmAdapter {
     const tags = new Set<string>()
     const sources = new Set<string>()
     for (const [tag, until] of recorded ?? []) {
-      if (until <= now) continue
+      if (until <= now) {
+        // The bench has lapsed, so the candidate is eligible again and its
+        // failure count starts over with it: `excludeAfterFailures` counts
+        // failures in a row, and a route that comes back after its cooldown is
+        // not still serving the streak that benched it. Without this the count
+        // would be spent once per Session and every later failure would bench
+        // immediately, which is the behavior the count exists to avoid.
+        recorded?.delete(tag)
+        this.failureStreaks.get(key)?.delete(tag)
+        continue
+      }
       const at = tag.indexOf(':')
       if (at === -1) tags.add(tag)
       else sources.add(tag)
     }
+    if (recorded?.size === 0) this.excluded.delete(key)
     return { tags, sources }
   }
 
@@ -1091,7 +1105,15 @@ export class TiersAdapter extends LlmAdapter {
     const { settings, dispatch, options, key, signal, main, requiredInput } = input
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
-    for (let attempt = 0; ; attempt += 1) {
+    // `maxReroutes` bounds how many times one request may move to a DIFFERENT
+    // candidate, not how many attempts it makes. A re-decision that lands on the
+    // candidate that just failed is that same route being tried again — what
+    // `excludeAfterFailures` asks for — so it must not spend the budget: charging
+    // it would exhaust the budget before the failure count reached its threshold,
+    // and the request would fail on a route the ranking replaces one attempt
+    // later.
+    let reroutes = 0
+    for (;;) {
       const efforts = await this.deps.innerEfforts(
         pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
         pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
@@ -1129,30 +1151,37 @@ export class TiersAdapter extends LlmAdapter {
         }
       } catch (error: unknown) {
         const reroutable = error instanceof LlmError
-          && settings.rerouteCodes.includes(error.code)
-          && attempt < settings.maxReroutes
+          && !settings.noRerouteCodes.includes(error.code)
+          && reroutes < settings.maxReroutes
           && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
         if (!reroutable) throw error
+        const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, error.code, settings)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
+        if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
       if (committed.done === true) return
       const chunk = committed.value
       const failure = failureOf(chunk)
       const reroutable = failure !== undefined
-        && settings.rerouteCodes.includes(failure)
-        && attempt < settings.maxReroutes
+        && !settings.noRerouteCodes.includes(failure)
+        && reroutes < settings.maxReroutes
         && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
       if (reroutable) {
         await iterator.return?.(undefined)
+        const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, failure, settings)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
+        if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
       if (failure !== undefined) {
         this.failures.add(key)
         this.excludeEndpoint(key, pin, failure, settings)
+      } else if (chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)) {
+        this.failures.delete(key)
+        this.clearFailureStreak(key, pin)
       }
       for (const usageChunk of leadingUsage) yield usageChunk
       yield chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)
@@ -1191,7 +1220,10 @@ export class TiersAdapter extends LlmAdapter {
             yield SUCCESSFUL_FINISH.has(item.reason.kind)
               ? { ...item, replayState: wrapReplay(item.replayState, pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind, pin.model) }
               : item
-            if (code === undefined) this.failures.delete(key)
+            if (code === undefined) {
+              this.failures.delete(key)
+              this.clearFailureStreak(key, pin)
+            }
           } else {
             yield item
           }
@@ -1231,25 +1263,67 @@ export class TiersAdapter extends LlmAdapter {
   }
 
   /**
-   * Exclude the failed candidate for a while, and block free endpoints until
-   * tomorrow after a rate limit.
+   * Count one failure against the candidate that produced it, and bench it for
+   * `excludeAfterFailureMs` once the count reaches `excludeAfterFailures`.
+   *
+   * Benching exists so a retry can reach a different candidate: the failure
+   * boundary outranks every reason to keep the current pin, so without it the
+   * next decision picks the endpoint that just failed again. Counting first
+   * keeps a single blip from displacing a route that has been answering: the
+   * retry stays on the same candidate until it fails the configured number of
+   * times in a row, and a success clears the count.
    *
    * A direct candidate is excluded by `route:id`, not by its id alone: one route
    * may serve the same id as several models' candidates, and only the pair says
    * which one failed.
    */
   private excludeEndpoint(key: string, pin: Pin, code: string, settings: RoutingSettings): void {
-    const tag = pin.source.kind === 'openrouter'
-      ? pin.endpoint?.slug
-      : `${pin.source.kind}:${pin.source.tag}`
-    if (tag === undefined) return
-    const recorded = this.excluded.get(key) ?? new Map<string, number>()
-    recorded.set(tag, this.deps.now() + settings.excludeAfterFailureMs)
-    this.excluded.set(key, recorded)
+    const tag = tagOfPin(pin)
+    if (tag !== undefined) {
+      const streaks = this.failureStreaks.get(key) ?? new Map<string, number>()
+      const streak = (streaks.get(tag) ?? 0) + 1
+      streaks.set(tag, streak)
+      this.failureStreaks.set(key, streaks)
+      if (streak >= settings.excludeAfterFailures) {
+        const recorded = this.excluded.get(key) ?? new Map<string, number>()
+        recorded.set(tag, this.deps.now() + settings.excludeAfterFailureMs)
+        this.excluded.set(key, recorded)
+      }
+    }
     const endpoint = pin.endpoint
     const free = endpoint !== undefined && endpoint.promptPrice === 0 && endpoint.completionPrice === 0
     if (free && code === 'RATE_LIMIT') this.freeBlockedUntil = nextUtcMidnight(this.deps.now())
   }
+
+  /**
+   * Clear one candidate's consecutive-failure count.
+   *
+   * Called where an attempt finished without a failure, so a candidate that
+   * answers again starts from zero rather than being benched by a count it
+   * accumulated days ago.
+   * @param key - the Session's pin key.
+   * @param pin - the pin whose candidate answered.
+   */
+  private clearFailureStreak(key: string, pin: Pin): void {
+    const tag = tagOfPin(pin)
+    if (tag === undefined) return
+    const streaks = this.failureStreaks.get(key)
+    if (streaks === undefined) return
+    streaks.delete(tag)
+    if (streaks.size === 0) this.failureStreaks.delete(key)
+  }
+}
+
+/**
+ * The tag a pin's candidate is counted and excluded under: an OpenRouter
+ * endpoint's slug, or a direct source's `route:id`.
+ * @param pin - the pin an attempt ran under.
+ * @returns the tag, or undefined when the pin names no concrete endpoint.
+ */
+function tagOfPin(pin: Pin): string | undefined {
+  return pin.source.kind === 'openrouter'
+    ? pin.endpoint?.slug
+    : `${pin.source.kind}:${pin.source.tag}`
 }
 
 /**
