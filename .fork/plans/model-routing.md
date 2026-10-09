@@ -18,7 +18,7 @@
 |---|---|---|---|
 | `LlmAdapter`, `ctx.llm.registerAdapter` | `dsh-llm` | **есть** (`index.ts:208`, `:396`) | ничего не нужно |
 | `ctx.sessionProjections` | `dsh-session-projection` | **есть** | ничего не нужно |
-| `ctx.piAiDispatch` | `dsh-llm-pi-ai/dispatch.ts` | **нет**, добавлено локально | решить: апстрим или вендорить |
+| `ctx.piAiDispatch` | `dsh-llm-pi-ai/dispatch.ts` | **нет**, добавлено локально | **решено 2026-10-04**: апстрим отдельным PR, не вендоринг — см. [../DECISIONS.md](../DECISIONS.md) |
 | `fetchOpenRouterEndpoints` | `dsh-llm-pi-ai/openrouter-endpoints.ts` | **нет**, добавлено локально | вендорить |
 | `fetchOpenRouterModelCatalog` | `dsh-llm-pi-ai/openrouter-catalog.ts` | **нет**, добавлено локально 2026-10-04 | вендорить вместе с предыдущим |
 | события `model-routing/*` в `known-event-types.ts` | `core/session` | генерируется | **не нужно**, см. ниже |

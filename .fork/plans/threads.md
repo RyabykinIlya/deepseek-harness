@@ -1,12 +1,12 @@
 # Threads / Projects — план отчуждения
 
-Фоновые Thread'ы с изоляцией по git-worktree, Project-координатор, память проекта, библиотека.
+Фоновые Thread'ы с изоляцией по git-клону, Project-координатор, память проекта, библиотека.
 
 ## Состояние
 
-**Собирается.** Оба снапшот-сценария проходят keyless, 563 теста host-пакетов и 458 тестов клиентских пакетов зелёные (проверено 2026-10-04). В запущенном приложении сценарий «Project → два Thread'а → слияние» не проходился.
+**Работает** (проверено в приложении 2026-10-07: события `thread/created` в логах сессий, Thread коммитит в своём клоне и сливается в `master`). Оба снапшот-сценария проходят keyless; полный прогон пакетов фичи — 101 файл, 1725 тестов зелёные (2026-10-07). Сценарий «Project → два Thread'а → слияние» одним проходом под записью не проходился.
 
-Девять новых пакетов: `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads`. 2026-10-05 добавлен десятый — `experimental/client-ui-project-memory`, карточка настроек памяти Project.
+Десять новых пакетов: `experimental/threads`, `threads-preset`, `threads-profile`, `tool-threads`, `client-ui-threads`, `project-memory`, `client-ui-project-memory`, `subagent/subagent-thread-worktree`, `subagent/worktree-manager`, `client/ui-settings-threads`. Изоляция Thread'а — самодостаточный клон вместо linked worktree (решение D9, [threads-self-contained-worktrees.md](threads-self-contained-worktrees.md)); выбор репозитория в multi-repo workspace — [ADR-0001](../adr/0001-thread-v-multi-repo-workspace.md).
 
 ## Соответствие модели Anthropic
 
@@ -15,7 +15,7 @@
 | Их концепт | Здесь | Оценка |
 |---|---|---|
 | Projects have threads + a coordinator | пресеты `project` и `project-thread`, два контракта | полностью, роли разведены строже |
-| Thread = own branch and copy of the repo | git worktree плюс ветка `dsh/thread-<slug>` | полностью; у них облачная сессия, здесь локальный worktree |
+| Thread = own branch and copy of the repo | самодостаточный клон (`git clone --local`) плюс ветка `dsh/thread-<slug>` | полностью; у них облачная сессия, здесь локальный клон |
 | Supervise from main chat, or open a thread | ростер в шапке плюс чат Thread'а в главной области или в правой панели | полностью |
 | Redirect mid-flight | `send_message` и `interrupt_agent` в контракте координатора | полностью |
 | Conflicts = ordinary merge conflict | `git merge --no-ff` в контракте, `thread_diff` считает пересечения | глубже: пересечения видны **до** слияния |
@@ -36,10 +36,12 @@
 
 | Апстримный пакет | Файлов | Что это |
 |---|---|---|
-| `subagent/subagent` | 14 | выбор cwd у continuable-провайдера |
-| `subagent/tool-subagent` | 4 | `allowedModels` для дочерних агентов |
+| `subagent/subagent` | 17 | выбор cwd у continuable-провайдера и capability `repository` |
+| `subagent/tool-subagent` | 6 | `allowedModels` и параметр `repository` для дочерних агентов |
+| `subagent/subagent-*` (шесть провайдеров) | 12 | `repository: false` в объявлении capability |
 | `client/ui-workspace` | 8 | UI воркспейса |
-| `core/session` | 7 | `package.json`, `README`, `src/index.ts`, `src/types.ts` |
+| `core/session` | 5 | `package.json`, `README`, `src/index.ts`, `src/types.ts` |
+| `workflow/workflow-ptc` (+ `tool-workflow`, `tool-ralph`), `sdk/server` | 9 | тест-фикстуры и каталоги выбора репозитория |
 | `test-support/session-snapshot`, `client-runtime` | 5 | тест-инфраструктура |
 | `docs/subsystems/*` | 10 | документация подсистем |
 
@@ -47,7 +49,7 @@
 
 ### Правка `subagent/subagent` — кандидат в апстрим, не на вендоринг
 
-«Continuable-провайдер выбирает cwd ребёнка» — это расширение общего шва подагентов, а не частность Threads. Любой провайдер, запускающий ребёнка в другом каталоге, упирается в то же ограничение. Вендоринг 14 файлов живого кода подагентов означает форк подсистемы. То же про `allowedModels` в `tool-subagent`.
+«Continuable-провайдер выбирает cwd ребёнка» — это расширение общего шва подагентов, а не частность Threads. Любой провайдер, запускающий ребёнка в другом каталоге, упирается в то же ограничение. Вендоринг 17 файлов живого кода подагентов означает форк подсистемы. То же про `allowedModels` и `repository` в `tool-subagent`.
 
 ### Правки `core/session` — разобрать по одной
 
@@ -62,19 +64,19 @@ git diff origin/master...HEAD -- packages/core/session/src/types.ts
 
 ## Что доделать в самой фиче
 
-- **Ожидаемые выходы обоих SDK** для `thread/created`, `thread/status`, `thread/removed` — приоритет 5 в [../STATUS.md](../STATUS.md#приоритеты). Проверено поиском: ни `snapshots/sdk/`, ни `scripts/snapshots/python-sdk-single-exe/` этих событий не знают. Без них изменение `SessionEventMap` не пройдёт ревью в апстриме.
-- **`tool-threads/README.md`** доделать до четырёх инструментов, список расхождений — в [../STATUS.md](../STATUS.md#открытые-баги).
+- **SDK-сценарий для Threads** (T8.5, переформулирован) — приоритет 5 в [../STATUS.md](../STATUS.md#приоритеты). Прежняя формулировка «вписать `thread/*` в ожидаемые выходы SDK» опиралась на неверную посылку: снапшоты SDK — проекция реального прогона, а не список событий, поэтому вписывание вручную фабриковало бы вывод. Нужен новый записанный сценарий, композирующий `threads-profile` под профилем `sdk`; расширение `SessionEventMap` ревью в апстриме не блокирует — см. [../DECISIONS.md](../DECISIONS.md).
+- ~~**`tool-threads/README.md`** доделать до четырёх инструментов~~ **Сделано 2026-10-04** (приоритет 8 в [../STATUS.md](../STATUS.md#приоритеты)).
 - **Настройки правятся текстом.** `ThreadsCard` просит напечатать `milestones | each-thread | quiet` и ругается на опечатку; для трёх закрытых перечислений это должен быть выпадающий список. Плюс «применится при следующем старте harness» — дорого для трёх политик.
 - **Деньги в `ProjectTokenUsage`.** Цена за токен есть в решении маршрута, токены есть в проекции; перемножение закрывает «project-specific usage visibility», которое сейчас только в токенах.
 - **GIF на изменения GUI** (T7.6): скилл `record-browser-gif` требует его на каждый PR с видимым изменением интерфейса.
 
 ## Шаги отчуждения
 
-- [ ] Ожидаемые выходы обоих SDK (блокирует upstream-PR)
+- [ ] Новый SDK-сценарий для Threads (T8.5; upstream-PR не блокирует — см. [../DECISIONS.md](../DECISIONS.md))
 - [ ] Разобрать правки `core/session` по одной: содержательное / генерируемое / документация
 - [ ] Выяснить, относятся ли правки `ui-workspace` к Threads
 - [ ] Решить по `subagent/subagent` и `tool-subagent`: отправлять в апстрим или держать локально с записанной причиной
-- [ ] Заменить `workspace:*` на semver-рэнджи в девяти манифестах
+- [ ] Заменить `workspace:*` на semver-рэнджи в десяти манифестах
 - [ ] Проверить установку на чистый профиль
 - [ ] Проверить критерии 3 и 4 готовности ([../DECISIONS.md](../DECISIONS.md#критерии-готовности)): обычные сессии не затронуты, бандл снимается без порчи сессий
 

@@ -19,26 +19,26 @@ Xiaomi против OpenRouter, что дешевле**, с прежним оп�
 
 | Часть плана | Статус | Комментарий |
 |---|---|---|
-| **B. Пул ключей и ротация** | **Готово** (коммит `74caa55c7c`) | `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация с буфером — всё в коде |
-| **A. Маршрут `claude-proxy`** | **Готово** (коммит `77c2caa961`) | UA-гейт (`userAgentOverride`) и конфиг провайдера |
-| **C. Xiaomi Token Plan + сравнение цены** | **Готово** (коммит `101e434b8f`) | Цена **по-корзинная** (1:1 был ошибкой); веса кредитов известны, см. план |
-| **D. Обобщение «эндпоинт → источник»** | **Готово** (коммит `101e434b8f`) | `extraSources`, `Pin` с маршрутом, диспатч по `pin.source.kind` |
+| **B. Пул ключей и ротация** | **Готово** (коммит «classify KEY_QUOTA and rotate API keys») | `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация с буфером — всё в коде |
+| **A. Маршрут `claude-proxy`** | **Готово** (коммит «override user-agent for identity-gating gateways») | UA-гейт (`userAgentOverride`) и конфиг провайдера |
+| **C. Xiaomi Token Plan + сравнение цены** | **Готово** (коммит «rank direct extra sources by blended price») | Цена **по-корзинная** (1:1 был ошибкой); веса кредитов известны, см. план |
+| **D. Обобщение «эндпоинт → источник»** | **Готово** (коммит «rank direct extra sources by blended price») | `extraSources`, `Pin` с маршрутом, диспатч по `pin.source.kind` |
 | **B5, `KEY_QUOTA` в `rerouteCodes`** | **Готово** | Дефолт в `config.ts` содержит `KEY_QUOTA` |
 
-### Расхождение коммита `74caa55c7c`
+### Расхождение коммита «classify KEY_QUOTA and rotate API keys»
 
 Message утверждал, что `KEY_QUOTA` попал в `rerouteCodes`, а код тогда это не подтверждал: дефолт `packages/experimental/model-routing/src/config.ts` остался прежним. **Закрыто вместе с B5** — дефолт теперь включает `KEY_QUOTA`, и в живом профиле добавлен `QUOTA` для квоты подписки `Anthropic-token-plan-sgp`.
 
 ### Статус после реализации (проверено по коду, 2026-10-07)
 
-Всё ниже закоммичено (`74caa55c7c`, `77c2caa961`, `101e434b8f`), тесты зелёные: полный прогон пакетов фичи 2026-10-07 — 101 файл, 1725 тестов, `npx tsc --build tsconfig.json` — exit 0.
+Всё ниже закоммичено («classify KEY_QUOTA and rotate API keys», «override user-agent for identity-gating gateways», «rank direct extra sources by blended price»), тесты зелёные: полный прогон пакетов фичи 2026-10-07 — 101 файл, 1725 тестов, `npx tsc --build tsconfig.json` — exit 0.
 
 | Кусок | Где | Статус |
 |---|---|---|
-| `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация ключей с буфером | `packages/llm/llm-pi-ai`, `packages/llm/llm` | **Готово** (коммит `74caa55c7c`) |
-| `userAgentOverride` (подмена `user-agent` на маршруте, opt-in) | `packages/llm/llm-pi-ai/src/{config,adapter,discovery}.ts` | **Готово** (коммит `77c2caa961`) |
+| `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация ключей с буфером | `packages/llm/llm-pi-ai`, `packages/llm/llm` | **Готово** (коммит «classify KEY_QUOTA and rotate API keys») |
+| `userAgentOverride` (подмена `user-agent` на маршруте, opt-in) | `packages/llm/llm-pi-ai/src/{config,adapter,discovery}.ts` | **Готово** (коммит «override user-agent for identity-gating gateways») |
 | Маршрут `claude-proxy` (конфиг + модели) | живой профиль `~/.dsh/profiles/web/cordis.patch.yml` | **Готово** |
-| `extraSources` + `modelMap` + цена (подписочная `usdPerToken` / по-корзинная) | `packages/experimental/model-routing/src/{config,types,select,endpoint}.ts` | **Готово** (коммит `101e434b8f`) |
+| `extraSources` + `modelMap` + цена (подписочная `usdPerToken` / по-корзинная) | `packages/experimental/model-routing/src/{config,types,select,endpoint}.ts` | **Готово** (коммит «rank direct extra sources by blended price») |
 | Диспатч по источнику (`provider: pin.source.kind`), рероут-гейт для прямых | `packages/experimental/model-routing/src/adapter.ts` | **Готово** |
 | **B5** — `KEY_QUOTA` в `rerouteCodes` | `packages/experimental/model-routing/src/config.ts` | **Готово** |
 | Целевой сценарий (claude-proxy → KEY_QUOTA → дешевший xiaomi/openrouter) | тесты `model-routing/tests/adapter.spec.ts` | **Готово** |
@@ -92,7 +92,7 @@ detected an anomaly in your client…"` с `"type":"<nil>"` (Go-релей). Д�
 пробам 2026-10-08, обе ступени проверены на обоих ключах:
 
 1. **Первая ступень** — заголовок `user-agent` по `^claude-cli/\d+\.\d+\.\d+`
-   (известна с 2026-10-05, закрыта `userAgentOverride`, коммит `77c2caa961`).
+   (известна с 2026-10-05, закрыта `userAgentOverride`, коммит «override user-agent for identity-gating gateways»).
 2. **Вторая ступень** — проверка **тела** на `metadata.user_id`: поле, которое
    настоящий Claude Code шлёт в каждом запросе. Проба без поля на **обоих** ключах —
    400 «аномалия»; та же проба с любым непустым `metadata.user_id` — 200. Формат
@@ -279,9 +279,9 @@ blended-цене. Лог решений (`diagnosticsPath`) показывает
 
 ### Что делается и в каком порядке
 
-1. ~~**Маршрут `claude-proxy` + UA-гейт**~~ **Готово** (коммит `77c2caa961`).
+1. ~~**Маршрут `claude-proxy` + UA-гейт**~~ **Готово** (коммит «override user-agent for identity-gating gateways»).
 2. ~~**B5** — `KEY_QUOTA` в `rerouteCodes`~~ **Готово**.
-3. ~~**Обобщение источников в `tiers`**~~ **Готово** (коммит `101e434b8f`).
+3. ~~**Обобщение источников в `tiers`**~~ **Готово** (коммит «rank direct extra sources by blended price»).
 4. ~~**`subscription`-блок и потировое сравнение цены**~~ **Готово**: по-корзинные цены Xiaomi в `ExtraSourcePrice`.
 5. Сквозной прогон: Auto → Claude → оба ключа исчерпаны → Xiaomi/OpenRouter по цене. **Не сделано** — это следующий шаг, и он же приёмка из [../STATUS.md](../STATUS.md#открытые-работы).
 

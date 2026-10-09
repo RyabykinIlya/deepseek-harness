@@ -14,7 +14,7 @@
 3. **Claude: несколько ключей**, ротация по мере исчерпания; исчерпаны **оба** — переход
    на шаг 2.
 
-### Что уже отгружено (проверено по коду, коммит `74caa55c7c`)
+### Что уже отгружено (проверено по коду, коммит «classify KEY_QUOTA and rotate API keys»)
 
 | Что | Где | Статус |
 |---|---|---|
@@ -28,7 +28,7 @@
 
 ### Расхождение, которое нужно закрыть
 
-Message коммита `74caa55c7c` утверждает, что `KEY_QUOTA` попал в `rerouteCodes`. В коде
+Message коммита «classify KEY_QUOTA and rotate API keys» утверждает, что `KEY_QUOTA` попал в `rerouteCodes`. В коде
 этого **нет**: дефолт `rerouteCodes` (`packages/experimental/model-routing/src/config.ts:321`)
 остался `['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR']`, и пакет
 `model-routing` вообще не импортирует `KEY_QUOTA`. Статус B5 в

@@ -10,10 +10,10 @@
 
 | Фича | Новые пакеты | Связана с ядром |
 |---|---|---|
-| **Projects / Threads** — фоновые агенты, у каждого свой git-worktree | `experimental/threads`, `experimental/threads-preset`, `experimental/threads-profile`, `experimental/tool-threads`, `experimental/client-ui-threads`, `experimental/project-memory`, `experimental/client-ui-project-memory`, `subagent/worktree-manager`, `subagent/subagent-thread-worktree`, `client/ui-settings-threads` | `subagent/subagent` (14 файлов), `subagent/tool-subagent` (5), `core/session` (типы событий и `AppendOptions.ignorable`) |
-| **Model routing** — тиры моделей вместо ручного выбора, ранжирование endpoint'ов OpenRouter по цене следующего хода, плюс прямые источники (`extraSources`) и ротация ключей на `KEY_QUOTA` | `experimental/model-routing`, `experimental/model-routing-profile`, `experimental/client-ui-model-routing` | `llm/llm-pi-ai` (16 файлов: четыре новых файла чтения OpenRouter, dispatch, каталог, `apiKeys`/ротация, `userAgentOverride`), `llm/llm` (код `KEY_QUOTA`) |
+| **Projects / Threads** — фоновые агенты, у каждого свой git-клон и ветка, плюс выбор репозитория в multi-repo workspace | `experimental/threads`, `experimental/threads-preset`, `experimental/threads-profile`, `experimental/tool-threads`, `experimental/client-ui-threads`, `experimental/project-memory`, `experimental/client-ui-project-memory`, `subagent/worktree-manager`, `subagent/subagent-thread-worktree`, `client/ui-settings-threads` | `subagent/subagent` (17 файлов: continuable-cwd и capability `repository`), `subagent/tool-subagent` (6), шесть провайдеров `subagent/subagent-*` и тест-фикстуры `workflow/workflow-ptc` и `sdk/server`, `core/session` (типы событий и `AppendOptions.ignorable`) |
+| **Model routing** — тиры моделей вместо ручного выбора, ранжирование endpoint'ов OpenRouter по цене следующего хода, плюс прямые источники (`extraSources`), ротация ключей на `KEY_QUOTA`, порог отказов `excludeAfterFailures` и видимая смена модели | `experimental/model-routing`, `experimental/model-routing-profile`, `experimental/client-ui-model-routing` | `llm/llm-pi-ai` (16 файлов: четыре новых файла чтения OpenRouter, dispatch, каталог, `apiKeys`/ротация, `userAgentOverride`), `llm/llm` (коды `KEY_QUOTA` и `CLIENT_GATE`) |
 | **Web-поиск** — три новых провайдера и доверенные адреса для fake-ip прокси | `web/web-search-brave`, `web/web-search-tavily`, `web/web-search-duckduckgo` | `web/web` (списки известных id провайдеров), `web/web-fetch-http` (`trustedProxyAddressRanges`), `client/ui-settings-web-search` (7) |
-| **Restore** — форк диалога от сообщения вместо запрещённого усечения лога | — | `client/ui-chat` (13 файлов), `client/product-analytics`, `extensions/cordis-client-runner` (слот) |
+| **Restore** — форк диалога от сообщения вместо запрещённого усечения лога | — | `client/ui-chat` (14 файлов), `client/product-analytics`, `extensions/cordis-client-runner` (слот) |
 
 Прочее, что не фича, а обвязка: `client/ui-workspace` (8) — представление дерева и строк, `bundle/base` и `bundle/web-app` — строки бандлов, `test-support/session-snapshot` и `test-support/client-runtime` — поддержка новых событий и Remote в тестах, `extensions/cordis-client-runner` и `extensions/tool-cordis` — по одной регистрации нового слота и Remote.
 
@@ -25,11 +25,11 @@
 
 Подробности — в его собственном README и CHANGELOG. В форке он остаётся исходником, а не зависимостью: форк его не подключает и поддерживает как отдельный продукт.
 
-**Локальные копии.** В `.local-plugins/` лежат две копии того же плагина: `openrouter-spend/` (с `ru.json` и `PUBLISHING.md`) и `dsh-openrouter-spend/` (без `ru.json`); код у них разный, обе объявляют `@local/openrouter-spend@1.0.0`. Свежая — `openrouter-spend/`: в неё вошла правка «RUB по курсу ЦБ» (коммит `45eaced7d0`, 2026-10-06), и это единственный путь `ru.json`. Копии не являются источником истины: это рабочий код для чекаута, а публикуемое дерево живёт в `~/dev/dsh-openrouter-spend` (0.3.2). **Каталог `.local-plugins/` отслеживается git с 2026-10-05** (коммит `6c4f7290d3` добавил его вместе с `PLUGINS.md`), так что любая правка в нём попадает в историю форка.
+**Локальные копии.** В `.local-plugins/` лежат две копии того же плагина: `openrouter-spend/` (с `ru.json` и `PUBLISHING.md`) и `dsh-openrouter-spend/` (без `ru.json`); код у них разный, обе объявляют `@local/openrouter-spend@1.0.0`. Свежая — `openrouter-spend/`: в неё вошла правка «RUB по курсу ЦБ» (коммит «show spend in RUB at the CBR daily rate», 2026-10-06), и это единственный путь `ru.json`. Копии не являются источником истины: это рабочий код для чекаута, а публикуемое дерево живёт в `~/dev/dsh-openrouter-spend` (0.3.2). **Каталог `.local-plugins/` отслеживается git с 2026-10-05** (коммит «add local plugins and the fork plugin catalog» добавил его вместе с `PLUGINS.md`), так что любая правка в нём попадает в историю форка.
 
 ## 3. Локальные плагины форка
 
-Не публикуются и живут только в этом чекауте, в `.local-plugins/` — обычный ESM без сборки и без зависимостей. **Каталог отслеживается git с 2026-10-05** (коммит `6c4f7290d3`), вместе с рукописным каталогом `PLUGINS.md` в корне.
+Не публикуются и живут только в этом чекауте, в `.local-plugins/` — обычный ESM без сборки и без зависимостей. **Каталог отслеживается git с 2026-10-05** (коммит «add local plugins and the fork plugin catalog»), вместе с рукописным каталогом `PLUGINS.md` в корне.
 
 | Плагин | Что делает |
 |---|---|
