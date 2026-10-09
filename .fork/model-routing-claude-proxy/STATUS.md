@@ -15,36 +15,32 @@
 Целевой сценарий Auto: **Claude (пул ключей, ротация) → при исчерпании/отказе →
 Xiaomi против OpenRouter, что дешевле**, с прежним определением `pro`/`flash`.
 
-### Текущее состояние (проверено по коду)
+### Текущее состояние (проверено по коду, 2026-10-07)
 
 | Часть плана | Статус | Комментарий |
 |---|---|---|
 | **B. Пул ключей и ротация** | **Готово** (коммит `74caa55c7c`) | `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация с буфером — всё в коде |
-| **A. Маршрут `claude-proxy`** | **В работу** | Разблокировано владельцем; нужен UA-гейт |
-| **C. Xiaomi Token Plan + сравнение цены** | **В работу** | Цена **по-корзинная** (1:1 был ошибкой); веса кредитов известны, см. план |
-| **D. Обобщение «эндпоинт → источник»** | **В работу** | Самый объёмный кусок: `extraSources`, `Pin` с маршрутом, диспатч |
-| **B5, `KEY_QUOTA` в `rerouteCodes`** | **В работу** | Дефолт в `config.ts:321` не содержит `KEY_QUOTA`, хотя message коммита это утверждает — расхождение, чиним |
+| **A. Маршрут `claude-proxy`** | **Готово** (коммит `77c2caa961`) | UA-гейт (`userAgentOverride`) и конфиг провайдера |
+| **C. Xiaomi Token Plan + сравнение цены** | **Готово** (коммит `101e434b8f`) | Цена **по-корзинная** (1:1 был ошибкой); веса кредитов известны, см. план |
+| **D. Обобщение «эндпоинт → источник»** | **Готово** (коммит `101e434b8f`) | `extraSources`, `Pin` с маршрутом, диспатч по `pin.source.kind` |
+| **B5, `KEY_QUOTA` в `rerouteCodes`** | **Готово** | Дефолт в `config.ts` содержит `KEY_QUOTA` |
 
 ### Расхождение коммита `74caa55c7c`
 
-Message утверждает, что `KEY_QUOTA` попал в `rerouteCodes`. Код это не подтверждает:
-дефолт `packages/experimental/model-routing/src/config.ts:321` прежний, пакет
-`model-routing` не импортирует `KEY_QUOTA`. Закрывается вместе с B5.
+Message утверждал, что `KEY_QUOTA` попал в `rerouteCodes`, а код тогда это не подтверждал: дефолт `packages/experimental/model-routing/src/config.ts` остался прежним. **Закрыто вместе с B5** — дефолт теперь включает `KEY_QUOTA`, и в живом профиле добавлен `QUOTA` для квоты подписки `Anthropic-token-plan-sgp`.
 
-### Статус после реализации (проверено по коду, 2026-10-06)
+### Статус после реализации (проверено по коду, 2026-10-07)
 
-Всё ниже лежит в рабочем дереве (не закоммичено), тесты зелёные: `vitest run
-packages/experimental/model-routing packages/llm/llm-pi-ai` — 35 файлов / 665 тестов,
-`npx tsc --build tsconfig.json` — exit 0.
+Всё ниже закоммичено (`74caa55c7c`, `77c2caa961`, `101e434b8f`), тесты зелёные: полный прогон пакетов фичи 2026-10-07 — 101 файл, 1725 тестов, `npx tsc --build tsconfig.json` — exit 0.
 
 | Кусок | Где | Статус |
 |---|---|---|
 | `KEY_QUOTA`, `apiKeys`, `keyCooldownMs`, ротация ключей с буфером | `packages/llm/llm-pi-ai`, `packages/llm/llm` | **Готово** (коммит `74caa55c7c`) |
-| `userAgentOverride` (подмена `user-agent` на маршруте, opt-in) | `packages/llm/llm-pi-ai/src/{config,adapter,discovery}.ts` | **Готово** |
-| Маршрут `claude-proxy` (конфиг + модели) | README `llm-pi-ai`, схема профиля | **Готово** |
-| `extraSources` + `modelMap` + цена (подписочная `usdPerToken` / по-корзинная) | `packages/experimental/model-routing/src/{config,types,select,endpoint}.ts` | **Готово** |
+| `userAgentOverride` (подмена `user-agent` на маршруте, opt-in) | `packages/llm/llm-pi-ai/src/{config,adapter,discovery}.ts` | **Готово** (коммит `77c2caa961`) |
+| Маршрут `claude-proxy` (конфиг + модели) | живой профиль `~/.dsh/profiles/web/cordis.patch.yml` | **Готово** |
+| `extraSources` + `modelMap` + цена (подписочная `usdPerToken` / по-корзинная) | `packages/experimental/model-routing/src/{config,types,select,endpoint}.ts` | **Готово** (коммит `101e434b8f`) |
 | Диспатч по источнику (`provider: pin.source.kind`), рероут-гейт для прямых | `packages/experimental/model-routing/src/adapter.ts` | **Готово** |
-| **B5** — `KEY_QUOTA` в `rerouteCodes` | `packages/experimental/model-routing/src/config.ts:422` | **Готово** |
+| **B5** — `KEY_QUOTA` в `rerouteCodes` | `packages/experimental/model-routing/src/config.ts` | **Готово** |
 | Целевой сценарий (claude-proxy → KEY_QUOTA → дешевший xiaomi/openrouter) | тесты `model-routing/tests/adapter.spec.ts` | **Готово** |
 
 ### Цена Xiaomi — исправлена 2026-10-06 (1:1 был ошибкой)
@@ -88,6 +84,44 @@ claude-sonnet-4-6, claude-haiku-4-5`, но **не отдаёт `claude-opus-5`**
 Следствие для конфига: провайдер `claude-proxy` объявляет модельный список вручную
 (это поддержано `models:` в профиле), и его правка не опирается на `/v1/models`.
 
+### ФАКТ: гейт relay двухступенчатый — 400 «аномалия клиента» лечится `metadata.user_id` (2026-10-08)
+
+Ошибка хода через `claude-sonnet-5` (и позже `claude-opus-5`): HTTP 400
+`"Обнаружена аномалия клиента. Используйте стандартный клиент Claude Code… | We have
+detected an anomaly in your client…"` с `"type":"<nil>"` (Go-релей). Диагноз по живым
+пробам 2026-10-08, обе ступени проверены на обоих ключах:
+
+1. **Первая ступень** — заголовок `user-agent` по `^claude-cli/\d+\.\d+\.\d+`
+   (известна с 2026-10-05, закрыта `userAgentOverride`, коммит `77c2caa961`).
+2. **Вторая ступень** — проверка **тела** на `metadata.user_id`: поле, которое
+   настоящий Claude Code шлёт в каждом запросе. Проба без поля на **обоих** ключах —
+   400 «аномалия»; та же проба с любым непустым `metadata.user_id` — 200. Формат
+   значения гейт не валидирует: приняты и JSON-строка
+   `{"device_id","account_uuid","session_id"}` (формат CC ≥ 2.1.78), и legacy
+   `user_<hex>_account_<uuid>_session_<uuid>`, и просто `"hello"`.
+3. До активации второй ступени работали запросы без поля; порог срабатывания по
+   живой сессии `session-08a15599` (workspace `/Users/user/dev/dsh-openrouter-spend`)
+   — ход из 19 шагов упал на 20-м, дальше ходы 19 и 20 тоже падали. Пробы 2026-10-09
+   показывают, что **гейт включается и выключается** (в разрешительном окне
+   проходят даже запросы без поля), т.е. условие активации релею принадлежит, а не
+   нам; закладка `metadata.user_id` обязательна на время «включено».
+4. Прочие отличия запроса Harness от CC (заголовки `x-app`, `anthropic-beta`,
+   `x-stainless-*`, `?beta=true`, форма system/thinking/инструментов) гейт в
+   пробах **не проверял**: каждая из них по отдельности и все вместе проходили 200,
+   пока отсутствовало только `metadata.user_id` (и наоборот). Upstream sonnet-лэйна —
+   Kiro (виден в usage ответов как `kiro_*`), upstream периодически флапает 503 —
+   это отдельный отказ, не связанный с гейтом.
+
+Реализовано 2026-10-09 (коммит см. в истории): поле `metadataUserId` в профиле
+`llm-pi-ai` (шлёт значение как `metadata.user_id` только на своей маршруте, пустое
+значение отказано при загрузке); код `CLIENT_GATE` в `dsh-llm` с предикатом
+`isClientGateRejectedError` (распознаёт формулировку гейта до ветки 400/`INVALID_REQUEST`);
+`CLIENT_GATE` в дефолтных `rerouteCodes` Model Routing и в живом профиле — отказ гейта
+рероутит на следующего кандидата, а не роняет ход; в живом профиле маршруту
+`claude-proxy` прописано `metadataUserId` в JSON-формате CC. Приёмка: обе пробы на
+живом релее с полем — 200 на обоих ключах.
+
+
 ### Настройка: что сделать, чтобы всё это заработало
 
 Это единственное, что осталось — код готов. Три слоя конфигурации, каждый в своём
@@ -119,20 +153,20 @@ UI (Settings → namespace `llm-pi-ai` → путь `providers/<имя>`), и о
         keyCooldownMs: 600000          # обязателен при >1 ключе (секретов нет дефолта)
         userAgentOverride: claude-cli/2.1.289   # прохождение гейта прокси
         models:
-          - { id: claude-opus-4-8 }
-          - { id: claude-opus-4-7 }
-          - { id: claude-sonnet-5 }
-          - { id: claude-sonnet-4-6 }
-          - { id: claude-haiku-4-5 }
-      xiaomi-plan:
-        displayName: Xiaomi Token Plan
-        api: openai-completions
-        baseURL: https://token-plan-sgp.xiaomimimo.com/v1
-        apiKeys: [XIAOMI_PLAN_API_KEY]
+          # ФАКТ 2026-10-07 (проверено живым запросом, владелец подтвердил):
+          # `GET /v1/models` у relay НЕПОЛНЫЙ и вводит в заблуждение: claude-opus-5
+          # в списке нет, но запрос на него отвечает. Доверять каталогу эндпоинта
+          # нельзя, состав подтверждается запросами. Владелец: работают обе эти.
+          - id: claude-opus-5
+          - id: claude-sonnet-5
+      Anthropic-token-plan-sgp:
+        apiKeyEnv: XIAOMI_TOKEN_PLAN_SGP_API_KEY
         models:
           - { id: mimo-v2.6-pro,   name: "MiMo v2.6 Pro" }
           - { id: mimo-v2.6-flash, name: "MiMo v2.6 Flash" }
 ```
+
+Имя маршрута в живом профиле — **`Anthropic-token-plan-sgp`**, а не `xiaomi-plan`: провайдер называет сервис `token-plan-sgp.xiaomimimo.com`, и id маршрута повторяет это имя, чтобы лог решений и конфиг говорили об одном объекте.
 
 Где взять значения:
 - **`apiKeys` / `apiKeyEnv`** — имена креденшелов. Кладутся либо в `.env` той же папки
@@ -161,24 +195,37 @@ Settings → namespace `model-routing` → путь `tiers`. Применяет�
 - id: model-routing
   name: '@deepseek-ai/dsh-experimental-model-routing'
   config:
+    rerouteCodes: [ RATE_LIMIT, SERVER, TRANSPORT, TIMEOUT, PI_AI_ERROR, KEY_QUOTA, QUOTA ]
     tiers:
       - name: pro
         label: Pro
         models: [ deepseek/deepseek-v4-pro, xiaomi/mimo-v2.6-pro, ... ]  # как сейчас
         # ... остальные поля тира без изменений ...
         extraSources:
-          # Xiaomi: кредитно-весовая подписка -> ТРИ корзины, НЕ плоская usdPerToken
-          - route: xiaomi-plan
-            modelMap:
-              xiaomi/mimo-v2.6-pro: 'mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}'
-              xiaomi/mimo-v2.6-flash: 'mimo-v2.6-flash@{"promptUsdPerToken":1.454545e-7,"completionUsdPerToken":2.909091e-7,"cacheReadUsdPerToken":2.909091e-9}'
-            tools: true
-          # Claude: цена неизвестна (ключи с лимитом). Если нужен приоритет — задай цену
-          # или положись на порядок/сценарий; см. вопрос про приоритет Claude ниже.
+          # ЖИВОЙ ПРОФИЛЬ: приоритет вместо честной цены. Ключи лимитные (claude),
+          # квота предоплачена (Anthropic), поэтому ставится usdPerToken: 1e-12 —
+          # это НЕ реальная цена. Честное сравнение: убрать 1e-12 и записать
+          # по-корзинные цены из таблицы ниже.
+          # claude идёт первым, Anthropic вторым — равные цены разрешаются порядком.
           - route: claude-proxy
-            models: [ claude-sonnet-5, claude-opus-4-8, claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5 ]
+            modelMap:
+              xiaomi/mimo-v2.6-pro: claude-opus-5
+            price: { usdPerToken: 1e-12 }
             tools: true
+          - route: Anthropic-token-plan-sgp
+            modelMap:
+              xiaomi/mimo-v2.6-pro: mimo-v2.6-pro
+            price: { usdPerToken: 1e-12 }
+            tools: true
+          # Честная запись цены подписки (когда приоритет убирается):
+          #   - route: Anthropic-token-plan-sgp
+          #     modelMap:
+          #       xiaomi/mimo-v2.6-pro: 'mimo-v2.6-pro@{"promptUsdPerToken":4.363636e-7,"completionUsdPerToken":8.727273e-7,"cacheReadUsdPerToken":3.636364e-9}'
+          #       xiaomi/mimo-v2.6-flash: 'mimo-v2.6-flash@{"promptUsdPerToken":1.454545e-7,"completionUsdPerToken":2.909091e-7,"cacheReadUsdPerToken":2.909091e-9}'
+          #     tools: true
 ```
+
+`modelMap`, а не `models`: кандидат ранжируется под каноническим id тира (`xiaomi/mimo-v2.6-pro`), которого нет у собственных id маршрутов (`claude-opus-5`, `mimo-v2.6-pro`), — без карты он не попадёт в рейтинг.
 
 Форма цены (`ExtraSourcePrice`, см. `config.ts`):
 | Поле | Что это |
@@ -198,24 +245,27 @@ Settings → namespace `model-routing` → путь `tiers`. Применяет�
 ```
 CLAUDE_PROXY_KEY_A=sk-klod-...
 CLAUDE_PROXY_KEY_B=sk-klod-...
-XIAOMI_PLAN_API_KEY=tp-...
+XIAOMI_TOKEN_PLAN_SGP_API_KEY=tp-...
 ```
 
 #### Проверка (сквозной прогон)
 
 После всех трёх слоёв (и однократного перезапуска, если строка профиля ставилась впервые):
 Auto-сессия → первым идёт `claude-proxy`, пока у
-пула есть живой ключ; на `KEY_QUOTA` (оба ключа исчерпаны) рероут → дальше `xiaomi-plan`
-против OpenRouter-эндпоинтов того же тира, кто дешевле по blended-цене. Лог решений
-(`diagnosticsPath`) показывает победителя и цены, по которым считал.
+пула есть живой ключ; на `KEY_QUOTA` (оба ключа исчерпаны) рероут → дальше
+`Anthropic-token-plan-sgp` против OpenRouter-эндпоинтов того же тира, кто дешевле по
+blended-цене. Лог решений (`diagnosticsPath`) показывает победителя и цены, по которым
+считал.
 
 #### Что нужно решить до настройки (блокирует слой 2)
 
-- **Приоритет Claude.** Цена прокси-ключей неизвестна — они с лимитом, не per-token. Без
-  цены `claude-proxy` попадает в `unpriced` и не выигрывает ранжирование. Нужно одно:
-  (а) задать цену Claude в `price` (консервативно дёшево, чтобы всегда шёл первым), либо
-  (б) правило «claude всегда предпочтительнее до исчерпания» — это уже не цена, а
-  отдельная настройка, её в коде сейчас нет. Выбери, и я допишу.
+- **Приоритет Claude — решено в живом профиле, но решение не записано до 2026-10-07.**
+  Цена прокси-ключей неизвестна — они с лимитом, не per-token, — и без цены `claude-proxy`
+  попадает в `unpriced` и не выигрывает ранжирование. В профиле выбран вариант (а): цена
+  `usdPerToken: 1e-12`, консервативно низкая, чтобы оба приоритетных источника шли первыми
+  (равные цены разрешаются порядком в `extraSources`: claude, затем Anthropic). Это
+  приоритет, а не цена: диагностика показывает `1e-12`, а не реальный расход. Вариант (б) —
+  правило «claude всегда предпочтительнее» как отдельная настройка — в коде отсутствует.
 
 ### Оговорки, зафиксированные исполнителями
 
@@ -229,24 +279,17 @@ Auto-сессия → первым идёт `claude-proxy`, пока у
 
 ### Что делается и в каком порядке
 
-1. **Маршрут `claude-proxy` + UA-гейт** (разблокирует «Claude первой»).
-2. **B5** — `KEY_QUOTA` в `rerouteCodes`, срабатывание по исчерпании **всего пула**
-   (не одного ключа).
-3. **Обобщение источников в `tiers`** — кандидаты за пределами OpenRouter.
-4. **`subscription`-блок и потировое сравнение цены** — Xiaomi против самой дешёвой
-   модели тира.
-5. Сквозной прогон: Auto → Claude → оба ключа исчерпаны → Xiaomi/OpenRouter по цене.
-
-
-
-| Часть плана | Статус | Что это значит |
-|---|---|---|
-| **A. Провайдерский маршрут `claude-proxy`** | **Отложено** | Конфигурация не пишется. Причина — [DECISIONS.md](DECISIONS.md#почему-маршрут-claude-proxy-отложен) |
-| **B. Пул ключей и ротация при исчерпании** | **В работе** | Основная часть. Провайдер-нейтральная: работает на любом маршруте pi-ai |
-| **C. Xiaomi Token Plan** | **Отложено как есть** | Сравнение цены подписки с OpenRouter не делаем. Записано отдельно, см. ниже |
-| **D. Встройка в Model Routing** | Частично | Из плана берём только `KEY_QUOTA` в `rerouteCodes`; обобщение «эндпоинт → источник» отложено вместе с C |
+1. ~~**Маршрут `claude-proxy` + UA-гейт**~~ **Готово** (коммит `77c2caa961`).
+2. ~~**B5** — `KEY_QUOTA` в `rerouteCodes`~~ **Готово**.
+3. ~~**Обобщение источников в `tiers`**~~ **Готово** (коммит `101e434b8f`).
+4. ~~**`subscription`-блок и потировое сравнение цены**~~ **Готово**: по-корзинные цены Xiaomi в `ExtraSourcePrice`.
+5. Сквозной прогон: Auto → Claude → оба ключа исчерпаны → Xiaomi/OpenRouter по цене. **Не сделано** — это следующий шаг, и он же приёмка из [../STATUS.md](../STATUS.md#открытые-работы).
 
 ### Что именно отложено в C
+
+**Раздел устарел: скоуп расширен владельцем 2026-10-06, и часть C сделана** — сравнение цены подписки и обобщение «эндпоинт → источник» лежат в коде (`ExtraSourcePrice`, `extraSources`, `modelMap`, диспатч по `pin.source.kind`), см. таблицу «Статус после реализации». Осталось открытым ровно одно: сквозной прогон (пункт 5 выше).
+
+Ниже — прежняя запись об отложении, сохранённая ради истории рассуждения.
 
 Сравнение эффективной цены подписки Xiaomi с per-token ценами OpenRouter **не делаем**.
 Вместе с ним отложены обобщение кандидата «эндпоинт → источник» и блок `subscription`

@@ -7,11 +7,11 @@
 
 | # | Задача | Файлы | Статус |
 |---|---|---|---|
-| B1 | Код `KEY_QUOTA` и предикат `isKeyQuotaExceededError` | `packages/llm/llm/src/error.ts` | в работе |
-| B2 | Классификация `KEY_QUOTA` до аккаунт-квоты и до 429 | `packages/llm/llm-pi-ai/src/stream.ts` | в работе |
+| B1 | Код `KEY_QUOTA` и предикат `isKeyQuotaExceededError` | `packages/llm/llm/src/error.ts` | **отгружено** |
+| B2 | Классификация `KEY_QUOTA` до аккаунт-квоты и до 429 | `packages/llm/llm-pi-ai/src/stream.ts` | **отгружено** |
 | B3 | Поле `apiKeys` в схеме профиля и список в resolved-типе | `packages/llm/llm-pi-ai/src/config.ts` | **отгружено** |
 | B4 | Ротация с кулдауном | `packages/llm/llm-pi-ai/src/adapter.ts`, `index.ts` | **отгружено** |
-| B5 | `KEY_QUOTA` в `rerouteCodes` по умолчанию | `packages/experimental/model-routing/src/config.ts:321` | **не делаем**, см. ниже |
+| B5 | `KEY_QUOTA` в `rerouteCodes` по умолчанию | `packages/experimental/model-routing/src/config.ts` | **отгружено** (дефолт `['RATE_LIMIT','SERVER','TRANSPORT','TIMEOUT','PI_AI_ERROR','KEY_QUOTA']`), см. «Решение по B5» ниже |
 | B6 | snapshot модельно-видимых изменений | `snapshots/` | не начато |
 
 ### Решение по B4: отгружено
@@ -39,22 +39,13 @@
 его было нельзя: там буфер выходит на первом не-`usage` чанке, что включает и `finish` —
 как раз то, что ломает ротацию. Условие выхода переписано на «первый контентный».
 
-### Решение по B5: не делаем
+### Решение по B5: отгружено
 
-План (часть 4, пункт 5) требует добавить `KEY_QUOTA` в `rerouteCodes` по умолчанию.
-Не делаем — но не потому, что строка была бы бесполезной, а потому, что она даёт
-**неверное** восстановление. Первая формулировка этого довода («эффекта нет»)
-исправлена здесь 2026-10-06 после второй валидации.
+Вопрос был закрыт отрицательно 2026-10-06 (аргумент ниже) и **возвращён в работу и закрыт** в тот же день, когда владелец расширил скоуп: дефолт `rerouteCodes` в `packages/experimental/model-routing/src/config.ts` теперь содержит `KEY_QUOTA`, и в живом профиле `rerouteCodes` дополнительно несёт `QUOTA` для квоты подписки `Anthropic-token-plan-sgp`.
 
-Гейт рероута — `pin.endpoint !== undefined`
-(`packages/experimental/model-routing/src/adapter.ts:1000` и `:1012`), а `endpoint`
-заполняется только для OpenRouter-эндпоинта. При `maxReroutes: 2`
-(`packages/experimental/model-routing/src/config.ts:319`) исчерпание всех ключей прямого
-маршрута после добавления кода уводило бы запрос на **другую модель**, а не на другой
-ключ. Для per-key лимита это ложное лечение: исчерпан ключ, а менять модель незачем.
+Содержание прежнего возражения осталось верным и по-прежнему важно для чтения кода: **рероут меняет модель, а исчерпается ключ.** Гейт рероута — `pin.endpoint !== undefined` (`packages/experimental/model-routing/src/adapter.ts:1000` и `:1012`), а `endpoint` заполняется только для OpenRouter-эндпоинта. Поэтому для прямого маршрута без `endpoint` `KEY_QUOTA` в `rerouteCodes` не даёт рероута сам по себе: ключ меняется ротацией внутри одного вызова (B4), а в новый источник переводит сравнение цены по тиру, а не код в `rerouteCodes`. Код добавлен потому, что он **нужен** и в OpenRouter-ветке (исчерпание аккаунта на роуте), и как общий признак для правил маршрутизации, которые захотят на него опереться.
 
-Дефолт меняется только вместе с ротацией и вместе с явным решением, что делать после
-исчерпания списка ключей.
+Прежняя формулировка довода («это ложное лечение, так как уводит на другую модель») верна для `maxReroutes: 2` и остаётся в силе как предупреждение: если все ключи прямого маршрута исчерпаны, а `KEY_QUOTA` стоит в `rerouteCodes`, запрос уйдёт на другую модель тира, а не на другой ключ. Это ровно тот сценарий, который часть B закрывает ротацией, а не рероутом.
 
 ### Решение по B3: отгружено (после отката)
 
@@ -85,10 +76,14 @@
 | B2 | ветка `KEY_QUOTA` до аккаунт-квоты и 429 | `packages/llm/llm-pi-ai/src/stream.ts` |
 | B3 | поле `apiKeys`, resolved-список, `keyCooldownMs` | `packages/llm/llm-pi-ai/src/config.ts` |
 | B4 | цикл ротации с буфером, состояние кулдауна в `apply` | `packages/llm/llm-pi-ai/src/adapter.ts`, `index.ts` |
+| B5 | `KEY_QUOTA` в дефолте `rerouteCodes` | `packages/experimental/model-routing/src/config.ts` |
+| — | `userAgentOverride` (подмена `user-agent` на маршруте, opt-in) | `packages/llm/llm-pi-ai/src/{config,adapter,discovery}.ts` |
+| — | маршрут `claude-proxy` (конфиг + модели) и `Anthropic-token-plan-sgp` в живом профиле | `~/.dsh/profiles/web/cordis.patch.yml` |
+| — | `extraSources` + `modelMap` + по-корзинная цена (`ExtraSourcePrice`) | `packages/experimental/model-routing/src/{config,types,select,endpoint}.ts` |
+| — | диспатч по источнику (`provider: pin.source.kind`), рероут-гейт для прямых | `packages/experimental/model-routing/src/adapter.ts` |
 | — | README (en/zh + пара), тесты, `mock-server.ts` (`byKey`) | `packages/llm/llm-pi-ai/` |
 
-Проверено: 402 теста в пакете, `typecheck` — чисто. Правило `keyCooldownMs`:
-обязательно при >1 креденшеле, отказано при ≤1, без `DEFAULT_*`-константы.
+Проверено: 402 теста в `llm-pi-ai`, `typecheck` — чисто; полный прогон пакетов фичи 2026-10-07 — 101 файл, 1725 тестов зелёные. Правило `keyCooldownMs`: обязательно при >1 креденшеле, отказано при ≤1, без `DEFAULT_*`-константы.
 
 ### Верная конструкция
 
