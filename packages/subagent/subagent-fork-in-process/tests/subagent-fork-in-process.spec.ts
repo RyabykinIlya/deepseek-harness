@@ -181,7 +181,7 @@ describe('dsh-subagent-fork-in-process', () => {
     await run.dispose()
   })
 
-  it('advertises every start-time capability', async () => {
+  it('advertises every start-time capability except repository', async () => {
     const { ctx } = await setup([])
     expect(ctx.subagents.getProvider('fork')!.capabilities).toEqual({
       agentOptions: true,
@@ -189,6 +189,7 @@ describe('dsh-subagent-fork-in-process', () => {
       depthLimit: true,
       toolFilter: true,
       persona: true,
+      repository: false,
     })
   })
 
