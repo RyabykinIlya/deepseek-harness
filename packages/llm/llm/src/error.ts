@@ -41,6 +41,41 @@ export const ACCOUNT_QUOTA_EXCEEDED_CODE = 'ACCOUNT_QUOTA'
 export const KEY_QUOTA_EXCEEDED_CODE = 'KEY_QUOTA'
 
 /**
+ * Canonical provider-neutral code for a gateway that rejected the client's
+ * identity rather than the request. Gateways reselling a first-party client
+ * (for example Claude Code relays) fingerprint requests and answer a client
+ * that does not look like their expected one with a 400 naming the client —
+ * "client anomaly", "use the standard Claude Code client" — while the request
+ * itself is servable by any other route. Distinct from `INVALID_REQUEST`
+ * because the remedy differs: reroute to another route instead of failing
+ * the turn, and distinct from every quota code because the rejection does not
+ * clear with time, keys, or balance — it follows the client.
+ */
+export const CLIENT_GATE_REJECTED_CODE = 'CLIENT_GATE'
+
+/** Client-identity gate wording: the gateway names the client, not the request, as the problem. */
+const CLIENT_GATE_REJECTION = new RegExp(
+  String.raw`\banomaly in your client\b`
+  + String.raw`|\b(?:standard|official)\s+claude\s+code\s+client\b`
+  + String.raw`|аномали[а-яё]*\s+клиент`
+  + String.raw`|(?:стандартн[а-яё]*|официальн[а-яё]*)\s+клиент\s+claude\s+code`,
+  'i',
+)
+
+/**
+ * Recognize the wording of a client-identity gate rejection: the gateway
+ * answers that this client is not the one it serves ("an anomaly in your
+ * client", "use the standard Claude Code client") instead of naming a defect
+ * in the request. Such a rejection follows the client, so retrying the same
+ * route is pointless while the same request can succeed elsewhere.
+ * @param detail - provider error code/type/message text joined into one string.
+ * @returns true only when the text names the client as the rejected party.
+ */
+export function isClientGateRejectedError(detail: string): boolean {
+  return CLIENT_GATE_REJECTION.test(detail)
+}
+
+/**
  * Canonical provider-neutral code for a response that completed normally but
  * carried no content blocks at all. Providers occasionally emit a degenerate
  * completion (a terminal stop with zero output); adapters classify it as this

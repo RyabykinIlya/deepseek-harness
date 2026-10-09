@@ -6,6 +6,7 @@ import LlmRuntime, {
   GenerateOptions,
   HarnessError,
   isContextWindowExceededError,
+  isClientGateRejectedError,
   isKeyQuotaExceededError,
   isQuotaExceededError,
   LlmAdapter,
@@ -159,6 +160,27 @@ describe('LlmRuntime', () => {
     ]) {
       expect(isKeyQuotaExceededError(detail)).toBe(true)
       expect(isQuotaExceededError(detail)).toBe(false)
+    }
+  })
+
+  it('classifies a client-identity gate rejection as CLIENT_GATE, naming the client rather than the request', () => {
+    const relay = '400 {"error":{"type":"<nil>","message":"Обнаружена аномалия клиента. Используйте стандартный клиент Claude Code.'
+      + ' | We have detected an anomaly in your client. Please use the standard Claude Code client for requests."}}'
+    for (const detail of [
+      relay,
+      'We have detected an anomaly in your client. Please use the standard Claude Code client for requests.',
+      'Обнаружена аномалия клиента. Используйте стандартный клиент Claude Code.',
+      'Only the official Claude Code client is supported',
+      'Сейчас поддерживается только официальный клиент Claude Code',
+    ]) {
+      expect(isClientGateRejectedError(detail)).toBe(true)
+    }
+    for (const detail of [
+      'invalid_request_error: max_tokens is required',
+      'the request body appears to have been tampered with',
+      'anomalies in model output were detected',
+    ]) {
+      expect(isClientGateRejectedError(detail)).toBe(false)
     }
   })
 
