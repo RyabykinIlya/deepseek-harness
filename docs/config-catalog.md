@@ -1816,7 +1816,7 @@ export interface Config extends ProtocolConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:273`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:285`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -1930,6 +1930,18 @@ export interface PiAiProviderProfile {
    * exactly as before.
    */
   userAgentOverride?: string
+  /**
+   * Explicit `metadata.user_id` value this route sends on every model
+   * request. Off by default: a request carries no request metadata. Gateways
+   * that gate on client identity can require the client-identifying
+   * `metadata.user_id` field of the Anthropic Messages protocol — Claude
+   * Code sends one on every request — and answer a request without it as a
+   * client anomaly even when the request itself is valid. When set, the value
+   * is sent verbatim as `metadata.user_id` for this route only; an empty
+   * value is refused, and every route that omits the field keeps sending no
+   * metadata.
+   */
+  metadataUserId?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */

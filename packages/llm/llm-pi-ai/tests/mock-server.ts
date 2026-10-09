@@ -39,6 +39,16 @@ export const textEvents = [
   '[DONE]',
 ]
 
+/** A minimal complete text generation in pi-ai's anthropic-messages shape. */
+export const anthropicTextEvents = [
+  '{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"deepseek-flash","content":[],"stop_reason":null,"usage":{"input_tokens":3,"output_tokens":0}}}',
+  '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+  '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}',
+  '{"type":"content_block_stop","index":0}',
+  '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
+  '{"type":"message_stop"}',
+]
+
 /** The key a request carried in its `Authorization` header, or undefined when it carried none. */
 function bearerCredential(headers: IncomingMessage['headers']): string | undefined {
   const value = headers.authorization

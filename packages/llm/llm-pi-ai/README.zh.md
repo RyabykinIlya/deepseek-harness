@@ -41,6 +41,8 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
 
 每个提供方请求都携带 harness 来源 `user-agent`，通常没有任何办法压制或替换它。`userAgentOverride` 是唯一有文档记载、需显式启用的例外：当部署面对按客户端身份放行的网关——拒绝 `user-agent` 与其期望客户端不符的请求——就在此字段填入该网关接受的客户端字符串，路由会逐字发送它以取代来源标识，模型请求与模型发现均如此。该字段默认关闭，只作用于设置它的 profile，且按 Fetch 能作为单个标头发送的规则校验。`headers` 中的 `user-agent` 无法设置它：该名称仍像以前一样被剥离，以保留来源标识。
 
+客户端身份门禁还可能越过标头检查请求体：Anthropic Messages 协议携带标识客户端的 `metadata.user_id`（Claude Code 在每个请求上都发送它），网关可能把它的缺失当作客户端异常拒绝，即便请求本身完全有效。`metadataUserId` 以同样的窄口径回应这一点：设置后，路由在每个模型请求上把该值逐字作为 `metadata.user_id` 发送。该字段默认关闭，只作用于设置它的 profile，空值在加载时被拒绝。当此类门禁仍然拒绝客户端时，失败以 `CLIENT_GATE` 呈现，路由层面的重路由会处理它：请求在其他路由可以正常服务，拒绝跟随的是客户端，不是请求。
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -86,7 +88,9 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
               high: high
       # A relay that rejects any request whose user-agent is not a Claude
       # Code client. `userAgentOverride` is the one documented exception to
-      # attribution, and it applies to this route only.
+      # attribution, and it applies to this route only. `metadataUserId` sends
+      # the client id Claude Code carries in request metadata, for the same
+      # gate reading the body as well as the headers.
       claude-proxy:
         displayName: Claude Proxy
         api: anthropic-messages
@@ -96,6 +100,7 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
           - CLAUDE_PROXY_KEY_B
         keyCooldownMs: 60000
         userAgentOverride: claude-cli/2.1.289
+        metadataUserId: user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_00000000-0000-0000-0000-000000000000_session_00000000-0000-0000-0000-000000000000
         models:
           - id: claude-opus-4-8
           - id: claude-opus-4-7
@@ -121,6 +126,7 @@ profile 可以用 `apiKeys` 声明多个凭据，并按声明的顺序依次尝�
 | `requestImageMaxBytes` | `1 MiB` | 每张请求图片在 base64 扩展前的编码字节目标 |
 | `maxRequestImageBytes` | `20 MiB` | base64 图片载荷总上限，保留图片超过时请求以 `IMAGE_OFFLOAD_REQUIRED` 失败 |
 | `userAgentOverride` | 无 | 取代该路由请求与模型发现中的来源 `user-agent`；默认关闭 |
+| `metadataUserId` | 无 | 在该路由的模型请求上把该值逐字作为 `metadata.user_id` 发送；默认关闭 |
 | `retryPolicy` | normal，5 次重试 | 由 `dsh-llm-retry` 执行的提供方自有重试策略 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-llm-pi-ai)是每个受支持字段及其 JSDoc 的穷尽式真源。

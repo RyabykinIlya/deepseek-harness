@@ -22,7 +22,7 @@ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
 import { memoryAuth } from './auth-double.ts'
 import { assemble } from './assemble.ts'
-import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
+import { anthropicTextEvents, closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 afterEach(async () => {
   vi.useRealTimers()
@@ -181,6 +181,28 @@ describe('PiAiAdapter provider routing', () => {
     const plain = await harness(server.url)
     await assemble(plain, { model: 'deepseek-flash', messages: [] })
     expect(server.headers[1]?.['user-agent']).toBe(userAgent())
+  })
+
+  it('sends metadata.user_id on the wire only when the profile sets metadataUserId', async () => {
+    // The field exists for client-identity gates that require the id Claude
+    // Code sends on every request; a route that sets it changes only its own
+    // requests, and every other route keeps sending no metadata.
+    const server = await mockServer([{ events: anthropicTextEvents }, { events: anthropicTextEvents }])
+    const metadataUserId = 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_00000000-0000-0000-0000-000000000000_session_00000000-0000-0000-0000-000000000000'
+    const ctx = await harness(server.url, {
+      api: 'anthropic-messages',
+      metadataUserId,
+      models: [{ id: 'deepseek-flash' }],
+    })
+    await assemble(ctx, { model: 'deepseek-flash', messages: [] })
+    expect((server.requests[0] as { metadata?: { user_id?: string } }).metadata?.user_id).toBe(metadataUserId)
+
+    const plain = await harness(server.url, {
+      api: 'anthropic-messages',
+      models: [{ id: 'deepseek-flash' }],
+    })
+    await assemble(plain, { model: 'deepseek-flash', messages: [] })
+    expect((server.requests[1] as { metadata?: unknown }).metadata).toBeUndefined()
   })
 
   it('forwards common stream options and profile reasoning', async () => {

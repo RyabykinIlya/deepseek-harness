@@ -9,7 +9,7 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isContextWindowExceededError, isKeyQuotaExceededError, isQuotaExceededError, KEY_QUOTA_EXCEEDED_CODE, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { CLIENT_GATE_REJECTED_CODE, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, isClientGateRejectedError, isContextWindowExceededError, isKeyQuotaExceededError, isQuotaExceededError, KEY_QUOTA_EXCEEDED_CODE, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type { AssistantMessage, AssistantMessageEvent, Usage as PiUsage } from '@earendil-works/pi-ai'
@@ -46,6 +46,10 @@ function classifyPiAiError(message: string): string {
   if (isKeyQuotaExceededError(message)) return KEY_QUOTA_EXCEEDED_CODE
   if (isQuotaExceededError(message)) return QUOTA_EXCEEDED_CODE
   if (/\b429\b|rate.?limit/i.test(message)) return 'RATE_LIMIT'
+  // A gateway that gates on client identity rejected this client, not the
+  // request: the same request is servable by a different route, so this is a
+  // route-level failure even though it usually carries a 400 token.
+  if (isClientGateRejectedError(message)) return CLIENT_GATE_REJECTED_CODE
   // A rejected request body (gateway or provider size cap): resending the
   // same request cannot succeed, so it is invalid, not transient.
   if (/\b413\b|failed to buffer the request body:\s*length limit exceeded|payload too large|request body too large/i.test(message)) return 'INVALID_REQUEST'

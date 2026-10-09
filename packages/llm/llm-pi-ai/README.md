@@ -41,6 +41,8 @@ A profile may name several credentials with `apiKeys`, in the order a request tr
 
 Every provider request carries the harness attribution `user-agent`, and normally nothing can suppress or replace it. `userAgentOverride` is the one documented, opt-in exception: a deployment facing a gateway that gates on client identity — refusing a request whose `user-agent` does not match its expected client — sets this field to the client string that gateway accepts, and the route sends it verbatim in place of attribution, on model requests and on model discovery alike. It is off by default, applies to the profile that sets it and no other, and is validated as one header Fetch can send. A `user-agent` named inside `headers` cannot set it: that name is stripped in favor of attribution exactly as before.
 
+A client-identity gate can reach past headers into the request body: the Anthropic Messages protocol carries a client-identifying `metadata.user_id` — Claude Code sends one on every request — and a gateway may answer its absence as a client anomaly even while the request itself is valid. `metadataUserId` answers that on the same narrow terms: when set, the route sends the value verbatim as `metadata.user_id` on every model request. It is off by default, applies to the profile that sets it and no other, and an empty value is refused at load. When such a gate rejects the client anyway, the failure surfaces as `CLIENT_GATE`, which routes reroute on: the request is servable elsewhere, and the rejection follows the client, not the request.
+
 ```yaml
 - name: '@deepseek-ai/dsh-llm-pi-ai'
   config:
@@ -86,7 +88,9 @@ Every provider request carries the harness attribution `user-agent`, and normall
               high: high
       # A relay that rejects any request whose user-agent is not a Claude
       # Code client. `userAgentOverride` is the one documented exception to
-      # attribution, and it applies to this route only.
+      # attribution, and it applies to this route only. `metadataUserId` sends
+      # the client id Claude Code carries in request metadata, for the same
+      # gate reading the body as well as the headers.
       claude-proxy:
         displayName: Claude Proxy
         api: anthropic-messages
@@ -96,6 +100,7 @@ Every provider request carries the harness attribution `user-agent`, and normall
           - CLAUDE_PROXY_KEY_B
         keyCooldownMs: 60000
         userAgentOverride: claude-cli/2.1.289
+        metadataUserId: user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_00000000-0000-0000-0000-000000000000_session_00000000-0000-0000-0000-000000000000
         models:
           - id: claude-opus-4-8
           - id: claude-opus-4-7
@@ -121,6 +126,7 @@ Every provider request carries the harness attribution `user-agent`, and normall
 | `requestImageMaxBytes` | `1 MiB` | Encoded-byte target for each request image before base64 expansion |
 | `maxRequestImageBytes` | `20 MiB` | Aggregate base64 image-payload bound; a request whose retained images exceed it fails with `IMAGE_OFFLOAD_REQUIRED` |
 | `userAgentOverride` | absent | Replaces the attribution `user-agent` on this route's requests and model discovery; off by default |
+| `metadataUserId` | absent | Sends the value verbatim as `metadata.user_id` on this route's model requests; off by default |
 | `retryPolicy` | normal, 5 retries | Provider-owned retry policy executed by `dsh-llm-retry` |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-llm-pi-ai) is the exhaustive source for every accepted field and its JSDoc.

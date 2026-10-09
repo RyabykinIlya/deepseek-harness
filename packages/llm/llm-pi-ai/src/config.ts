@@ -189,6 +189,18 @@ export interface PiAiProviderProfile {
    * exactly as before.
    */
   userAgentOverride?: string
+  /**
+   * Explicit `metadata.user_id` value this route sends on every model
+   * request. Off by default: a request carries no request metadata. Gateways
+   * that gate on client identity can require the client-identifying
+   * `metadata.user_id` field of the Anthropic Messages protocol — Claude
+   * Code sends one on every request — and answer a request without it as a
+   * client anomaly even when the request itself is valid. When set, the value
+   * is sent verbatim as `metadata.user_id` for this route only; an empty
+   * value is refused, and every route that omits the field keeps sending no
+   * metadata.
+   */
+  metadataUserId?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -440,6 +452,7 @@ const profile = z.object({
   // off-by-default posture, and `assertValidHeaderValue` (below) is the loud
   // validation for a value that is present but unusable as a header.
   userAgentOverride: z.string(),
+  metadataUserId: z.string(),
   reasoning: z.union(THINKING_LEVELS),
   thinkingBudgets,
   cacheRetention: z.union(['none', 'short', 'long']),
@@ -581,6 +594,12 @@ export function resolveProfiles(
     // value passes — rather than failing mid-request at the gateway.
     if (source.userAgentOverride !== undefined) {
       assertValidHeaderValue(provider, 'userAgentOverride', source.userAgentOverride)
+    }
+    // A request-body field, not a header, so Fetch legality does not apply;
+    // only emptiness does — an empty user id declares no client and cannot be
+    // what a gate would accept, so it is a mistake rather than a posture.
+    if (source.metadataUserId !== undefined && source.metadataUserId.length === 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" has an empty metadataUserId`)
     }
     // Resolved before `buildProvider` because the resolved list — not the
     // configured pair of fields — decides whether this route names a

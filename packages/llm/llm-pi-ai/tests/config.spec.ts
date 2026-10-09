@@ -247,3 +247,51 @@ describe('userAgentOverride', () => {
     expect(() => assertServiceable(route('') as Options)).not.toThrow()
   })
 })
+
+describe('metadataUserId', () => {
+  const route = (metadataUserId: unknown): unknown => ({
+    providers: {
+      'claude-proxy': {
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        models: [{ id: 'claude-haiku-4-5' }],
+        metadataUserId,
+      },
+    },
+  })
+
+  it('resolves onto the profile when set', () => {
+    const resolved = resolveProfiles({
+      'claude-proxy': {
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        models: [{ id: 'claude-haiku-4-5' }],
+        metadataUserId: 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_00000000-0000-0000-0000-000000000000_session_00000000-0000-0000-0000-000000000000',
+      },
+    }).get('claude-proxy')
+    expect(resolved?.metadataUserId)
+      .toBe('user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_00000000-0000-0000-0000-000000000000_session_00000000-0000-0000-0000-000000000000')
+  })
+
+  it('stays absent on a route that does not set it', () => {
+    const resolved = resolveProfiles({
+      'claude-proxy': {
+        api: 'anthropic-messages',
+        baseURL: 'https://claude.blogmin.ru/api/llm',
+        models: [{ id: 'claude-haiku-4-5' }],
+        metadataUserId: 'user_x',
+      },
+      plain: {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [{ id: 'm' }],
+      },
+    })
+    expect(resolved.get('plain')?.metadataUserId).toBeUndefined()
+  })
+
+  it('refuses an empty value: no client is declared and no gate could accept it', () => {
+    expect(() => assertServiceable(route('') as Options)).toThrow(/has an empty metadataUserId/)
+    expect(() => assertServiceable(route('user_x') as Options)).not.toThrow()
+  })
+})
