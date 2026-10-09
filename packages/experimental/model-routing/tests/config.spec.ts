@@ -314,6 +314,6 @@ describe('tier extraSources', () => {
   })
 
   it('carries a source-wide KEY_QUOTA reroute code in the defaults', () => {
-    expect(settings().rerouteCodes).toEqual(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA'])
+    expect(settings().rerouteCodes).toEqual(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA', 'CLIENT_GATE'])
   })
 })

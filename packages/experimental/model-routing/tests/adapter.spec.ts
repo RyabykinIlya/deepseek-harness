@@ -1210,6 +1210,31 @@ describe('TiersAdapter direct sources', () => {
       ])
   })
 
+  it('falls back to the next source when the route rejects this client, keeping the request intact', async () => {
+    // A client-identity gate rejects the deployment's client, not the request:
+    // the same request is servable by the next candidate, so the re-decision
+    // moves on instead of failing the turn on a route that cannot serve it.
+    const claude: ExtraSource = {
+      ...CLAUDE,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    }
+    const plan: ExtraSource = {
+      ...PLAN,
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+    }
+    const h = await scenario({
+      sources: [claude, plan],
+      responses: [failureChunks('CLIENT_GATE'), normalChunks()],
+      settings: { rerouteCodes: ['CLIENT_GATE'] },
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[0]?.options.provider).toBe('claude-proxy')
+    expect(h.sent[1]?.options.provider).toBe('xiaomi-plan')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)).toMatchObject({ boundary: 'failure', excludedTags: ['claude-proxy:mimo-v2.6-pro'] })
+  })
+
   it('restores a direct-source pin from the log and dispatches it on the same route', async () => {
     const h = await scenario({
       state: {

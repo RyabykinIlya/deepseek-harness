@@ -143,6 +143,7 @@ None; this package dispatches nothing itself. The route that consumes its rankin
 - The diagnostics file is append-only and never rotated. Each line is bounded, the file is not: a deployment that enables it owns its retention.
 - A direct source declares its own prices and its `tools` capability; nothing measures its status, uptime or quantization, so those filters stay neutral for it. A deployment that needs one of those to bind must express it in the source's configuration, not expect a measurement to appear.
 - `KEY_QUOTA` is in the default `rerouteCodes` because `dsh-llm-pi-ai` rotates keys internally and only surfaces it once every key of a route is exhausted or cooling. At this level it means "this route cannot serve the request now", and the reroute moves to the next candidate — a different source or model — rather than failing the turn.
+- `CLIENT_GATE` is in the default `rerouteCodes` for the same reason seen from the gateway side: the route's client-identity gate rejected this deployment's client, so this route cannot serve the request now, while the request itself stays servable by the next candidate.
 
 <a id="dev-note"></a>
 ### Dev Note

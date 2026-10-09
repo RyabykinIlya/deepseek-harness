@@ -418,8 +418,11 @@ export const Config = z.object({
   // internally and only surfaces it once every key is exhausted or cooling, so
   // at this level it means "this route cannot serve the request now" — which is
   // exactly when the reroute should move on to the next candidate.
+  // `CLIENT_GATE` names the same situation from the gateway side: the route's
+  // client-identity gate rejected this deployment's client, and the request
+  // itself stays servable by the next candidate.
   rerouteCodes: z.array(z.string())
-    .default(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA'])
+    .default(['RATE_LIMIT', 'SERVER', 'TRANSPORT', 'TIMEOUT', 'PI_AI_ERROR', 'KEY_QUOTA', 'CLIENT_GATE'])
     .volatile(),
   excludeAfterFailureMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),
@@ -611,7 +614,7 @@ function validateExtraSources(tier: TierSettingsSnapshot): void {
       const key = `${source.route}:${canonical}`
       if (seen.has(key)) invalid(`${route} modelMap["${canonical}"] names a model this source already serves`)
       seen.add(key)
-      if (at !== -1) parsePrice(value.slice(at + 1), `${route}`, canonical)
+      if (at !== -1) parsePrice(value.slice(at + 1), route, canonical)
     }
   }
 }

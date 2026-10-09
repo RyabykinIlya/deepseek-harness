@@ -270,7 +270,7 @@ function pricesOf(endpoint: Candidate): DirectPrices | undefined {
  * @returns whether it carries a `route` rather than an endpoint listing.
  */
 export function isDirect(candidate: Candidate): candidate is DirectSource {
-  return (candidate as DirectSource).kind === 'direct'
+  return 'route' in candidate
 }
 
 /**
