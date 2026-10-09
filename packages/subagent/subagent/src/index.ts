@@ -255,7 +255,8 @@ export class SubagentRuntime extends TypertRemoteService {
    * turn to start or for the message to reach the Session log; any earlier
    * failure rejects with no ids and rolls back the child entirely.
    * @param spec - provider, delegation request, and caller cancellation.
-   * @returns the durable child id and the accepted prompt's message id.
+   * @returns the durable child id, the accepted prompt's message id, and the
+   *   provider's handles for the child when it reported any.
    * @throws when continuation services are unavailable or materialization fails.
    */
   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {

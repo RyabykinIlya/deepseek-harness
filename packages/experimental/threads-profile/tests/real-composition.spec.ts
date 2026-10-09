@@ -291,6 +291,10 @@ describe('Threads bundle on its real rows', { timeout: 120_000 }, () => {
     const events = project.session.snapshotEvents()
     const created = events.find(event => event.type === 'thread/created')
     expect(created).toMatchObject({ data: { worktree: thread.cwd, branch: thread.branch } })
+    // The start result quotes those same verified values, so a follow-up prompt
+    // hands the Thread on without reconstructing either from its id.
+    expect(results['c-start']).toContain(`worktree: ${thread.cwd}`)
+    expect(results['c-start']).toContain(`branch: ${thread.branch}`)
     const rows = ctx.threads.viewOf(project.session)
     expect(rows).toHaveLength(1)
     const row = rows[0]!

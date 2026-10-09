@@ -49,12 +49,19 @@ export interface ContinuableStartSpec {
   readonly signal: AbortSignal
 }
 
-/** Identities returned once a continuable child accepted its initial prompt. */
+/** Identities and provider-reported handles returned once a continuable child accepted its initial prompt. */
 export interface ContinuableStart {
   /** The durable child session id, stable across activations. */
   readonly childId: SessionId
   /** The accepted initial prompt's inbox message id. */
   readonly messageId: MessageId
+  /**
+   * The handles {@link ContinuableCreateSpec.handles} reported for this child,
+   * copied unchanged; absent when the provider reported none. A provider that
+   * isolates the child owns these values, so a caller quotes them instead of
+   * reconstructing them from the child id.
+   */
+  readonly handles?: Readonly<Record<string, string>>
 }
 
 /**
@@ -275,6 +282,16 @@ export interface ContinuableCreateSpec {
    * {@link SubagentError} (`INVALID_PROVIDER_CWD`) before the child exists.
    */
   readonly cwd?: string
+  /**
+   * Model-visible facts about the prepared child the delegating parent must
+   * quote verbatim rather than derive from the child id — the exact identifiers
+   * of whatever the provider established for it. Keys are the provider's own
+   * vocabulary and values are exact; a provider reporting none omits the field
+   * and its start result carries only the child id. The manager copies them
+   * into {@link ContinuableStart} unchanged, and the delegation tool renders
+   * each entry as its own line.
+   */
+  readonly handles?: Readonly<Record<string, string>>
   /**
    * Id of the agent preset the child is composed from, when the provider wants a
    * composition other than the parent's. Absent — the child joins the parent's

@@ -154,6 +154,27 @@ function outputValueText(values: JsonValue[]): string {
     .join('')
 }
 
+/** One provider handle as the tool's canonical output records it. */
+interface ContinuableHandle {
+  readonly name: string
+  readonly value: string
+}
+
+/**
+ * Render one continuable start as the child id plus one `name: value` line per
+ * handle the provider reported, so a coordinating parent quotes verified values
+ * instead of reconstructing them from the child id. Providers that report none
+ * keep the single-line result.
+ * @param value - the validated continuable start value this tool produced.
+ * @returns the model-facing start result text.
+ */
+function continuableStartText(
+  value: { readonly subagentId: string; readonly handles?: readonly ContinuableHandle[] },
+): string {
+  const lines = value.handles?.map(handle => `${handle.name}: ${handle.value}`) ?? []
+  return [`started subagent ${value.subagentId}`, ...lines].join('\n')
+}
+
 /** Settle pending startup without rejecting the task producer contract. */
 async function settleStart(start: Promise<SubagentRun>, signal: AbortSignal): Promise<JobOutcome> {
   try {
@@ -528,6 +549,18 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                 properties: {
                   kind: { type: 'string', required: true, const: 'continuable' },
                   subagentId: { type: 'string', required: true },
+                  handles: {
+                    type: 'array',
+                    description: 'Provider-reported handles for the child, as the parent must quote them.',
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        name: { type: 'string', required: true },
+                        value: { type: 'string', required: true },
+                      },
+                    },
+                  },
                 },
               },
               {
@@ -546,7 +579,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             text: value.kind === 'background'
               ? `started background subagent job ${value.jobId}`
               : value.kind === 'continuable'
-                ? `started subagent ${value.subagentId}`
+                ? continuableStartText(value)
                 : outputValueText(value.output),
           }],
         },
@@ -627,7 +660,15 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                 request,
                 signal: exec.signal,
               })
-              return { kind: 'continuable' as const, subagentId: started.childId }
+              // Handles travel as a name/value array, not the provider's own map,
+              // so the output schema validates each handle's string value.
+              return {
+                kind: 'continuable' as const,
+                subagentId: started.childId,
+                ...started.handles === undefined
+                  ? {}
+                  : { handles: Object.entries(started.handles).map(([name, value]) => ({ name, value })) },
+              }
             }
             const jobs = runtimeCtx.get('jobs')
             if (jobs === undefined) {

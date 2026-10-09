@@ -1315,6 +1315,8 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const match = /^started subagent (\S+)$/.exec(text(started))
     expect(match).not.toBeNull()
     const [, childId] = match!
+    // A provider that reports no handles keeps the single-line result.
+    expect(text(started)).toBe(`started subagent ${childId}`)
     // No Task was created for the continuable child.
     expect(ctx.jobs.list(parent.id)).toEqual([])
 
@@ -1463,6 +1465,32 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(result.isError).toBe(false)
     expect(result.value).toMatchObject({ kind: 'continuable' })
     expect(ctx.jobs.list(parent.id)).toEqual([])
+  })
+
+  it('reports one line per provider handle after the child id', async () => {
+    // A worktree-isolated provider owns the child's directory and branch. The
+    // parent needs both spelled out to hand the child to another agent, and a
+    // provider that reports nothing must keep the single-line result.
+    const { ctx, parent } = await continuableSetup()
+    ctx.subagents.registerProvider({
+      name: 'handling',
+      capabilities: { agentOptions: false, outputSchema: false, depthLimit: true, toolFilter: false, persona: false, repository: false },
+      inheritsParentContext: false,
+      start: async () => { throw new Error('continuable policy must not start a one-shot child') },
+      prepareContinuable: async () => ({ handles: { worktree: '/wt/thread-1', branch: 'dsh/thread-1' } }),
+    })
+    tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('handles-start'),
+      name: 'subagent_handles',
+      arguments: { description: 'isolated work', prompt: 'dig in' },
+      agent: parent,
+    })
+
+    expect(result.isError).toBe(false)
+    expect(text(result)).toMatch(/^started subagent \S+\nworktree: \/wt\/thread-1\nbranch: dsh\/thread-1$/)
   })
 
   it('isolates a cancelled continuable preparation from a concurrent sibling', async () => {

@@ -147,7 +147,7 @@ persisted Session
        -> zero or more owned child Activations
 ```
 
-`SubagentRuntime.startContinuable()` 会预留稳定的子 agent id，对版本化的 `subagent/descriptor` payload 建立快照，向指定提供方索取其分离的 `ContinuableCreateSpec`，通过私有的 activation-owner 作用域创建子 Agent，建立任何可继续父级的所有权，并提交初始提示词。当收件箱（inbox）准入产出消息 id 时，它以 `{ childId, messageId }` resolve——无需等待轮次开始，也无需等待消息进入会话日志。在该准入之前的任何失败都会以两个 id 都不返回的方式 reject，并 dispose（资源释放）任何已创建的 handle，回滚 Activation 与父级所有权。
+`SubagentRuntime.startContinuable()` 会预留稳定的子 agent id，对版本化的 `subagent/descriptor` payload 建立快照，向指定提供方索取其分离的 `ContinuableCreateSpec`，通过私有的 activation-owner 作用域创建子 Agent，建立任何可继续父级的所有权，并提交初始提示词。当收件箱（inbox）准入产出消息 id 时，它以 `{ childId, messageId }`（外加提供方报告的 `handles`，若有）resolve——无需等待轮次开始，也无需等待消息进入会话日志。在该准入之前的任何失败都会以两个 id 都不返回的方式 reject，并 dispose（资源释放）任何已创建的 handle，回滚 Activation 与父级所有权。
 
 `SubagentRuntime.sendMessage()` 是唯一由模型编写消息的操作。它接收确切在线 sender 与目标 id，只允许直接 parent 或直接可继续 child，自行推导 sender 来源信息，并根据目标 child 的 Activation 驻留状态路由：
 
@@ -204,12 +204,19 @@ interface SubagentSendMessageOptions {
 ```
 
 ```ts type-equiv
-/** Identities returned once a continuable child accepted its initial prompt. */
+/** Identities and provider-reported handles returned once a continuable child accepted its initial prompt. */
 interface ContinuableStart {
   /** The durable child session id, stable across activations. */
   readonly childId: SessionId
   /** The accepted initial prompt's inbox message id. */
   readonly messageId: MessageId
+  /**
+   * The handles {@link ContinuableCreateSpec.handles} reported for this child,
+   * copied unchanged; absent when the provider reported none. A provider that
+   * isolates the child owns these values, so a caller quotes them instead of
+   * reconstructing them from the child id.
+   */
+  readonly handles?: Readonly<Record<string, string>>
 }
 ```
 
@@ -293,6 +300,16 @@ interface ContinuableCreateSpec {
    * {@link SubagentError} (`INVALID_PROVIDER_CWD`) before the child exists.
    */
   readonly cwd?: string
+  /**
+   * Model-visible facts about the prepared child the delegating parent must
+   * quote verbatim rather than derive from the child id — the exact identifiers
+   * of whatever the provider established for it. Keys are the provider's own
+   * vocabulary and values are exact; a provider reporting none omits the field
+   * and its start result carries only the child id. The manager copies them
+   * into {@link ContinuableStart} unchanged, and the delegation tool renders
+   * each entry as its own line.
+   */
+  readonly handles?: Readonly<Record<string, string>>
   /**
    * Id of the agent preset the child is composed from, when the provider wants a
    * composition other than the parent's. Absent — the child joins the parent's
@@ -571,7 +588,8 @@ resolveMaxDepth(configured?: number | 'provider-managed'): number | undefined
  * turn to start or for the message to reach the Session log; any earlier
  * failure rejects with no ids and rolls back the child entirely.
  * @param spec - provider, delegation request, and caller cancellation.
- * @returns the durable child id and the accepted prompt's message id.
+ * @returns the durable child id, the accepted prompt's message id, and the
+ *   provider's handles for the child when it reported any.
  * @throws when continuation services are unavailable or materialization fails.
  */
 async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>

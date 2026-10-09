@@ -207,6 +207,12 @@ describe('thread worktree provider', () => {
     const spec = await providerFor(worktrees).prepareContinuable(request(worktrees.repoRoot, new AbortController().signal))
 
     expect(spec.cwd).toBe(worktrees.worktreePath)
+    // The two handles the delegation result reports are the record's own path
+    // and branch, so a coordinator quotes the worktree the service created.
+    expect(spec.handles).toEqual({
+      worktree: worktrees.worktreePath,
+      branch: 'dsh/thread-abcdef12-3456',
+    })
     // The policy travels explicitly even at its default: the provider used to
     // resolve the base itself, so a missing field here would mean it had
     // started resolving it again.
@@ -223,10 +229,13 @@ describe('thread worktree provider', () => {
 
   it('creates a detached checkout when branchPerThread is disabled', async () => {
     const worktrees = fakeWorktrees()
-    await providerFor(worktrees, { branchPerThread: false }).prepareContinuable(request(worktrees.repoRoot, new AbortController().signal))
+    const spec = await providerFor(worktrees, { branchPerThread: false })
+      .prepareContinuable(request(worktrees.repoRoot, new AbortController().signal))
 
     expect(worktrees.creates[0]?.branch).toBeUndefined()
     expect(worktrees.creates[0]?.detached).toBe(true)
+    // A detached checkout owns no branch, so the result reports only the path.
+    expect(spec.handles).toEqual({ worktree: worktrees.worktreePath })
   })
 
   it('fails loud when the parent session has no cwd, without touching git', async () => {

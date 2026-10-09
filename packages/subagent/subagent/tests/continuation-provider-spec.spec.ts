@@ -1,4 +1,4 @@
-/** Provider-supplied `cwd` and `agentPreset` on a continuable child, plus the child's return guidance. */
+/** Provider-supplied `cwd`, `agentPreset`, and handles on a continuable child, plus the child's return guidance. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -173,5 +173,26 @@ describe('provider-supplied agentPreset', () => {
     const { ctx, parent } = await setup(() => ({ agentPreset: 'missing' }))
     await expect(start(ctx, parent)).rejects.toMatchObject({ code: 'UNKNOWN_AGENT_PRESET' })
     expect(ctx.agents.list().map(agent => agent.id)).toEqual([SessionId('parent')])
+  })
+})
+
+describe('provider-supplied handles', () => {
+  it('returns the provider handles to the caller unchanged', async () => {
+    const handles = { worktree: '/wt/child', branch: 'dsh/thread-child' }
+    const { ctx, parent } = await setup(() => ({ handles }))
+
+    const started = await start(ctx, parent)
+
+    expect(started.handles).toEqual(handles)
+    await settled(ctx, started.childId)
+  })
+
+  it('omits handles when the provider reports none', async () => {
+    const { ctx, parent } = await setup(() => ({}))
+
+    const started = await start(ctx, parent)
+
+    expect(started).not.toHaveProperty('handles')
+    await settled(ctx, started.childId)
   })
 })

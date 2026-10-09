@@ -100,7 +100,8 @@ export class SubagentContinuationManager {
    * Every earlier failure disposes any created handle and rolls back Activation
    * and parent ownership without returning either id.
    * @param spec - provider, delegation request, and caller cancellation.
-   * @returns the durable child id and accepted initial prompt message id.
+   * @returns the durable child id, the accepted initial prompt message id, and
+   *   the provider's handles for the child when it reported any.
    */
   async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart> {
     const request = spec.request
@@ -198,7 +199,11 @@ export class SubagentContinuationManager {
           () => { establishCatalogChild(parent.session, childHeader, descriptor) },
         )
       })
-      return { childId, messageId }
+      return {
+        childId,
+        messageId,
+        ...prepared.handles === undefined ? {} : { handles: prepared.handles },
+      }
     } catch (error: unknown) {
       releaseHold()
       throw error

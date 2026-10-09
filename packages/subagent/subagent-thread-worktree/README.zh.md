@@ -77,7 +77,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-provider 对一个 continuable 子代理的全部参与就是 `prepareContinuable`：它解析委派命名的仓库、通过 `ctx.worktrees` 创建 worktree、返回 `{ cwd }`，并为自己的失败提供补偿。身份预留、组合、提示投递、冷恢复、所有权与释放全都属于 continuation manager，因此本包自身不承载任何生命周期。
+provider 对一个 continuable 子代理的全部参与就是 `prepareContinuable`：它解析委派命名的仓库、通过 `ctx.worktrees` 创建 worktree、返回 `{ cwd, handles }`（其中 `handles` 命名所创建 worktree 的路径与分支），并为自己的失败提供补偿。身份预留、组合、提示投递、冷恢复、所有权与释放全都属于 continuation manager，因此本包自身不承载任何生命周期。
 
 one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提供隔离：one-shot 子代理必然与父级共享工作目录。隔离是 continuable Thread 独有的属性，而本后端的 one-shot 委派并不是获得 worktree 的受支持方式。
 
@@ -100,7 +100,7 @@ one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提�
 
 #### 模型看到什么
 
-模型看不到本包带来的任何新工具。它使用配置为指向本 provider 的普通委派工具；工具的 `run_in_background` 与 `backgroundMode: continuable` 设置决定调用是否立即返回子代理 id。本后端还会给该工具带来 `repository` 参数，用它命名 Thread 所用的仓库。
+模型看不到本包带来的任何新工具。它使用配置为指向本 provider 的普通委派工具；工具的 `run_in_background` 与 `backgroundMode: continuable` 设置决定调用是否立即返回子代理 id。本后端还会给该工具带来 `repository` 参数，用它命名 Thread 所用的仓库。启动 Thread 的调用会在工具结果中、`started subagent <childId>` 之后按句柄每项追加一行：`worktree: <absolute worktree path>` 与 `branch: <branch name>`。两者都取自 worktree 管理器创建的记录，因此与 `thread/created` 记录的、以及合并指引所 fetch 的是同一组值；`branchPerThread` 为 `false` 时省略 `branch`，因为分离式 worktree 不拥有分支。把 Thread 交给另一个 agent 的协调者直接引用这两行，而不是从子代理 id 反推其中任何一个值。
 
 #### Token 影响
 

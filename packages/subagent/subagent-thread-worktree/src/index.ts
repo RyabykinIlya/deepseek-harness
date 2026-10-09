@@ -159,7 +159,8 @@ class ThreadWorktreeProvider implements SubagentProvider {
    *
    * @param request - the reserved child identity, the delegating parent, and the repository
    *   the delegation named inside the parent's working directory.
-   * @returns a spec carrying the isolated absolute cwd and the configured agent preset.
+   * @returns a spec carrying the isolated absolute cwd, the worktree's path and
+   *   branch as handles for the delegating parent, and the configured agent preset.
    * @throws WorktreeError `NOT_A_GIT_REPO` when the repository is not resolvable inside the
    *   parent's working directory (the message lists the repositories it holds), or
    *   `WORKTREE_SUBDIRECTORY_MISSING` when the chosen subdirectory is absent from the base
@@ -206,6 +207,13 @@ class ThreadWorktreeProvider implements SubagentProvider {
       const cwd = await childCwd(record.path, repoTop, target)
       return {
         cwd,
+        // Both handles come from the record the service created, so the start
+        // result quotes the same worktree and branch `thread/created` records
+        // and the merge instruction fetches — never a re-derived spelling.
+        handles: {
+          worktree: record.path,
+          ...record.branch === undefined ? {} : { branch: record.branch },
+        },
         ...this.config.childAgentPreset === undefined ? {} : { agentPreset: this.config.childAgentPreset },
       }
     } catch (error) {

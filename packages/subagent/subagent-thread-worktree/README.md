@@ -77,7 +77,7 @@ Every failure is loud and typed; this package never falls back to an unisolated 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The provider's whole participation in a continuable child is `prepareContinuable`: it resolves the repository the delegation names, creates the worktree through `ctx.worktrees`, returns `{ cwd }`, and compensates for its own failure. Identity reservation, composition, prompt delivery, cold resume, ownership, and disposal all belong to the continuation manager, so this package carries no lifecycle of its own.
+The provider's whole participation in a continuable child is `prepareContinuable`: it resolves the repository the delegation names, creates the worktree through `ctx.worktrees`, returns `{ cwd, handles }` — where `handles` names the created worktree's path and branch — and compensates for its own failure. Identity reservation, composition, prompt delivery, cold resume, ownership, and disposal all belong to the continuation manager, so this package carries no lifecycle of its own.
 
 The one-shot `start` path is inherited from the shared in-process driver and does NOT isolate: a one-shot child necessarily shares the parent's working directory. Isolation is a property of continuable Threads only, and one-shot delegation in this backend is not a supported way to get a worktree.
 
@@ -100,7 +100,7 @@ Read these pages when the package contract is not enough:
 
 #### What the model sees
 
-The model sees no new tool from this package. It uses the ordinary delegation tool configured against this provider; the tool's `run_in_background` and `backgroundMode: continuable` settings determine whether a call returns a child id immediately. This backend also gives the tool its `repository` parameter, which names the repository a Thread works in.
+The model sees no new tool from this package. It uses the ordinary delegation tool configured against this provider; the tool's `run_in_background` and `backgroundMode: continuable` settings determine whether a call returns a child id immediately. This backend also gives the tool its `repository` parameter, which names the repository a Thread works in. A call that starts a Thread adds one line per handle to the tool result, after `started subagent <childId>`: `worktree: <absolute worktree path>` and `branch: <branch name>`. Both come from the record the worktree manager created, so they are the same values `thread/created` logs and the merge instruction fetches; `branch` is omitted when `branchPerThread` is `false`, because a detached worktree owns no branch. A coordinator that hands the Thread to another agent quotes those two lines instead of reconstructing either value from the child id.
 
 #### Token effect
 

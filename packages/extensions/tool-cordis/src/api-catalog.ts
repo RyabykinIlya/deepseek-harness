@@ -2998,7 +2998,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>',
         description: 'Establish one durable continuable child and deliver its initial prompt. Resolves when the child\'s inbox accepts that prompt, without waiting for the turn to start or for the message to reach the Session log; any earlier failure rejects with no ids and rolls back the child entirely.',
         parameters: [{ name: 'spec', description: 'provider, delegation request, and caller cancellation.' }],
-        returns: 'the durable child id and the accepted prompt\'s message id.',
+        returns: 'the durable child id, the accepted prompt\'s message id, and the provider\'s handles for the child when it reported any.',
         throws: ['when continuation services are unavailable or materialization fails.'],
       },
       {
@@ -5168,11 +5168,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableCreateSpec',
-    declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n    readonly cwd?: string;\n    readonly agentPreset?: string;\n}',
+    declaration: 'export interface ContinuableCreateSpec {\n    readonly seed?: readonly SessionEvent[];\n    readonly cwd?: string;\n    readonly handles?: Readonly<Record<string, string>>;\n    readonly agentPreset?: string;\n}',
   },
   {
     name: 'ContinuableStart',
-    declaration: 'export interface ContinuableStart {\n    readonly childId: SessionId;\n    readonly messageId: MessageId;\n}',
+    declaration: 'export interface ContinuableStart {\n    readonly childId: SessionId;\n    readonly messageId: MessageId;\n    readonly handles?: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'ContinuableStartSpec',
