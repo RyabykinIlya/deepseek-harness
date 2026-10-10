@@ -44,8 +44,6 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'image/offload',
   'llm/retry',
   'llm/retry-started',
-  'model-routing/decision',
-  'model-routing/tier-override',
   'model/selection',
   'permission/preset',
   'plan/mode',
@@ -67,9 +65,6 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'team/message/delivered',
   'team/message/queued',
   'team/task',
-  'thread/created',
-  'thread/removed',
-  'thread/status',
   'todo/write',
   'tool-workflow/agent-end',
   'tool-workflow/agent-start',
@@ -83,6 +78,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn/start',
   'user/message',
   'web/deepseek-search-llm-request',
+  'working-directory/change',
   'workspace/changes',
 ])
 
