@@ -457,128 +457,25 @@ Source: [`packages/experimental/threads/src/index.ts`](../../packages/experiment
 
 ### `ctx.worktrees` — `WorktreeService`
 
-The worktree service (`ctx.worktrees`).
-
-One worktree per Thread, placed under a configured root that survives restarts. The service owns creation, the durable intent log, explicit removal, status, and the startup reconciliation sweep; it owns nothing about sessions, which the continuation manager keeps.
+Creates retained Git worktrees under the mounted filesystem and sandbox providers.
 
 ```ts cordis-catalog
 /**
- * Create (or re-attach to) the worktree for one Thread.
- *
- * The call is idempotent by `threadId`: a second `create` for a Thread whose
- * worktree still exists returns the SAME record without a second clone. An abort
- * is honored at every boundary — before any git process is spawned, and again
- * after the checkout resolves — and either way the reserved intent is rolled
- * back by deleting the half-created clone.
- * Each call first runs {@link WorktreeService.reconcile}, so abandoned worktrees do not hold limit slots.
- * The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured
- * `base` — and `head-with-uncommitted` snapshots the parent's tracked uncommitted changes with
- * `git stash create`, which leaves the parent's working tree untouched.
- * @param spec - the repository, Thread, base ref and policy, and optional branch or `detached`.
- * @param signal - aborts the attempt; the worktree is rolled back, never left half-created.
- * @returns the `ready` record whose `path` may be used as a session cwd.
+ * Create a fresh branch and checkout at a pinned local revision, then enter it.
+ * Existing branches or checkout paths fail. Uncommitted files stay in the source checkout.
+ * Checkout disables configured clean, smudge, and process filters without changing Git config.
+ * Repository-local replacement refs still apply; baseCommit reports the resolved object name.
+ * The new checkout becomes current only after Git setup succeeds. Failures may retain newly
+ * allocated Git/filesystem artifacts; no branch or checkout is removed automatically.
+ * @param agent - caller whose current directory selects the source repository and file policy.
+ * @param request - optional new name and local revision; defaults are generated name and HEAD.
+ * @param signal - cancellation of lookup, creation, and working-directory publication.
+ * @returns canonical checkout path, branch name, pinned commit, and source repository root.
  */
-create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>
-
-/**
- * Remove a Thread's worktree.
- *
- * Removal is explicit and never automatic: a settled Thread's worktree holds its
- * result, and deleting a turn's output silently is not acceptable. The order is
- * NOT the mirror of creation — the durable record goes to `removing` first, then
- * the branch import and the directory deletion, then `removed` — so a failed
- * removal leaves a `removing` tombstone a later sweep can finish, instead of
- * claiming a deletion that never happened.
- * @param record - the record to remove (may come from an earlier session).
- * @param opts - `force` discards local modifications; without it a dirty worktree is refused.
- */
-async remove(record: WorktreeRecord, opts: WorktreeRemoveOptions = {}): Promise<void>
-
-/**
- * List the active worktrees of one repository.
- * @param repoRoot - any path inside the repository.
- * @returns records in a live state, ordered by `threadId`; terminal records are history, not worktrees.
- */
-async list(repoRoot: string): Promise<WorktreeRecord[]>
-
-/**
- * Latest record of a Thread in any state.
- * @param threadId - the Thread key.
- * @returns the folded record (terminal states included), or `undefined` when the Thread never had one.
- */
-async get(threadId: string): Promise<WorktreeRecord | undefined>
-
-/**
- * Report whether a worktree is clean and how far it is ahead of its base.
- *
- * A record whose path is gone throws `WORKTREE_NOT_FOUND`. It NEVER reports
- * `clean: true` for a missing directory: "nothing to report" and "nothing
- * wrong" are different facts, and conflating them would let a crashed Thread
- * look finished.
- * @param record - the worktree to inspect.
- * @returns `{ clean, changed, commitsAhead }` from `git status --porcelain` and `git rev-list --count`.
- */
-async status(record: WorktreeRecord): Promise<WorktreeStatus>
-
-/**
- * Summarize the work a Thread did: commits and files since its base plus the uncommitted count.
- *
- * Every list is bounded by the caller's limits; totals count what was not listed. Same
- * `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
- * @param record - the worktree to inspect.
- * @param opts - non-negative integer `maxCommits` and `maxFiles`.
- * @returns the {@link WorktreeChanges} of `baseSha..HEAD`.
- */
-async changes(record: WorktreeRecord, opts: WorktreeChangesOptions): Promise<WorktreeChanges>
-
-/**
- * Predict whether merging the worktree's HEAD into `target` would conflict.
- *
- * `target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the
- * main checkout's current commit and a branch name may be another Thread's branch,
- * served from that Thread's clone. `merge-tree` compares two commits of one object
- * store — the worktree's own clone — so a target commit the clone has not seen is
- * fetched in first; that writes only objects and `FETCH_HEAD`, never a ref, index
- * entry, or file. Uncommitted edits in either checkout are not part of the
- * prediction. Same `WORKTREE_NOT_FOUND` rule as {@link WorktreeService.status}.
- * @param record - the worktree whose HEAD would be merged.
- * @param options - the target ref.
- * @param maxConflicts - non-negative bound on the listed conflicting paths.
- * @returns the predicted result, or `{ supported: false }` when git lacks `merge-tree --write-tree`.
- */
-async mergeCheck(record: WorktreeRecord, options: WorktreeMergeCheckOptions, maxConflicts: number): Promise<WorktreeMergeCheck>
-
-/**
- * Committed diff `baseSha..HEAD` of one file, cut at a byte bound.
- *
- * Uncommitted edits are not included. The cut never splits a multibyte character, so the returned
- * patch may be shorter than `maxBytes`; git is stopped as soon as the bound is exceeded.
- * @param record - the worktree to inspect.
- * @param path - repository-relative path; absolute paths and `..` segments are rejected.
- * @param maxBytes - non-negative byte bound of the returned patch.
- * @returns the patch text and whether it was truncated.
- */
-async filePatch(record: WorktreeRecord, path: string, maxBytes: number): Promise<{ patch: string; truncated: boolean }>
-
-/**
- * Sweep records that no longer describe a live Thread.
- *
- * Two independent rules, both of which only ever REMOVE worktrees that git
- * already owns:
- * 1. a `reserved`/`ready` record whose path is missing from disk — a crash
- *    between the intent write and the add;
- * 2. a `reserved`/`ready` record whose Thread has no persisted session, judged
- *    by {@link WorktreeService.sessionExists} (skipped when no probe is installed,
- *    because session existence is not this service's knowledge) and whose record
- *    is older than `adoptionGraceMs`.
- *
- * In-flight creations of this process are never swept. Each orphan is marked
- * `orphaned`, deleted from disk (and its branch imported into the parent where one
- * exists), and settled to `removed` (or `rolled-back` when nothing was ever on disk).
- * @returns the records classified as orphans, in their `orphaned` state.
- */
-async reconcile(): Promise<WorktreeRecord[]>
+async create(agent: Agent, request: CreateWorktreeRequest = {}, signal?: AbortSignal): Promise<CreatedWorktree>
 ```
 
-Source: [`packages/subagent/worktree-manager/src/index.ts`](../../packages/subagent/worktree-manager/src/index.ts)
+Types: [Agent](core.md) · [CreateWorktreeRequest](worktrees.md) · [CreatedWorktree](worktrees.md)
+
+Source: [`packages/experimental/worktree/src/index.ts`](../../packages/experimental/worktree/src/index.ts)
 <!-- END GENERATED cordis-surface -->
