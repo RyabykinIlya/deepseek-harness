@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-10-10-provider-stall-failover-latency.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-10-10-provider-stall-failover-latency.md
+/agent-note-bound-provider-stall-failover-latency:
+  en: 83747a3ef7bfc76a
+  zh: c334a3c4683c2b54
+/agent-note-bound-provider-stall-failover-latency/problem:
+  en: 17d4225973f8ef75
+  zh: f946b90497f5d0e4
+/agent-note-bound-provider-stall-failover-latency/proposal:
+  en: 0b8199cffa7944ec
+  zh: a30b90f730ef2eed
+/agent-note-bound-provider-stall-failover-latency/alternatives-considered:
+  en: 40f4dcd9b8f25245
+  zh: 11ee3f88a9271499
+/agent-note-bound-provider-stall-failover-latency/acceptance-criteria:
+  en: 481274af621a6733
+  zh: fe1c5c111d592505
+/agent-note-bound-provider-stall-failover-latency/risks:
+  en: 82f7f15ebee04019
+  zh: 20e82a7e054e83bb
