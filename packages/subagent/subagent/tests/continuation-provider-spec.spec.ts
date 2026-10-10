@@ -17,8 +17,9 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SubagentRuntime from '../src/index.ts'
 import type { ContinuableCreateSpec } from '../src/index.ts'
-import { continuationManager } from './continuation-internals.ts'
+import { subagentManager } from './manager-internals.ts'
 import { loadStoredSession } from './persistence-helpers.ts'
+import { mountWorkingDirectoryFixture } from './working-directory-fixture.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -45,6 +46,8 @@ async function setup(spec: () => ContinuableCreateSpec, parentCwd?: string) {
   await ctx.plugin(JsonlSessionPersistence, { root })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(TestSessionQuery)
+  // `SubagentRuntime` injects `workingDirectory`, so the fixture must precede it.
+  await mountWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(AgentPresets, { default: 'coding' })
   for (const [id, tool] of [['coding', 'coding_tool'], ['reviewing', 'reviewing_tool']] as const) {
@@ -70,11 +73,12 @@ async function setup(spec: () => ContinuableCreateSpec, parentCwd?: string) {
 }
 
 function start(ctx: Context, parent: Agent) {
-  return ctx.subagents.startContinuable({
+  return ctx.subagents.startActivation({
     provider: 'custom',
     label: 'child task',
     request: { prompt: [{ type: 'text', text: 'child task' }], parent },
     signal,
+    delivery: 'parent',
   })
 }
 
@@ -127,7 +131,7 @@ describe('provider-supplied cwd', () => {
     const { ctx, parent, prepare } = await setup(() => ({ cwd: dir }))
     const { childId } = await start(ctx, parent)
     await settled(ctx, childId)
-    await continuationManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
+    await subagentManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
     expect(ctx.agents.get(childId)?.session.header.cwd).toBe(dir)
     await settled(ctx, childId)
     expect(prepare).toHaveBeenCalledTimes(1)
@@ -162,7 +166,7 @@ describe('provider-supplied agentPreset', () => {
     const { ctx, parent, prepare } = await setup(() => ({ agentPreset: 'reviewing' }))
     const { childId } = await start(ctx, parent)
     await settled(ctx, childId)
-    await continuationManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
+    await subagentManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
     const resumed = ctx.agents.get(childId)!
     expect(ctx.tools.schemas(resumed).map(schema => schema.name)).toEqual(['reviewing_tool'])
     await settled(ctx, childId)

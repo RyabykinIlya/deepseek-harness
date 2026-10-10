@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { zstdDecompressSync } from 'node:zlib'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 
 export interface MockServer {
@@ -9,16 +10,6 @@ export interface MockServer {
   readonly closedResponses: number
   requestReceived: Promise<void>
   responseClosed: Promise<void>
-}
-/** One scripted reply: either a status/body pair or a scripted SSE event list. */
-export interface MockBehavior {
-  status?: number
-  events?: string[]
-  body?: string
-  delayMs?: number
-  /** Keep the SSE response open after its scripted events until the client disconnects. */
-  holdOpen?: boolean
-  headers?: Record<string, string>
 }
 
 const servers: Server[] = []
@@ -39,17 +30,47 @@ export const textEvents = [
   '[DONE]',
 ]
 
-/** A minimal complete text generation in pi-ai's anthropic-messages shape. */
+/**
+ * One Anthropic Messages SSE frame, named by its own `type`.
+ * @param data - the frame payload.
+ * @returns the frame as a named SSE event.
+ */
+export function anthropicFrame(data: Record<string, unknown>): { event: string; data: string } {
+  return { event: String(data['type']), data: JSON.stringify(data) }
+}
+
+/** The opening frame of every scripted Anthropic Messages response. */
+export const anthropicMessageStart = anthropicFrame({
+  type: 'message_start',
+  message: {
+    id: 'msg_1', type: 'message', role: 'assistant', model: 'm', content: [],
+    stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 1 },
+  },
+})
+
+/** The same minimal text generation in Anthropic Messages frames. */
 export const anthropicTextEvents = [
-  '{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"deepseek-flash","content":[],"stop_reason":null,"usage":{"input_tokens":3,"output_tokens":0}}}',
-  '{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
-  '{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}',
-  '{"type":"content_block_stop","index":0}',
-  '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}',
-  '{"type":"message_stop"}',
+  anthropicMessageStart,
+  anthropicFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+  anthropicFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hello' } }),
+  anthropicFrame({ type: 'content_block_stop', index: 0 }),
+  anthropicFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } }),
+  anthropicFrame({ type: 'message_stop' }),
 ]
 
-/** The key a request carried in its `Authorization` header, or undefined when it carried none. */
+/** One scripted reply: a status/body pair, or a scripted SSE frame list. */
+export interface MockBehavior {
+  status?: number
+  /** SSE frames: a string is sent as `data:` alone; a pair also names the frame's `event:`. */
+  events?: (string | { event: string; data: string })[]
+  body?: string
+  delayMs?: number
+  /** Keep the SSE response open after its scripted events until the client disconnects. */
+  holdOpen?: boolean
+  headers?: Record<string, string>
+}
+
+/** The credential a request carried in its `Authorization` header, or undefined when it carried none. */
 function bearerCredential(headers: IncomingMessage['headers']): string | undefined {
   const value = headers.authorization
   if (typeof value !== 'string' || !value.startsWith('Bearer ')) return undefined
@@ -59,17 +80,17 @@ function bearerCredential(headers: IncomingMessage['headers']): string | undefin
 /**
  * Local provider stand-in: replays scripted behaviors per request.
  *
- * A behavior may branch on the credential the request carried, which is what
- * lets one server answer two API keys differently — the shape key rotation is
- * observed through, since the keys themselves never appear in a request body.
- * @param script - one behavior per request, or one keyed behavior per credential.
+ * A behavior may branch on the credential the request carried, which is what lets
+ * one server answer two API keys differently — the shape key rotation is observed
+ * through, since the keys themselves never appear in a request body.
+ * @param script - one behavior per request, each optionally branching by credential.
  * @returns the running server and the observations it recorded.
  */
 export async function mockServer(script: (MockBehavior & {
   /**
    * Behavior per credential value, consulted before the surrounding fields. A
-   * credential with no entry falls through to the surrounding behavior, which
-   * is how a test states what an unexpected key receives.
+   * credential with no entry falls through to the surrounding behavior, which is
+   * how a test states what an unexpected key receives.
    */
   byKey?: Record<string, MockBehavior>
 })[]): Promise<MockServer> {
@@ -86,39 +107,41 @@ export async function mockServer(script: (MockBehavior & {
       closedResponses += 1
       responseClosed.resolve(undefined)
     })
-    let body = ''
-    request.on('data', (chunk: Buffer) => { body += chunk.toString('utf8') })
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
     request.on('end', () => {
+      const bytes = Buffer.concat(chunks)
+      // Codex SSE requests use zstd compression when the host supports it.
+      const body = (request.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(bytes) : bytes).toString('utf8')
       paths.push(request.url ?? '')
       requests.push(body.length === 0 ? undefined : JSON.parse(body))
       headers.push(request.headers)
       requestReceived.resolve(undefined)
       const entry = script.shift() ?? { status: 500, body: 'script exhausted' }
       const credential = bearerCredential(request.headers)
-      const behavior = credential === undefined ? undefined : entry.byKey?.[credential]
-      const reply: MockBehavior = behavior ?? entry
-      if (reply.status !== undefined && reply.status !== 200) {
-        response.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers })
-        response.end(reply.body ?? '{}')
+      const behavior: MockBehavior = (credential === undefined ? undefined : entry.byKey?.[credential]) ?? entry
+      if (behavior.status !== undefined && behavior.status !== 200) {
+        response.writeHead(behavior.status, { 'content-type': 'application/json', ...behavior.headers })
+        response.end(behavior.body ?? '{}')
         return
       }
-      if (reply.body !== undefined) {
-        response.writeHead(200, { 'content-type': 'application/json', ...reply.headers })
-        response.end(reply.body)
+      if (behavior.body !== undefined) {
+        response.writeHead(200, { 'content-type': 'application/json', ...behavior.headers })
+        response.end(behavior.body)
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       response.flushHeaders()
       let index = 0
       const writeNext = (): void => {
-        const event = reply.events?.[index++]
+        const event = behavior.events?.[index++]
         if (event === undefined) {
-          if (!reply.holdOpen) response.end()
+          if (!behavior.holdOpen) response.end()
           return
         }
-        response.write(`data: ${event}\n\n`)
-        if (reply.delayMs === undefined) writeNext()
-        else timer = setTimeout(writeNext, reply.delayMs)
+        response.write(typeof event === 'string' ? `data: ${event}\n\n` : `event: ${event.event}\ndata: ${event.data}\n\n`)
+        if (behavior.delayMs === undefined) writeNext()
+        else timer = setTimeout(writeNext, behavior.delayMs)
       }
       writeNext()
     })

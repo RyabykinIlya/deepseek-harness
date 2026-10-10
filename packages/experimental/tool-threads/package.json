@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-threads-tool",
   "description": "Bounded thread_status and thread_diff tools over the per-session threads projection",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

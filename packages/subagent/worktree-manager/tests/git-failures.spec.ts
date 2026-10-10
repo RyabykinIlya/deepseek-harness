@@ -67,7 +67,7 @@ function repository(): string {
 async function mount(worktreeRoot: string): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { worktreeRoot, pruneOnStart: false })
-  return ctx.worktrees
+  return ctx.worktrees as never
 }
 
 /** The argv substring a scripted `git` answers instead of running the real one. */

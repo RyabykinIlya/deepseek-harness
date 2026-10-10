@@ -66,7 +66,7 @@ function commitAll(dir: string, message: string): void {
 async function mount(config: Config = {}): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { pruneOnStart: false, ...config })
-  return ctx.worktrees
+  return ctx.worktrees as never
 }
 
 /**
@@ -82,7 +82,7 @@ async function mountUntyped(config: Record<string, unknown>): Promise<WorktreeSe
   // before any effect runs, so there is no sweep left to suppress.
   const ctx = new Context()
   await ctx.plugin(WorktreeService, config)
-  return ctx.worktrees
+  return ctx.worktrees as never
 }
 
 /** Durable sidecar lines, in append order. */

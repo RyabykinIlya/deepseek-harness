@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-threads-preset",
   "description": "The Project and Thread agent presets: a coordinator that starts worktree-isolated Threads and a worker contract for the Threads themselves",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

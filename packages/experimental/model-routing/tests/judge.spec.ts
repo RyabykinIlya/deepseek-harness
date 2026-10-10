@@ -105,7 +105,7 @@ describe('askJudge', () => {
       headers: {},
       fetch: ((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
         init.signal?.addEventListener('abort', () => { clock += 50; reject(new Error('The operation was aborted')) }, { once: true })
-      })) as unknown as typeof fetch,
+      })) as typeof fetch,
       now: () => clock,
     })
     expect(verdict.error).toBeDefined()

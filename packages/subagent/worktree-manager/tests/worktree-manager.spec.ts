@@ -79,7 +79,7 @@ function repository({ init = true }: { init?: boolean } = {}): string {
 async function mount(config: Config = {}): Promise<{ ctx: Context; service: WorktreeService }> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { pruneOnStart: false, ...config })
-  return { ctx, service: ctx.worktrees }
+  return { ctx, service: ctx.worktrees as never }
 }
 
 /** Durable sidecar lines, in append order. */
@@ -787,13 +787,20 @@ describe('reconcile — startup sweep', { timeout: GIT_TIMEOUT_MS }, () => {
 
     const ctx = new Context()
     await ctx.plugin(WorktreeService, { worktreeRoot, pruneOnStart: true })
-    ctx.worktrees.sessionExists = () => false
+    // `ctx.worktrees` is also declared by the sibling experimental service, so the
+    // key's resolved type is not the manager this file mounts.
+    const mounted = ctx.worktrees as never as {
+      sessionExists?: () => boolean
+      reconcile(): Promise<void>
+      list(root: string): Promise<unknown[]>
+    }
+    mounted.sessionExists = () => false
     // The load-time sweep runs without a probe, so drive the probe-aware pass here
     // and assert the startup sweep itself completed without leaving the record live.
-    await ctx.worktrees.reconcile()
+    await mounted.reconcile()
 
     expect(worktreePaths(worktreeRoot)).toEqual([])
-    expect(await ctx.worktrees.list(repoRoot)).toEqual([])
+    expect(await mounted.list(repoRoot)).toEqual([])
     // Disposing the context disposes the startup sweep's effect.
     await ctx.fiber.dispose()
   })

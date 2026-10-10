@@ -15,10 +15,11 @@
  * worktrees whose child session was never published (admission refusal, duplicate id, materialization
  * error, cancellation inside the continuation manager).
  *
- * The one-shot `start` path is inherited from the shared in-process driver, which
- * cannot relocate a child: a one-shot child necessarily shares the parent's cwd and
- * is therefore NOT isolated. Threads are continuable by construction, and a one-shot
- * request that names a `repository` is refused (see `start`).
+ * The provider implements `prepareContinuable` and nothing else: a one-shot child would
+ * share the parent's cwd, which for a Thread is exactly the unisolated run this backend
+ * exists to prevent. It therefore declares {@link SubagentProvider.isolatesContinuableCwd},
+ * and a caller that must keep the isolation refuses the one-shot route instead of running
+ * a Thread in the parent's checkout.
  *
  * @module @deepseek-ai/dsh-subagent-thread-worktree
  */
@@ -35,13 +36,11 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {
   ContinuableCreateRequest,
   ContinuableCreateSpec,
-  ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentProvider,
 } from '@deepseek-ai/dsh-subagent'
 import { resolveRepoTopLevel, threadSlug, WorktreeError } from '@deepseek-ai/dsh-worktree-manager'
 import type { WorktreeBasePolicy, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
-import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
 
 export const name = 'subagent-thread-worktree'
 // `worktrees` is the injected capability; `subagents` is the registry this provider
@@ -112,8 +111,9 @@ class ThreadWorktreeProvider implements SubagentProvider {
   // A fresh Thread starts with no inherited history: an independent context window is
   // the point, and a fork prefix would spend the child's budget on the parent's bytes.
   readonly inheritsParentContext = false
-  // The worktree is established in `prepareContinuable` and nowhere else, so the
-  // one-shot route below would run this child in the parent's own checkout.
+  // The worktree is established in `prepareContinuable` and nowhere else, and the provider
+  // implements no one-shot `start`, so a one-shot route cannot run this child anywhere but
+  // in the parent's own checkout.
   readonly isolatesContinuableCwd = true
 
   constructor(
@@ -121,24 +121,6 @@ class ThreadWorktreeProvider implements SubagentProvider {
     private readonly worktrees: WorktreeService,
     private readonly config: Config,
   ) {}
-
-  /**
-   * Run a one-shot child in the parent's working directory, where this route builds no worktree.
-   *
-   * @param request - the one-shot start request after the service's capability checks.
-   * @returns the shared driver's run of the child in the parent's working directory.
-   * @throws Error when the request names a `repository`: this route cannot honor the name, and
-   *   accepting the request would ignore it.
-   */
-  start(request: ResolvedSubagentStartRequest) {
-    if (request.repository !== undefined) {
-      throw new Error(
-        'thread worktrees: repository is not available on the one-shot route, which runs the child '
-        + 'in the parent\'s working directory with no worktree; start the child in the background instead',
-      )
-    }
-    return startInProcessRun(request, {})
-  }
 
   /**
    * Create the Thread's worktree from the repository the delegation names and return the

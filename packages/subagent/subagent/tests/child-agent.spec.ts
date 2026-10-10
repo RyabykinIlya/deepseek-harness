@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionHeader } from '@deepseek-ai/dsh-session'
-import { resolveChildAgentOptions, childSessionMeta } from '../src/child-agent.ts'
+import { childSessionMeta, resolveChildAgentOptions, resolveChildDepth } from '../src/child-agent.ts'
 
 function parentAgent(): Agent {
   const id = SessionId('parent')
@@ -76,6 +76,19 @@ describe('child Agent options', () => {
   })
 })
 
+describe('delegation depth limits', () => {
+  it.each([-1, -0, 0.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects an invalid runtime depth %s', (depth) => {
+    const parent = parentAgent()
+    parent.options.subagentDepth = depth
+    expect(() => resolveChildDepth(parent, undefined)).toThrow('agent subagentDepth must be a non-negative safe integer')
+  })
+
+  it('rejects a child depth beyond the exact integer range', () => {
+    const parent = parentAgent()
+    parent.options.subagentDepth = Number.MAX_SAFE_INTEGER
+    expect(() => resolveChildDepth(parent, undefined)).toThrow('subagent child depth exceeds the safe-integer range')
+  })
+})
 describe('child Session cwd', () => {
   /** A parent Agent whose Session header carries the given cwd. */
   function parentWithCwd(cwd: string | undefined): Agent {

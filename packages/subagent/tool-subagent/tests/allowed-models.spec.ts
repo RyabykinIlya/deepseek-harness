@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
@@ -27,11 +26,10 @@ const TIERS = [
  */
 async function setupWithRoutes(requests: SubagentStartRequest[]): Promise<{ ctx: Context; adapter: MockAdapter }> {
   const ctx = new Context()
-  await ctx.plugin(LlmRuntime)
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
+  await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(AgentLoop, { agents: [] })
+  await mountWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)
-  await ctx.plugin(SessionProjectionRegistry)
   await mock.mountScriptedProvider(ctx, { name: 'mock', onStart: (request) => { requests.push(request) } })
   const adapter = new MockAdapter([])
   ctx.llm.registerAdapter(['tiers'], adapter)
@@ -45,6 +43,7 @@ describe('tool-subagent allowedModels', () => {
     const schema = ctx.tools.schemas().find(entry => entry.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
     expect(Object.keys(props).sort()).toEqual([
+      'cwd',
       'description',
       'model',
       'prompt',
@@ -73,11 +72,10 @@ describe('tool-subagent allowedModels', () => {
     const requests: SubagentStartRequest[] = []
     const policies: string[] = []
     const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
-    await ctx.plugin(SessionProjectionRegistry)
     await mock.mountScriptedProvider(ctx, { name: 'mock', onStart: (request) => { requests.push(request) } })
     ctx.llm.registerAdapter(['tiers'], new MockAdapter([]))
     ctx.on('session/event', (_session, event) => {
@@ -100,11 +98,10 @@ describe('tool-subagent allowedModels', () => {
 
   it('refuses to mount next to modelSelectionSettings', async () => {
     const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
+    await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
-    await ctx.plugin(SessionProjectionRegistry)
     await mock.mountScriptedProvider(ctx, { name: 'mock' })
     await expect(ctx.plugin(tool, {
       provider: 'mock',
@@ -117,7 +114,7 @@ describe('tool-subagent allowedModels', () => {
     const ctx = await setup({ provider: 'mock', allowedModels: [] })
     const schema = ctx.tools.schemas().find(entry => entry.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['description', 'prompt', 'run_in_background'])
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt', 'run_in_background'])
     expect(ctx.tools.get('list_subagent_models')).toBeUndefined()
   })
 })

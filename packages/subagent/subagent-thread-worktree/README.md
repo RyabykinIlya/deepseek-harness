@@ -72,14 +72,14 @@ When the repository cannot be resolved — the delegation named none while the w
 
 ### When creation fails
 
-Every failure is loud and typed; this package never falls back to an unisolated child. A parent session without a `cwd`, an unresolvable `repository`, a repository that is not a git work tree, an existing branch, or an occupied worktree path each reject before or during creation. A one-shot start that names a `repository` is refused too: that route builds no worktree and would ignore the name. If the caller's signal aborts after the worktree exists, the provider removes it before propagating — the continuation manager cannot, because it holds no handle for a child that was never published.
+Every failure is loud and typed; this package never falls back to an unisolated child. A parent session without a `cwd`, an unresolvable `repository`, a repository that is not a git work tree, an existing branch, or an occupied worktree path each reject before or during creation. If the caller's signal aborts after the worktree exists, the provider removes it before propagating — the continuation manager cannot, because it holds no handle for a child that was never published.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 The provider's whole participation in a continuable child is `prepareContinuable`: it resolves the repository the delegation names, creates the worktree through `ctx.worktrees`, returns `{ cwd, handles }` — where `handles` names the created worktree's path and branch — and compensates for its own failure. Identity reservation, composition, prompt delivery, cold resume, ownership, and disposal all belong to the continuation manager, so this package carries no lifecycle of its own.
 
-The one-shot `start` path is inherited from the shared in-process driver and does NOT isolate: a one-shot child necessarily shares the parent's working directory. Isolation is a property of continuable Threads only, and one-shot delegation in this backend is not a supported way to get a worktree.
+This provider implements no one-shot `start`: the worktree exists only as a `prepareContinuable` result, so a one-shot route has nothing to isolate the child with. The absence is structural, not a refusal, and it is what makes a Thread isolated by construction. It also declares `isolatesContinuableCwd`, so a caller that must not lose the isolation can refuse the one-shot route rather than fall into it.
 
 Rollback has three parts. A failure or abort inside the provider's own call is handled inline by removing the worktree. A crash of the whole process is handled by the worktree manager, which persists a `reserved` intent record before it mutates git and reconciles orphaned records on the next start. A failure after `prepareContinuable` returns, inside the continuation manager (admission refusal, duplicate id, materialization error), leaves a worktree without a session; the provider installs `worktrees.sessionExists` on `ctx.sessionPersistence.stat`, and the manager's sweep removes such a worktree once its record is older than `adoptionGraceMs`. The sweep runs at start and before each create. Without a session persistence service the probe reports "exists" and logs once, so nothing is swept on a guess.
 
@@ -114,7 +114,6 @@ Append-only; the provider changes no model-visible prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **One-shot delegation is unisolated.** A child started through the one-shot path shares the parent's checkout. Use `backgroundMode: continuable`.
 - **One repository per Thread.** Each delegation names a single repository, resolved when the Thread starts; a Thread never sees several repositories at once.
 - **No merge-back.** The branch is created for the child and left in place; nothing merges it into the selected repository's checkout, and nothing deletes it when a child settles.
 - **Removal requires the worktree manager.** This package never removes a worktree during normal operation; removal is an explicit manager call.

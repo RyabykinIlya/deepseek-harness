@@ -79,7 +79,7 @@ async function service(keyBody?: unknown, config: Record<string, unknown> = {}) 
   await ctx.plugin(SessionProjectionRegistry)
   ctx.llm.registerAdapter(['openrouter'], new EmptyAdapter())
   await ctx.plugin(ModelRoutingService, { tiers: [PRO, FLASH], ...config } as never)
-  return { ctx, service: ctx.get('modelRouting') as unknown as ModelRoutingServiceClass, fetch: fetchStub }
+  return { ctx, service: ctx.get('modelRouting') as ModelRoutingServiceClass, fetch: fetchStub }
 }
 
 beforeEach(() => {

@@ -15,8 +15,8 @@
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-tool-subagent/use-this-package:
-  en: 3248a28bba2ef809
-  zh: 807cc32c49fcb0cb
+  en: 93f1701f5209ecb5
+  zh: 6310fd012400aead
 /deepseek-ai-dsh-tool-subagent/use-this-package/minimal-configuration:
   en: bdd3f6866f61f419
   zh: 720975969629b71f
@@ -36,11 +36,11 @@
   en: 5ceacfed4ea0c648
   zh: 005284534923d854
 /deepseek-ai-dsh-tool-subagent/understand-the-implementation/foreground-settlement:
-  en: ccb36af6884ec89f
-  zh: 41e9aa6d3cd75a41
+  en: 35598c0a9a0ff5d0
+  zh: cb45a18c37381eb8
 /deepseek-ai-dsh-tool-subagent/understand-the-implementation/background-routes:
-  en: dfd6306019a63bea
-  zh: 5055b66e19885e8d
+  en: 1ec532125a1e1471
+  zh: d394b1928e5162f6
 /deepseek-ai-dsh-tool-subagent/understand-the-implementation/context-sensitive-wording:
   en: 1733728ac5aa6bb0
   zh: 341ffc6e21a289af
@@ -57,8 +57,8 @@
   en: e4c7376d4f29dbd5
   zh: 6b7a9eaf69c9ea53
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/what-the-model-sees:
-  en: 117de8781fa0cf50
-  zh: cca4271993a26d51
+  en: 852dfe69290853e4
+  zh: 7a53ed81385e92c6
 /deepseek-ai-dsh-tool-subagent/model-experience/tool-schema/token-effect:
   en: aa7222268d09cf6b
   zh: 8ecee0e3ae5a60ec
@@ -81,17 +81,17 @@
   en: cf78b9dd5596495f
   zh: bd44560f8c2435e8
 /deepseek-ai-dsh-tool-subagent/model-experience/system-prompt/what-the-model-sees:
-  en: 875f8a89292dde21
-  zh: 670f911b0a149690
+  en: 5f6611a932063e58
+  zh: effededa44c716af
 /deepseek-ai-dsh-tool-subagent/model-experience/system-prompt/what-the-model-sees/tool-guidance-section:
   en: 82b3cd08b3961c98
   zh: bdc2a34bcea16cac
 /deepseek-ai-dsh-tool-subagent/model-experience/system-prompt/token-effect:
-  en: ed03868e8f551001
-  zh: 53c10b979a48cf9b
+  en: 58ee76659f75c73e
+  zh: 726c5b789e96677c
 /deepseek-ai-dsh-tool-subagent/model-experience/system-prompt/kv-cache-effect:
-  en: 5f2491d0ee8f440c
-  zh: 14c06b9fe7096e09
+  en: eaee0378bf87c980
+  zh: 2783a481ee349f1e
 /deepseek-ai-dsh-tool-subagent/model-experience/foreground-result:
   en: d83f1f25a3719c54
   zh: 445ca808e28dc936

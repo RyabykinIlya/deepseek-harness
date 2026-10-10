@@ -62,7 +62,7 @@ function commit(cwd: string, file: string, content: string, message: string): vo
 async function mount(config: Config = {}): Promise<{ ctx: Context; service: WorktreeService }> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { pruneOnStart: false, ...config })
-  return { ctx, service: ctx.worktrees }
+  return { ctx, service: ctx.worktrees as never }
 }
 
 /** Durable sidecar states, in append order. */

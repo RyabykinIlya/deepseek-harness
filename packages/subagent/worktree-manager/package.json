@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-worktree-manager",
   "description": "Host service that manages git worktrees for background Threads (ctx.worktrees)",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

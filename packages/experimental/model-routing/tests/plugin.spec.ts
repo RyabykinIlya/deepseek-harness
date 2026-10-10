@@ -49,7 +49,7 @@ async function setup(config: Record<string, unknown> = {}): Promise<{ ctx: Conte
   ctx.llm.registerAdapter(['openrouter'], new EmptyAdapter())
   await ctx.plugin(ModelRoutingService, { tiers: [PRO, FLASH], ...config } as never)
   // `ctx.plugin` resolves to the fiber; the service itself is what the key holds.
-  return { ctx, service: ctx.get('modelRouting') as unknown as ModelRoutingService }
+  return { ctx, service: ctx.get('modelRouting') as ModelRoutingService }
 }
 
 describe('ModelRoutingService as a Host plugin', () => {
@@ -87,7 +87,7 @@ describe('the agent/request rewrites', () => {
 
   /** The minimal Agent surface the `agent/request` payload carries. */
   function agentFor(session: Session): Agent {
-    return { id: session.id, session, options: {} } as unknown as Agent
+    return { id: session.id, session, options: {} } as Agent
   }
 
   it('moves a Thread to the tier the coordinator recorded', async () => {

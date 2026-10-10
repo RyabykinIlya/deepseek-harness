@@ -71,7 +71,7 @@ describe('KeyInfo', () => {
       fetch: (async (_url: string, init?: RequestInit) => {
         sent = new Headers(init?.headers)
         return new Response(JSON.stringify({ data: { free_model_daily_requests: { used: 0, limit: 1, remaining: 1 } } }))
-      }) as unknown as typeof fetch,
+      }) as typeof fetch,
       now: () => 0,
       baseUrl: () => 'https://openrouter.ai/api/v1',
       apiKey: () => Promise.resolve('secret'),

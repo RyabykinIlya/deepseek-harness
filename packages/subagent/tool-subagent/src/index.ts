@@ -1,10 +1,10 @@
 /**
  * Model-facing delegation through one configured `ctx.subagents` provider.
  * Provider lifecycle controls tool registration and context-sensitive schema
- * wording. Foreground calls always dispose the run after collection.
- * Background policy is selected by this plugin's configuration: one-shot
- * calls own a plain Task, while continuable calls use
- * `ctx.subagents.startContinuable()`.
+ * wording. Foreground calls collect the child's result and release the
+ * activation; one-shot background calls own a plain job; continuable calls use
+ * `ctx.subagents.startActivation()` with parent delivery and return the durable
+ * child id. The subagent runtime owns execution and resource cleanup.
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -21,7 +22,6 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import {
   assertSubagentMaxDepth,
   parentAgentOptionsForDelegation,
-  settleRun,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
@@ -43,8 +43,20 @@ import {
   subagentModelSelectionPolicy,
 } from './model-selection-state.ts'
 
+// One-shot background delegation is this package's job producer; the registry
+// treats the kind as an opaque id namespace.
+declare module '@deepseek-ai/dsh-jobs' {
+  interface JobKindMap {
+    subagent: 'subagent'
+  }
+}
+
 export const name = 'tool-subagent'
 export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
+
+// Definition identity keeps shared guidance scoped to the actual visible tools,
+// including scoped overrides and independently loaded tool registries.
+const delegationTools = new Set<ToolDefinition>()
 
 /** Config: which registered provider this tool delegates to, plus child defaults. */
 export interface Config {
@@ -144,14 +156,28 @@ export const Config: z<Config> = z.object({
   maxDepth: z.union([z.natural().max(Number.MAX_SAFE_INTEGER), z.const('provider-managed' as const)]),
 })
 
-/** Render text blocks from the canonical JSON block array without trusting arbitrary values. */
-function outputValueText(values: JsonValue[]): string {
+/** Render text blocks from a collected child's output. */
+function outputValueText(values: readonly JsonValue[]): string {
   return values
     .filter((value): value is { type: 'text'; text: string } =>
       typeof value === 'object' && value !== null && !Array.isArray(value)
       && value.type === 'text' && typeof value.text === 'string')
     .map(value => value.text)
     .join('')
+}
+
+/**
+ * Project collected child output blocks into this tool's canonical JSON output.
+ *
+ * Content block interfaces carry no index signature, so they are not assignable
+ * to {@link JsonValue} and no single assertion relates the two. The round trip
+ * is this boundary's own lossless-JSON snapshot, which is what the tool output
+ * contract asks for anyway.
+ * @param blocks - the child's collected output blocks.
+ * @returns the same blocks as canonical JSON values.
+ */
+function outputAsJson(blocks: readonly ContentBlock[]): JsonValue[] {
+  return JSON.parse(JSON.stringify(blocks))
 }
 
 /** One provider handle as the tool's canonical output records it. */
@@ -173,6 +199,69 @@ function continuableStartText(
 ): string {
   const lines = value.handles?.map(handle => `${handle.name}: ${handle.value}`) ?? []
   return [`started subagent ${value.subagentId}`, ...lines].join('\n')
+}
+
+/** Flatten a child's final output blocks to the job's final text. */
+function finalText(blocks: readonly ContentBlock[]): string {
+  return blocks
+    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+}
+
+/** Render a failed stop reason with optional provider-authored detail. */
+function failureDetail(result: SubagentResult): string {
+  return result.diagnostic === undefined
+    ? result.stopReason
+    : `${result.stopReason}; diagnostic: ${result.diagnostic}`
+}
+
+/**
+ * Map a child result to the job outcome: completed carries final text, local
+ * cancellation (`aborted` without a diagnostic) is killed, and provider-
+ * diagnosed remote aborts plus every other reason are failed without partial
+ * output.
+ * @param result - child terminal result.
+ * @returns outcome for the `ctx.jobs` registration.
+ */
+function runOutcome(result: SubagentResult): JobOutcome {
+  switch (result.stopReason) {
+    case 'completed':
+      return { status: 'completed', result: finalText(result.output) }
+    case 'aborted':
+      return result.diagnostic === undefined
+        ? { status: 'killed' }
+        : { status: 'failed', detail: failureDetail(result) }
+    case 'error':
+    case 'max-tokens':
+    case 'refusal':
+      return { status: 'failed', detail: failureDetail(result) }
+    // Merge-extensible reasons remain failures with provider-authored detail.
+    default:
+      return { status: 'failed', detail: failureDetail(result) }
+  }
+}
+
+/**
+ * Await the child result, dispose the run, then return its job outcome. Result
+ * and disposal failures become `failed`; when both fail, both details survive.
+ * @param run - live run to settle and release.
+ * @returns outcome after child resources are released.
+ */
+async function settleRun(run: SubagentRun): Promise<JobOutcome> {
+  let outcome: JobOutcome
+  try {
+    outcome = runOutcome(await run.result)
+  } catch (error: unknown) {
+    outcome = { status: 'failed', detail: String(error) }
+  }
+  try {
+    await run.dispose()
+  } catch (error: unknown) {
+    const prefix = outcome.detail === undefined ? '' : `${outcome.detail}; `
+    return { status: 'failed', detail: `${prefix}dispose failed: ${String(error)}` }
+  }
+  return outcome
 }
 
 /** Settle pending startup without rejecting the task producer contract. */
@@ -252,9 +341,7 @@ async function settleForegroundRun(run: SubagentRun): Promise<ForegroundToolResu
       return {
         kind: 'foreground',
         runId: run.id,
-        // Content blocks already cross durable JSON boundaries elsewhere;
-        // the registry performs the authoritative lossless snapshot here.
-        output: result.output as unknown as JsonValue[],
+        output: outputAsJson(result.output),
       }
     }),
   ])
@@ -471,7 +558,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
           + (subagentProvider.inheritsParentContext
             ? ' Changing the route can prevent provider-side reuse of the inherited conversation prefix.'
             : '')
-      const disposeTool = runtimeCtx.tools.register(defineTool({
+      const definition = defineTool({
         name: toolName,
         description: wording.description + (backgroundEnabled
           // The completion notice is the continuation service's own behavior, not
@@ -482,6 +569,10 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             : ' This call waits for the result by default.'
           : ' This call waits for the subagent and returns its result.') + choiceDescription,
         parameters: {
+          cwd: {
+            type: 'string',
+            description: 'Initial child working directory. Relative paths use your current directory; omitted inherits it. Later directory changes in either agent are independent.',
+          },
           description: {
             type: 'string',
             required: true,
@@ -583,8 +674,6 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                 : outputValueText(value.output),
           }],
         },
-        // Children never mutate the parent session; the one parent-owned write
-        // (tasks.start) is a synchronous commutative insertion.
         isConcurrencySafe: () => true,
         async execute(args, exec) {
           const parent = exec.agent
@@ -634,8 +723,10 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             supported: repositorySupported,
             provider: subagentProvider.name,
           })
+          // The activation spec carries `label` itself; its `request` is the
+          // `Omit<SubagentStartRequest, 'label' | 'signal'>` face.
           const request = {
-            label: args.description,
+            ...args.cwd === undefined ? {} : { cwd: args.cwd },
             prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
             parent,
             ...requestedChildAgentOptions !== undefined ? { agentOptions: requestedChildAgentOptions } : {},
@@ -648,17 +739,18 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
           const runSpec = resolveDelegationRun(args, {
             backgroundEnabled,
             continuable,
-            isolatesForeground: subagentProvider.isolatesContinuableCwd === true,
+            isolatesForeground,
           })
           if (runSpec.runInBackground) {
             if (continuable) {
               // Resolves at inbox acceptance: the child owns its own turns from
               // there, so this call neither waits for nor collects a result.
-              const started = await runtimeCtx.subagents.startContinuable({
+              const started = await runtimeCtx.subagents.startActivation({
                 provider: config.provider,
                 label: args.description,
                 request,
                 signal: exec.signal,
+                delivery: 'parent',
               })
               // Handles travel as a name/value array, not the provider's own map,
               // so the output schema validates each handle's string value.
@@ -670,22 +762,48 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
                   : { handles: Object.entries(started.handles).map(([name, value]) => ({ name, value })) },
               }
             }
+            if (subagentProvider.start === undefined) {
+              // A continuable-only provider has no one-shot run to hand to the
+              // job, and the activation seam would otherwise reach it as an
+              // opaque TypeError inside the job's starter.
+              throw new Error(
+                `tool-subagent: provider "${subagentProvider.name}" does not support one-shot background`
+                  + ' delegation (no `start`); run in the foreground or configure `backgroundMode: continuable`',
+              )
+            }
             const jobs = runtimeCtx.get('jobs')
             if (jobs === undefined) {
               throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
             }
             // One-shot background child: job preflight finishes before the
-            // starter can spawn, and the task-owned signal covers startup.
+            // starter can spawn, and the task-owned signal covers startup. After
+            // publication the spec signal stops reaching the child, so cancel
+            // also disposes the activation receipt (idempotent).
             const id = jobs.start({
               kind: 'subagent',
               label: args.description,
               owner: parent.id,
               run: () => {
                 const controller = new AbortController()
-                const start = runtimeCtx.subagents.start(config.provider, { ...request, signal: controller.signal })
+                let published: Awaited<ReturnType<typeof runtimeCtx.subagents.startActivation>> | undefined
+                const start = runtimeCtx.subagents.startActivation({
+                  provider: config.provider,
+                  label: args.description,
+                  request,
+                  signal: controller.signal,
+                  delivery: 'caller',
+                }).then((activation) => {
+                  published = activation
+                  return {
+                    id: activation.childId,
+                    result: activation.result,
+                    dispose: () => activation.dispose(),
+                  }
+                })
                 return {
                   cancel: (reason?: string) => {
                     controller.abort(reason ?? 'background subagent task killed')
+                    void published?.dispose()
                   },
                   done: settleStart(start, controller.signal),
                   // No output sources: the child session owns intermediate detail.
@@ -695,22 +813,33 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             return { kind: 'background' as const, jobId: id }
           }
 
-          const run: SubagentRun = await runtimeCtx.subagents.start(config.provider, {
-            ...request,
+          const started = await runtimeCtx.subagents.startActivation({
+            provider: config.provider,
+            label: args.description,
+            request,
             signal: exec.signal,
+            delivery: 'caller',
           })
-          return settleForegroundRun(run)
+          return settleForegroundRun({
+            id: started.childId,
+            result: started.result,
+            dispose: () => started.dispose(),
+          })
         },
-      }))
+      })
+      const disposeTool = runtimeCtx.effect(() => {
+        const unregister = runtimeCtx.tools.register(definition)
+        delegationTools.add(definition)
+        return () => {
+          delegationTools.delete(definition)
+          unregister()
+        }
+      })
+      // oxlint-disable-next-line typescript/no-misused-promises -- Tool and guidance disposal are synchronous.
       mounted = { subagentProvider, disposeTool }
     }
 
     // Register listeners before checking presence so no synchronous change is missed.
-    // TODO(subagent-dup-toolname): two waiting one-shot fibers configured with the
-    // same toolName collide when their provider appears, and the duplicate-name
-    // throw rolls back the provider registration. Continuable instances reserve
-    // their prompt-section name during apply() and fail earlier. Add an intent
-    // registry if the late one-shot collision occurs in a shipped composition.
     runtimeCtx.on('subagent/provider-added', (subagentProvider) => {
       if (subagentProvider.name === config.provider && mounted === undefined) mount(subagentProvider)
     })
@@ -726,18 +855,20 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
       // A backend fiber may activate later; a misspelled provider remains visible in this log.
       runtimeCtx.logger.info(`subagent provider "${config.provider}" not registered yet; the "${config.toolName ?? 'subagent'}" tool will register when it appears`)
     }
-    if (backgroundEnabled && continuable) {
-      // The section follows provider availability without its own manual
-      // lifecycle: empty text is omitted from rendered prompts while the tool is
-      // absent, and the registration itself stays owned by this plugin fiber.
-      runtimeCtx.systemPrompt.section({
-        name: `tool:${toolName}`,
-        order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
-        text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
-          ? ''
-          : `Start independent ${toolName} delegations together in one assistant message and continue useful work while they run.`,
-      })
-    }
+    runtimeCtx.systemPrompt.section({
+      name: `tool:${toolName}`,
+      order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
+      text: (context) => {
+        if (mounted === undefined) return ''
+        const visible = [...delegationTools]
+          .filter(tool => runtimeCtx.tools.get(tool.name, context.scope) === tool)
+          .map(tool => tool.name)
+          .sort()
+        if (visible[0] !== toolName) return ''
+        const names = visible.map(name => `\`${name}\``).join(' or ')
+        return `Start independent delegations with ${names} together in one assistant message and continue useful work while they run.`
+      },
+    })
   }
 
   if (config.modelSelectionSettings !== true) {
@@ -756,6 +887,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   }
   const selectForSession = (target: Session): ModelSelectionPolicy | undefined => {
     const freshSession = target.firstLiveSeq === 0
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       && target.eventAt(SessionSeq(0))?.type !== 'session/end-seed'
     let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, target)
     if (allowedModels === undefined) {

@@ -81,6 +81,15 @@ function present(session: Session, files: Array<{ path: string; description?: st
   session.append('deliverables/presented', { turn: 1, callId: 'call-1' as ToolCallId, files })
 }
 
+/**
+ * The worktree service this suite mounts. `ctx.worktrees` is declared by the
+ * sibling experimental service as well, so the key's resolved type is not the
+ * manager this file mounts; the cast restores the mounted service's own type.
+ */
+function manager(ctx: Context): WorktreeService {
+  return ctx.worktrees as never as WorktreeService
+}
+
 const ALPHA = ThreadId('alpha')
 const BETA = ThreadId('beta')
 
@@ -148,7 +157,7 @@ describe('threads.library', () => {
     const repo = repository()
     const ctx = await mount()
     await ctx.plugin(WorktreeService, { pruneOnStart: false, worktreeRoot: temporary('dsh-threads-lib-root-') })
-    const record = await ctx.worktrees.create({ repoRoot: repo, threadId: 'alpha', baseRef: 'HEAD' }, new AbortController().signal)
+    const record = await manager(ctx).create({ repoRoot: repo, threadId: 'alpha', baseRef: 'HEAD' }, new AbortController().signal)
     writeFileSync(join(record.path, 'a.txt'), 'one\ntwo\n')
     writeFileSync(join(record.path, 'b.bin'), Buffer.from([0, 1, 2, 0]))
     git(['add', '.'], record.path)
@@ -173,9 +182,9 @@ describe('threads.library', () => {
     const ctx = await mount()
     await ctx.plugin(WorktreeService, { pruneOnStart: false, worktreeRoot: temporary('dsh-threads-lib-root-') })
     const signal = new AbortController().signal
-    const vanished = await ctx.worktrees.create({ repoRoot: repo, threadId: 'alpha', baseRef: 'HEAD' }, signal)
-    const removed = await ctx.worktrees.create({ repoRoot: repo, threadId: 'beta', baseRef: 'HEAD' }, signal)
-    await ctx.worktrees.remove(removed, { force: true })
+    const vanished = await manager(ctx).create({ repoRoot: repo, threadId: 'alpha', baseRef: 'HEAD' }, signal)
+    const removed = await manager(ctx).create({ repoRoot: repo, threadId: 'beta', baseRef: 'HEAD' }, signal)
+    await manager(ctx).remove(removed, { force: true })
     rmSync(vanished.path, { recursive: true, force: true })
     const p = project(ctx)
     created(p, ALPHA, 'a')

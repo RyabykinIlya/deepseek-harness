@@ -6,18 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import WorktreeService, { WorktreeError } from '@deepseek-ai/dsh-worktree-manager'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ContinuableCreateRequest, ResolvedSubagentStartRequest } from '@deepseek-ai/dsh-subagent'
-import { startInProcessRun } from '@deepseek-ai/dsh-subagent-in-process-driver'
+import type { ContinuableCreateRequest, SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import { apply, ThreadWorktreeProvider } from '../src/index.ts'
 import type { Config } from '../src/index.ts'
-
-// The one-shot `start` path is inherited from the shared driver; what this
-// package contributes there is the empty fork seed, which only a spy can observe
-// without booting a whole child agent.
-vi.mock('@deepseek-ai/dsh-subagent-in-process-driver', async importOriginal => ({
-  ...await importOriginal<typeof import('@deepseek-ai/dsh-subagent-in-process-driver')>(),
-  startInProcessRun: vi.fn(),
-}))
 
 /** Real git subprocesses run here; the 5s default is too tight when specs share the host. */
 const GIT_TIMEOUT_MS = 30_000
@@ -77,7 +68,9 @@ function workspace(): { dir: string; alpha: string; beta: string } {
 async function realService(config: { adoptionGraceMs?: number } = {}): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { worktreeRoot: temporary('dsh-tw-root-'), pruneOnStart: false, ...config })
-  return ctx.worktrees
+  // `ctx.worktrees` is declared by the sibling experimental service as well, so
+  // the key's resolved type is not the manager this function mounts.
+  return ctx.worktrees as never
 }
 
 interface CreateCall { repoRoot: string; threadId: string; baseRef: string; branch?: string; detached?: boolean }
@@ -150,16 +143,6 @@ function request(
   } as ContinuableCreateRequest
 }
 
-/** A one-shot start request, which carries the resolved descriptor the service appends. */
-function startRequest(parentCwd: string, signal: AbortSignal): ResolvedSubagentStartRequest {
-  return {
-    prompt: [],
-    parent: parent(parentCwd),
-    signal,
-    descriptor: { version: 1, mode: 'one-shot', provider: 'thread' },
-  }
-}
-
 describe('thread worktree provider', () => {
   it('advertises no inherited context so each Thread gets an independent window', () => {
     expect(providerFor(fakeWorktrees()).inheritsParentContext).toBe(false)
@@ -169,37 +152,18 @@ describe('thread worktree provider', () => {
     expect(providerFor(fakeWorktrees()).capabilities.repository).toBe(true)
   })
 
-  it('starts a one-shot child on the shared driver with no fork seed', async () => {
-    const worktrees = fakeWorktrees()
-    const started = startRequest(worktrees.repoRoot, new AbortController().signal)
-
-    await providerFor(worktrees).start(started)
-
-    // One-shot children share the parent's cwd: the driver cannot relocate a child.
-    expect(startInProcessRun).toHaveBeenCalledWith(started, {})
+  it('implements no one-shot start, so nothing can run a Thread unisolated', () => {
+    // Presence of `start` is what selects the one-shot route, and this provider has no
+    // way to honor one: the worktree exists only as a `prepareContinuable` result.
+    // Dropping the method is what makes the absence structural rather than a refusal.
+    const provider: SubagentProvider = providerFor(fakeWorktrees())
+    expect(provider.start).toBeUndefined()
   })
 
-  it('refuses a repository on the one-shot route instead of accepting and ignoring it', () => {
-    const worktrees = fakeWorktrees()
-    const started: ResolvedSubagentStartRequest = {
-      ...startRequest(worktrees.repoRoot, new AbortController().signal),
-      repository: 'alpha',
-    }
-    vi.mocked(startInProcessRun).mockClear()
-
-    let thrown: unknown
-    try {
-      // `start` throws before it can return the driver's promise; `void` only marks
-      // that promise ignored for the linter, it runs the call either way.
-      void providerFor(worktrees).start(started)
-    } catch (error) {
-      thrown = error
-    }
-    expect(thrown).toMatchObject({
-      message: 'thread worktrees: repository is not available on the one-shot route, which runs the child '
-        + 'in the parent\'s working directory with no worktree; start the child in the background instead',
-    })
-    expect(startInProcessRun).not.toHaveBeenCalled()
+  it('declares that it isolates a continuable child from the one-shot route', () => {
+    // The caller that must not lose the worktree reads this flag and refuses the
+    // one-shot route instead of silently running the Thread in the parent's checkout.
+    expect(providerFor(fakeWorktrees()).isolatesContinuableCwd).toBe(true)
   })
 
   it('creates a worktree rooted at the parent cwd and returns it as the child cwd', async () => {

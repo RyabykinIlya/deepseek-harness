@@ -54,7 +54,7 @@ function repository(): string {
 async function mount(config: Config): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { pruneOnStart: false, ...config })
-  return ctx.worktrees
+  return ctx.worktrees as never
 }
 
 const signal = () => new AbortController().signal

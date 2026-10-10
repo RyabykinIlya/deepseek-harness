@@ -16,7 +16,9 @@ export type UseSessions = PropsRuntime<'conversation.session.header.actions'>['u
 
 /** A projection read plus enough load state to tell "no threads" from "not read yet". */
 export type ThreadsSnapshot = Omit<SessionProjectionSnapshot, 'values' | 'state'> & {
-  state: 'loading' | 'ready' | 'error'
+  // Every upstream projection state the roster passes through unchanged, plus
+  // `loading` for a snapshot that exists but has no `threads` value yet.
+  state: 'loading' | 'ready' | 'migration-required' | 'error'
   entries: ThreadRosterRow[]
 }
 

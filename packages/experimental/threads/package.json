@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-threads",
   "description": "Log-only Thread events and the per-session threads projection for a Project Session",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
   },

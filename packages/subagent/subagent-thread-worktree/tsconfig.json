@@ -33,9 +33,6 @@
       "path": "../subagent"
     },
     {
-      "path": "../subagent-in-process-driver"
-    },
-    {
       "path": "../worktree-manager"
     }
   ]

@@ -72,14 +72,14 @@ kind: "package-reference"
 
 ### 创建失败时
 
-所有失败都是响亮且带类型的；本包绝不退化为一个未隔离的子代理。没有 `cwd` 的父会话、无法解析的 `repository`、不是 git 工作树的仓库、已存在的分支、被占用的 worktree 路径，都会在创建期间或之前各自拒绝。命名了 `repository` 的 one-shot 启动同样会被拒绝：该路径不创建 worktree，会忽略这个名字。如果调用方的信号在 worktree 已存在之后中止，provider 会在向上抛出之前把它移除——continuation manager 无法代劳，因为它对从未被发布的子代理不持有任何句柄。
+所有失败都是响亮且带类型的；本包绝不退化为一个未隔离的子代理。没有 `cwd` 的父会话、无法解析的 `repository`、不是 git 工作树的仓库、已存在的分支、被占用的 worktree 路径，都会在创建期间或之前各自拒绝。如果调用方的信号在 worktree 已存在之后中止，provider 会在向上抛出之前把它移除——continuation manager 无法代劳，因为它对从未被发布的子代理不持有任何句柄。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
 provider 对一个 continuable 子代理的全部参与就是 `prepareContinuable`：它解析委派命名的仓库、通过 `ctx.worktrees` 创建 worktree、返回 `{ cwd, handles }`（其中 `handles` 命名所创建 worktree 的路径与分支），并为自己的失败提供补偿。身份预留、组合、提示投递、冷恢复、所有权与释放全都属于 continuation manager，因此本包自身不承载任何生命周期。
 
-one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提供隔离：one-shot 子代理必然与父级共享工作目录。隔离是 continuable Thread 独有的属性，而本后端的 one-shot 委派并不是获得 worktree 的受支持方式。
+本 provider 不实现 one-shot 的 `start`：worktree 只作为 `prepareContinuable` 的结果存在，one-shot 路径没有可用来隔离子代理的东西。这种缺失是结构性的，而不是一次拒绝，并且它正是 Thread 按构造即被隔离的原因。本 provider 同时声明 `isolatesContinuableCwd`，因此不愿失去隔离的调用方可以拒绝 one-shot 路径，而不是落入其中。
 
 回滚分为三部分。provider 自己调用内部的失败或中止，由内联移除 worktree 处理。整个进程崩溃的情形由 worktree 管理器处理：它在改动 git 之前持久化一条 `reserved` 意图记录，并在下次启动时对账清理孤立的记录。`prepareContinuable` 返回之后 continuation manager 内部的失败（准入拒绝、重复 id、物化错误）会留下没有会话的 worktree；provider 把 `worktrees.sessionExists` 安装为 `ctx.sessionPersistence.stat`，管理器的清理会在记录早于 `adoptionGraceMs` 后移除这样的 worktree。清理在启动时和每次创建之前运行。没有会话持久化服务时，探针报告“存在”并只记录一次日志，因此不会凭猜测清理。
 
@@ -114,7 +114,6 @@ one-shot 的 `start` 路径继承自共享的 in-process 驱动，**并不**提�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **one-shot 委派不受隔离。** 通过 one-shot 路径启动的子代理共享父级检出目录。请使用 `backgroundMode: continuable`。
 - **一个 Thread 一个仓库。** 每次委派命名单个仓库，并在 Thread 启动时解析；一个 Thread 绝不会同时看到多个仓库。
 - **不做回合并。** 分支为子代理创建后就地保留；没有任何东西把它合并回所选仓库的检出目录，也没有任何东西在子代理停止时删除它。
 - **移除需要 worktree 管理器。** 在正常运行期间本包从不移除 worktree；移除是对管理器的显式调用。

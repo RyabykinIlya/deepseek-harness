@@ -25,6 +25,8 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
+可选参数 `cwd` 选择子级的初始工作目录。相对路径以调用者当前目录解析；省略时继承该目录。调用者切换目录时，已有子级保留自己的目录。
+
 每个委派目标挂载一个实例，且每个实例的 `toolName` 必须不同。工具与其提供方同时存在、同时消失，因此同级加载顺序与提供方重新加载都不会让工具悬空。
 
 ### 最小配置
@@ -93,11 +95,11 @@ kind: "package-reference"
 
 ### 前台结算
 
-前台调用会等待 `run.result`，把每个非完成终止原因映射为错误标题，追加提供方诊断与任何保留下来的部分 assistant 文本，并在返回前始终等待 `run.dispose()`；当结果收集与 dispose（资源释放）都 reject 时，出错结果会保留两项失败。
+前台调用会等待 activation 的 `result`，把每个非完成终止原因映射为错误标题，追加提供方诊断与任何保留下来的部分 assistant 文本，并在返回前始终等待其 `dispose()`；当结果收集与 dispose（资源释放）都 reject 时，出错结果会保留两项失败。
 
 ### 后台路由
 
-一次性后台模式会注册一个归父级所有的普通 Task，其 done 通道结算启动，并在 detail 中保留终止原因与可选提供方诊断。可继续后台模式调用 `ctx.subagents.startContinuable()`，该调用在 inbox 接受时结算：子 agent 自此拥有自己的轮次，因此该调用既不等待也不收集结果。
+一次性后台模式会注册一个归父级所有的普通 Task，其 done 通道结算启动，并在 detail 中保留终止原因与可选提供方诊断。可继续后台模式以父级投递调用 `ctx.subagents.startActivation()`，该调用在 inbox 接受时结算：子 agent 自此拥有自己的轮次，因此该调用既不等待也不收集结果。
 
 ### 随上下文变化的措辞
 
@@ -138,7 +140,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-委派工具的描述使用 `running` 与 `inactive` 表达后续投递的可用状态；`inactive` 不表示任务结果。当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent)。启用的 Session 策略会添加 `provider`、`model` 与 `reasoning_effort`，以及继承和选择指引；提供方必须支持 `agentOptions`。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。声明了 `repository` 能力的提供方会添加 `repository`，它命名子 agent 所用的仓库。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的可继续委派、在它们运行时继续工作，并且仅当下一步动作依赖结果时选择前台；工具限制会同时移除其 schema 和这段指引。
+委派工具的描述使用 `running` 与 `inactive` 表达后续投递的可用状态；`inactive` 不表示任务结果。当提供方存在时，以当前实例配置的名称公开已生成的默认 [`subagent` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent)。启用的 Session 策略会添加 `provider`、`model` 与 `reasoning_effort`，以及继承和选择指引；提供方必须支持 `agentOptions`。提供方是否继承上下文会改变工具描述和提示词描述。启用后台模式会添加 `run_in_background`：可继续模式会记录其默认值为 `true`、运行时结算通知与显式前台覆盖；一次性模式会记录其默认值为 `false`，以及用 `job_output` 收集或用 `job_kill` 停止的 job id。声明了 `repository` 能力的提供方会添加 `repository`，它命名子 agent 所用的仓库。当工具在本次组装的作用域中可见时，一个 `tool:<toolName>` 系统提示词 section 会指示模型同时启动相互独立的委派、在它们运行时继续工作；工具限制会同时移除其 schema 和这段指引。
 
 #### Token 影响
 
@@ -166,21 +168,21 @@ Session 携带策略的 settings 控制实例会公开子级 LLM 选择字段与
 
 #### 模型看到什么
 
-当 `enableRunInBackground` 与 `backgroundMode: continuable` 同时设置时，模型还会读到 `tool:<toolName>` 系统提示词 section，指示它把相互独立的可继续委派一起启动，并在它们运行时继续工作。使用默认工具名 `subagent` 时，section 文本为：
+可见的委派工具共享一段指导，列出按名称排序的工具，指示模型一起启动相互独立的委派，并在它们运行时继续工作。隐藏或不可用的工具不列入其中；没有可见工具时，不输出指导。`subagent` 和 `subagent_fork` 都可见时，文本为：
 
 ##### 工具指导 section
 
 ```markdown
-Start independent subagent delegations together in one assistant message and continue useful work while they run.
+Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run.
 ```
 
 #### Token 影响
 
-每个可继续实例一个简短固定 section，只要工具在作用域内，就由每个父级请求支付。
+每个父级请求最多包含一段简短的委派指导，列出该请求可见的工具名。
 
 #### KV Cache 影响
 
-只要 section 文本与工具存在性不变，前缀就保持稳定；移除工具或更改 section 会建立不同的父级前缀。
+可见工具名不变时，前缀保持稳定；增加或移除可见工具会更改这段指导。
 
 ### 前台结果
 

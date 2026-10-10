@@ -171,7 +171,7 @@ export async function readOpenRouterJson(
     throw error
   }
   try {
-    return JSON.parse(text_) as unknown
+    return JSON.parse(text_)
   } catch (error: unknown) {
     throw new LlmError(`${url} did not answer with JSON`, codes.malformed, { cause: error })
   }

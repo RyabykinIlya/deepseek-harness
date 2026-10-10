@@ -121,11 +121,12 @@ async function harness(
 }
 
 function startThread(h: Harness, provider = 'thread', label = 'port auth') {
-  return h.ctx.subagents.startContinuable({
+  return h.ctx.subagents.startActivation({
     provider,
     label,
     request: { prompt: [{ type: 'text', text: 'do it' }], parent: h.project },
     signal: SIGNAL,
+    delivery: 'parent',
   })
 }
 

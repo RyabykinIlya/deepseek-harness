@@ -58,7 +58,7 @@ beforeEach(async () => {
   repoRoot = repository()
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { worktreeRoot, pruneOnStart: false })
-  service = ctx.worktrees
+  service = ctx.worktrees as never
 })
 
 afterEach(() => {

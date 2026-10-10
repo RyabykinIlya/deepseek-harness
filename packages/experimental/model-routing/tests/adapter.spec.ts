@@ -161,7 +161,7 @@ async function harness(over: {
     append(type: string, data: unknown): void {
       if (type === 'model-routing/decision') events.push(data as SessionEventMap['model-routing/decision'])
     },
-  } as unknown as Session
+  } as Session
   const deps: TiersAdapterDeps = {
     settings,
     dispatch: () => dispatch,

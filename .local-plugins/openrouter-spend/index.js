@@ -9,7 +9,7 @@
  * can show the same money in rubles.
  */
 
-import Schema from 'schemastery'
+import Schema from '@deepseek-ai/schemastery'
 
 /** Loader row id; matches the `insert` in cordis.patch.yml. */
 export const name = 'openrouter-spend'
