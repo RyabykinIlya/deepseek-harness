@@ -26,10 +26,14 @@ git checkout origin/master -- \
   docs/module-graph.md docs/module-graph.zh.md \
   docs/capability-seams.md docs/capability-seams.zh.md \
   docs/event-producer-consumer.md docs/event-producer-consumer.zh.md \
+  apps/cli/composition.md \
   THIRD_PARTY_NOTICES.md pnpm-lock.yaml \
   scripts/no-unknown-casts.baseline.json \
-  packages/core/session/src/known-event-types.ts
+  packages/core/session/src/known-event-types.ts \
+  packages/extensions/tool-cordis/src/api-catalog.ts
 ```
+
+`apps/cli/composition.md` и `packages/extensions/tool-cordis/src/api-catalog.ts` — тоже генераты (`gen-doc-graphs` и `gen-cordis-catalog`): их содержимое выводится из кода, поэтому свои строки в них не правятся, а возвращаются шагом 3.
 
 `.i18n.yaml` файлы перезаписываются своим гейтом, их тоже берём от апстрима.
 
@@ -62,6 +66,8 @@ pnpm run verify-translation-pairing --all --write
 ```
 
 Если генератор падает — это настоящая ошибка в коде, а не шум мержа. Разбирать до конца, не обходить.
+
+`packages/extensions/tool-cordis/src/api-catalog.ts` перегенерируется тем же `gen-cordis-catalog` (в его шапке указан `gen-cordis-api` — это совместимый вход в ту же реализацию), так что отдельной команды ему не нужно.
 
 ## 4. Проверить
 
