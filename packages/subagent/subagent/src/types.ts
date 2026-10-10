@@ -125,7 +125,8 @@ export interface SubagentRunEndInfo {
  * Start-time options supported by a registered backend. The manager checks
  * every requested option before preparing a local child or starting an external
  * execution. depthLimit controls maxDepth; the remaining flag names match
- * SubagentStartRequest fields.
+ * SubagentStartRequest fields. repository is optional; an absent value means
+ * the provider does not support it.
  */
 export interface SubagentCapabilities {
   readonly agentOptions: boolean
@@ -133,7 +134,7 @@ export interface SubagentCapabilities {
   readonly depthLimit: boolean
   readonly toolFilter: boolean
   readonly persona: boolean
-  readonly repository: boolean
+  readonly repository?: boolean
 }
 
 /**
