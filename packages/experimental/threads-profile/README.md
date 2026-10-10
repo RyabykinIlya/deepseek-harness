@@ -42,7 +42,7 @@ The Plugins page reads the bundle's [icon](icon.svg) from its `package.json.icon
 
 ### What you get
 
-The layer inserts six rows and changes nothing else:
+The layer inserts eight rows and changes nothing else:
 
 | Row | Package | Role |
 |---|---|---|
@@ -50,6 +50,8 @@ The layer inserts six rows and changes nothing else:
 | `threads` | `@deepseek-ai/dsh-experimental-threads` | The log-only `thread/*` events and the durable `threads` Session projection |
 | `subagent-thread-worktree` | `@deepseek-ai/dsh-subagent-thread-worktree` | The `thread` continuable provider: one branch and worktree per child, each composed from `project-thread` |
 | `ui-threads` | `@deepseek-ai/dsh-experimental-client-ui-threads` | The Web Thread roster and the addressed Thread chat resource |
+| `ui-project-memory` | `@deepseek-ai/dsh-experimental-client-ui-project-memory` | The Plugins-page card for the two Project memory caps |
+| `ui-settings-threads` | `@deepseek-ai/dsh-client-ui-settings-threads` | The Plugins-page card for the coordinator check-in and approval knobs and the model every Thread runs on |
 | `project-memory` | `@deepseek-ai/dsh-experimental-project-memory` | The Project memory service behind the `memory_read` and `memory_write` tools the presets mount |
 | `threads-preset` | `@deepseek-ai/dsh-experimental-threads-preset` | The `project` coordinator preset and the `project-thread` worker preset |
 
@@ -63,7 +65,7 @@ An ordinary session's tool list and its `subagent` provider are unchanged: the b
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml). Applied after the base and Web layers, it inserts the six rows above and patches nothing. Two row ids are coupled by configuration: `subagent-thread-worktree` registers the provider under `thread` and asks for `childAgentPreset: project-thread`, and `threads-preset` declares that worker id beside the `project` coordinator id, so the two must be changed together.
+The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml). Applied after the base and Web layers, it inserts the eight rows above and patches nothing. Two row ids are coupled by configuration: `subagent-thread-worktree` registers the provider under `thread` and asks for `childAgentPreset: project-thread`, and `threads-preset` declares that worker id beside the `project` coordinator id, so the two must be changed together.
 
 The UI plugin has an inert Host entry; only the Web Client loader mounts its browser entry, so a headless profile needs no Web server. `ui-threads` carries no config: a client row's config never reaches the browser, so the package's own default of `project` is what the roster matches on.
 

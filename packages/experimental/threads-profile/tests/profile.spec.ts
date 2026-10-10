@@ -83,7 +83,7 @@ describe('Threads profile bundle', () => {
     const ids = inserted.map(row => row.id)
     expect(ids).toEqual([
       'worktree-manager', 'threads', 'subagent-thread-worktree', 'ui-threads', 'ui-project-memory',
-      'project-memory', 'threads-preset',
+      'ui-settings-threads', 'project-memory', 'threads-preset',
     ])
     expect(ids).toHaveLength(new Set(ids).size)
   })
@@ -107,6 +107,9 @@ describe('Threads profile bundle', () => {
     // A client row's config never reaches the browser, so the row carries none.
     expect(byId('ui-threads')).toEqual({ id: 'ui-threads', name: '@deepseek-ai/dsh-experimental-client-ui-threads' })
     expect(byId('ui-project-memory')).toEqual({ id: 'ui-project-memory', name: '@deepseek-ai/dsh-experimental-client-ui-project-memory' })
+    // The settings card edits the preset row below through the `threads` namespace, so it
+    // belongs to this layer rather than to the Web app's own settings pages.
+    expect(byId('ui-settings-threads')).toEqual({ id: 'ui-settings-threads', name: '@deepseek-ai/dsh-client-ui-settings-threads' })
     const preset = byId('threads-preset')
     expect(preset.name).toBe('@deepseek-ai/dsh-experimental-threads-preset')
     expect(preset.config).toMatchObject({

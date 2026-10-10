@@ -1,0 +1,53 @@
+{
+  "name": "@deepseek-ai/dsh-web-search-profile",
+  "description": "The keyless search default, the two keyed search providers, and the transparent-proxy fetch range in one profile bundle",
+  "version": "0.2.1-alpha.2",
+  "icon": "./icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/web/web-search-profile"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "icon.svg",
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-web-search-brave": "workspace:*",
+    "@deepseek-ai/dsh-web-search-duckduckgo": "workspace:*",
+    "@deepseek-ai/dsh-web-search-tavily": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-web-search-brave": "workspace:*",
+    "@deepseek-ai/dsh-web-search-duckduckgo": "workspace:*",
+    "@deepseek-ai/dsh-web-search-tavily": "workspace:*",
+    "js-yaml": "^4.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
