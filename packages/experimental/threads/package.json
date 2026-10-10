@@ -81,5 +81,19 @@
     "@deepseek-ai/dsh-workspace-changes": "workspace:*",
     "@deepseek-ai/dsh-worktree-manager": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "dsh": {
+    "catalog": {
+      "service": {
+        "after": "worktree-manager",
+        "key": "threads",
+        "title": "Project Thread status and archival",
+        "mode": "service",
+        "consumers": [
+          "experimental-tool-threads"
+        ],
+        "note": "Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it."
+      }
+    }
   }
 }

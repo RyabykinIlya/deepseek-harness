@@ -12,6 +12,17 @@ import { projectCordisCatalog } from '@deepseek-ai/dsh-typert-generator'
 import { CORDIS_CATALOG_POLICY } from './gen-cordis-catalog.ts'
 import type { EventEntry, ServiceEntry } from '@deepseek-ai/dsh-typert-generator'
 import {
+  catalogChoice,
+  catalogOptionalStrings,
+  catalogScope,
+  catalogString,
+  catalogUnknownFields,
+  collectCatalogContributions,
+  spliceCatalogEntries,
+  type CatalogScope,
+  type DeclaredEntry,
+} from './catalog-declarations.ts'
+import {
   collectPackageGraph,
   escapeMermaidLabel as escLabel,
   graphNodeId as nodeId,
@@ -106,7 +117,7 @@ const GROUP_ORDER = [
   'ui',
 ]
 
-const SERVICE_ROLES: ServiceRole[] = [
+const SCRIPTED_SERVICE_ROLES: ServiceRole[] = [
   {
     key: 'cotTranslation',
     pkg: 'experimental-client-ui-cot-translation',
@@ -882,46 +893,70 @@ const SERVICE_ROLES: ServiceRole[] = [
     consumers: ['tool-cordis'],
     note: 'Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport.',
   },
-  {
-    key: 'worktrees',
-    pkg: 'worktree-manager',
-    title: 'Git worktree lifecycle and intent registry',
-    mode: 'service',
-    consumers: ['subagent-thread-worktree', 'experimental-threads', 'experimental-tool-threads'],
-    note: 'Owns worktree creation, the append-only JSONL intent registry, the state machine, and orphan reconcile. The thread provider is its only writer; the Thread domain and the diff tool read records, commits and changes. It confines a child Session by giving it a working directory, not by mediating files, so a consumer must place a Session cwd and pass the record onward.',
-  },
-  {
-    key: 'threads',
-    pkg: 'experimental-threads',
-    title: 'Project Thread status and archival',
-    mode: 'service',
-    consumers: ['experimental-tool-threads'],
-    note: 'Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it.',
-  },
-  {
-    key: 'modelRouting',
-    pkg: 'experimental-model-routing',
-    title: 'Tier-based model and provider selection',
-    mode: 'service',
-    consumers: ['experimental-tool-threads'],
-    note: 'Folds model-routing/decision into the modelRouting projection, prices what a tier\'s models would cost, and records a Thread\'s tier override. The route adapter is its direct consumer, the thread_tier tool calls setThreadTier, and the settings page reads quote and freeUsage.',
-  },
-  {
-    key: 'piAiDispatch',
-    pkg: 'llm-pi-ai',
-    title: 'Per-call pi-ai dispatch with a routing block',
-    mode: 'service',
-    consumers: ['experimental-model-routing'],
-    note: 'Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer.',
-  },
-  {
-    key: 'projectMemory',
-    pkg: 'experimental-project-memory',
-    title: 'Project-shared durable memory',
-    mode: 'service',
-    note: 'Stores a bounded entry set per Project Session on a storage domain and resolves a Thread to its Project through Session lineage. It has no in-process consumer outside its own package: agents reach it through the memory_read and memory_write tools and the browser through its Remote namespace.',
-  },
 ]
+
+/** Fields a declared `dsh.catalog.service` entry may carry. */
+const SERVICE_FIELDS = ['after', 'key', 'title', 'mode', 'implementations', 'consumers', 'companions', 'note'] as const
+
+/**
+ * Read the service roles workspace packages declare under `dsh.catalog.service`.
+ *
+ * The owning package is the declaring manifest's own name, so a declaration
+ * states only what the manifest cannot: which service the package owns and how
+ * the graphs describe it.
+ * @returns One declared role per contributing package, each with its anchor.
+ */
+function declaredServiceRoles(): DeclaredEntry<ServiceRole>[] {
+  const declared: DeclaredEntry<ServiceRole>[] = []
+  for (const contribution of collectCatalogContributions(root, 'gen-doc-graphs')) {
+    const scope = catalogScope(contribution, 'service', 'gen-doc-graphs')
+    if (scope === undefined) continue
+    catalogUnknownFields(scope, SERVICE_FIELDS)
+    declared.push({
+      after: catalogString(scope, 'after'),
+      entry: {
+        key: catalogString(scope, 'key'),
+        pkg: contribution.short,
+        title: catalogString(scope, 'title'),
+        mode: catalogChoice(scope, 'mode', ['core', 'seam', 'bundle', 'service'] as const),
+        ...listField('implementations', scope),
+        ...listField('consumers', scope),
+        ...listField('companions', scope),
+        note: catalogString(scope, 'note'),
+      },
+    })
+  }
+  return declared
+}
+
+/**
+ * Spread an optional declared role field.
+ *
+ * An absent list is omitted rather than defaulted, so a declared role and a
+ * literal one carrying the same fields render the same row.
+ * @param key - the `ServiceRole` list field.
+ * @param scope - the sub-object being read.
+ * @returns A single-field object, or an empty one when the field is absent.
+ */
+function listField(
+  key: 'implementations' | 'consumers' | 'companions',
+  scope: CatalogScope,
+): { implementations?: string[]; consumers?: string[]; companions?: string[] } {
+  const values = catalogOptionalStrings(scope, key)
+  if (values === undefined) return {}
+  return { [key]: values }
+}
+
+/**
+ * Every service role in render order: the ones this generator states, with the
+ * ones workspace packages declare placed after the entry each names.
+ */
+const SERVICE_ROLES: ServiceRole[] = spliceCatalogEntries({
+  gate: 'gen-doc-graphs',
+  scripted: SCRIPTED_SERVICE_ROLES,
+  declared: declaredServiceRoles(),
+  identities: role => [role.key, role.pkg],
+})
 
 function generatedHeader(title: string): string[] {
   return [
