@@ -1,4 +1,4 @@
-import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, collapseDegenerateRepetition, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import {
   SessionFormatError,
@@ -82,7 +82,13 @@ function assertPayload(
     if (timed.length > 0) {
       const message = releasedV2Record(data['message'], `assistant/message ${event.seq} message`)
       const content = data['interrupted'] === true ? assembler.interruptedBlocks() : assembler.blocks()
-      if (!deepEqualJson(message['content'], content)) {
+      // Up to collapse: a released writer image stores the raw repeated text
+      // while the reassembled stream yields the collapsed content;
+      // assertReleasedPayloadSemantics above validated the stored content blocks.
+      if (!deepEqualJson(
+        collapseDegenerateRepetition(message['content'] as never),
+        collapseDegenerateRepetition(content),
+      )) {
         throw new SessionFormatError(`assistant/message ${event.seq} message content disagrees with its embedded stream`)
       }
       if (!deepEqualJson(data['usage'], assembler.usage)) {

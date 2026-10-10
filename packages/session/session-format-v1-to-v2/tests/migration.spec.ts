@@ -799,6 +799,51 @@ describe('sessionFormatV1ToV2', () => {
     expect(() => migrateV1ToV2(source)).toThrow(/message content disagrees with its embedded stream/)
   })
 
+  it('accepts a v1 message whose content agrees with its embedded stream up to collapse', () => {
+    const lifecycle = (content: readonly SessionFormatJsonObject[]): SessionFormatArtifact => ({
+      header: {
+        version: 1,
+        id: 'v1-collapse',
+        createdAt: 1,
+        isSeeded: false,
+        delegationDepth: 0,
+      },
+      inheritedEventCount: 0,
+      events: [
+        event('turn/start', 0, 100, { turn: 1 }),
+        event('step/start', 1, 101, { turn: 1, step: 1 }),
+        event('assistant/chunk', 2, 110, {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'text-delta', index: 0, text: 'abababab' },
+        }),
+        event('assistant/chunk', 3, 120, {
+          turn: 1,
+          step: 1,
+          chunk: { type: 'finish', reason: { kind: 'stop' } },
+        }),
+        {
+          ...event('assistant/message', 4, 121, {
+            turn: 1,
+            step: 1,
+            message: { ...message, content },
+          }),
+          sourceEventSeqs: [2, 3],
+          surfaceOp: 'append',
+        },
+        event('step/end', 5, 122, { turn: 1, step: 1 }),
+        event('turn/end', 6, 123, { turn: 1, reason: { kind: 'completed' } }),
+      ],
+    })
+
+    // A historical artifact stores the raw repeated text beside its stream.
+    expect(migrateV1ToV2(lifecycle([{ type: 'text', text: 'abababab' }]))).toBeTruthy()
+    // A collapsed artifact validates the same way.
+    expect(migrateV1ToV2(lifecycle([{ type: 'text', text: 'ab' }]))).toBeTruthy()
+    expect(() => migrateV1ToV2(lifecycle([{ type: 'text', text: 'cdcdcdcd' }])))
+      .toThrow(/message content disagrees with its embedded stream/)
+  })
+
   it('refuses an undeclared reference into the last consumed chunk of a failed attempt', () => {
     const source: SessionFormatArtifact = {
       header: {

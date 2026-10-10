@@ -24,6 +24,80 @@ interface PartialBlock {
 }
 
 /**
+ * Minimum repetition count that collapses degenerate text repetition.
+ * A fixed assembly invariant, not a Config field: assembly semantics are
+ * durable-log semantics shared by writer and verifier, so a
+ * deployment-configurable threshold would break model-visible⟺logged
+ * reconstruction and migration verification across builds.
+ */
+const DEGENERATE_REPEAT_MIN = 2
+
+/**
+ * Shortest minimal unit the self-repetition heuristic collapses.
+ * A one-character unit is excluded because runs of a single character are
+ * normally intentional formatting — a Markdown rule `---`, a table delimiter,
+ * `***` — while degenerate repetition is long text. The reasoning match needs
+ * no such floor: text mirroring the message's own reasoning is direct evidence
+ * of the provider bug, not a heuristic.
+ */
+const MIN_SELF_REPEAT_UNIT = 2
+
+/** Smallest non-empty prefix `u` of `text` with `text` equal to `u` repeated. */
+function minimalTextUnit(text: string): string {
+  for (let size = 1; size < text.length; size += 1) {
+    if (text.length % size !== 0) continue
+    const unit = text.slice(0, size)
+    if (unit.repeat(text.length / size) === text) return unit
+  }
+  return text
+}
+
+/**
+ * Collapse provider-generated degenerate text repetition into one copy.
+ *
+ * Providers occasionally stream a message's own reasoning text verbatim N times
+ * before continuing with a valid tool call, and bill the full duplicated output.
+ * For each `text` block with text `t` and `r` the concatenation of every
+ * `reasoning` block's text in `blocks`: when `r` is non-empty and `t` equals `r`
+ * repeated `j >= 1` times, `t` becomes `r` for `j >= 2` and stays verbatim for
+ * `j = 1`; otherwise `t` collapses to its minimal non-empty unit when that unit
+ * is at least two characters and repeats `k >= 2` times, and stays unchanged
+ * when it does not. Detection
+ * prefers the reasoning match, which keeps a verbatim single copy of even a
+ * reducible reasoning text intact — text and reasoning mirror each other — and
+ * makes the collapse idempotent: a collapsed result is never itself exact
+ * repetition except that kept verbatim copy.
+ *
+ * Only `text` blocks change; reasoning, tool-call, image, file, and all other
+ * blocks pass through by reference, as does empty or whitespace-only text.
+ *
+ * @param blocks - one message's content blocks.
+ * @returns one block per input block, in the same order; degenerate `text`
+ *   repetition replaced by one copy and every other block passed through
+ *   unchanged.
+ */
+export function collapseDegenerateRepetition(blocks: readonly ContentBlock[]): ContentBlock[] {
+  const reasoning = blocks.reduce(
+    (text, block) => block.type === 'reasoning' ? text + block.text : text,
+    '',
+  )
+  return blocks.map((block) => {
+    if (block.type !== 'text' || block.text.trim() === '') return block
+    const { text } = block
+    if (reasoning !== '' && text.length % reasoning.length === 0
+      && text === reasoning.repeat(text.length / reasoning.length)) {
+      return text.length >= reasoning.length * DEGENERATE_REPEAT_MIN
+        ? { type: 'text', text: reasoning }
+        : block
+    }
+    const unit = minimalTextUnit(text)
+    return unit.length >= MIN_SELF_REPEAT_UNIT && text.length >= unit.length * DEGENERATE_REPEAT_MIN
+      ? { type: 'text', text: unit }
+      : block
+  })
+}
+
+/**
  * Incrementally assembles raw {@link StreamChunk}s into complete
  * {@link ContentBlock}s and a final assistant {@link Message}.
  *
@@ -137,7 +211,7 @@ export class BlockAssembler {
     const kept = this.finish.kind === 'max-tokens'
       ? all.map(block => block.type !== 'tool-call')
       : undefined
-    const blocks = kept === undefined ? all : all.filter((_, position) => kept[position])
+    const blocks = collapseDegenerateRepetition(kept === undefined ? all : all.filter((_, position) => kept[position]))
     const envelope = this._replayState
     if (envelope?.blocks === undefined) return { blocks, replay: envelope }
     if (envelope.blocks.length !== all.length) return { blocks, replay: undefined }
@@ -152,8 +226,10 @@ export class BlockAssembler {
   /**
    * Assemble all blocks seen so far, in stream order.
    * @returns one block per seen index, except that max-token truncation drops
-   *   tool calls that cannot be executed safely; an open block assembles from
-   *   its accumulated deltas (an unknown block type never closed by `block-end` throws).
+   *   tool calls that cannot be executed safely and
+   *   {@link collapseDegenerateRepetition} shrinks degenerate text repetition;
+   *   an open block assembles from its accumulated deltas (an unknown block
+   *   type never closed by `block-end` throws).
    */
   blocks(): ContentBlock[] {
     return this.assembled().blocks
@@ -161,13 +237,14 @@ export class BlockAssembler {
 
   /**
    * Assemble the prefix an interrupted stream can safely finalize: closed and
-   * open text/reasoning blocks with non-whitespace content, in stream order.
+   * open text/reasoning blocks with non-whitespace content, in stream order,
+   * with degenerate text repetition collapsed as in {@link blocks}.
    * Tool calls are omitted because interruption precedes dispatch; retaining
    * one would require a fabricated result. Open unknown blocks are also omitted.
    * @returns the kept blocks; empty when nothing streamed before the interruption.
    */
   interruptedBlocks(): ContentBlock[] {
-    return this.order
+    return collapseDegenerateRepetition(this.order
       .map((index) => {
         const partial = this.mustGet(index)
         const type = partial.block?.type ?? partial.blockType
@@ -175,7 +252,7 @@ export class BlockAssembler {
         return this.assemble(partial, index)
       })
       .filter((block): block is ContentBlock =>
-        (block?.type === 'text' || block?.type === 'reasoning') && block.text.trim() !== '')
+        (block?.type === 'text' || block?.type === 'reasoning') && block.text.trim() !== ''))
   }
 
   /** Usage from the `usage` chunk; undefined until one arrives. */

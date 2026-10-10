@@ -27,7 +27,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { constants, createZstdCompress } from 'node:zlib'
 import { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, collapseDegenerateRepetition, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import { SessionFormatError } from '@deepseek-ai/dsh-session-format'
 import type {
   SessionFormatArtifact,
@@ -564,7 +564,12 @@ function assertCurrentAssistantStreams(events: readonly SessionEvent[]): void {
     }
     if (event.type === 'assistant/attempt' || timed.length === 0) continue
     const content = event.data.interrupted === true ? assembler.interruptedBlocks() : assembler.blocks()
-    if (!isDeepStrictEqual(event.data.message.content, content)) {
+    // Up to collapse: historical generations store the raw repeated text beside
+    // its collapsed reassembly, new ones store the collapsed content.
+    if (!isDeepStrictEqual(
+      collapseDegenerateRepetition(event.data.message.content),
+      collapseDegenerateRepetition(content),
+    )) {
       throw new Error(`seed assistant/message at index ${index} content disagrees with its embedded stream`)
     }
     if (!isDeepStrictEqual(event.data.usage, assembler.usage)) {

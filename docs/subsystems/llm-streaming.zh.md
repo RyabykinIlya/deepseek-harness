@@ -395,13 +395,16 @@ declare class BlockAssembler {
   /**
    * Assemble all blocks seen so far, in stream order.
    * @returns one block per seen index, except that max-token truncation drops
-   *   tool calls that cannot be executed safely; an open block assembles from
-   *   its accumulated deltas (an unknown block type never closed by `block-end` throws).
+   *   tool calls that cannot be executed safely and
+   *   {@link collapseDegenerateRepetition} shrinks degenerate text repetition;
+   *   an open block assembles from its accumulated deltas (an unknown block
+   *   type never closed by `block-end` throws).
    */
   blocks(): ContentBlock[];
   /**
    * Assemble the prefix an interrupted stream can safely finalize: closed and
-   * open text/reasoning blocks with non-whitespace content, in stream order.
+   * open text/reasoning blocks with non-whitespace content, in stream order,
+   * with degenerate text repetition collapsed as in {@link blocks}.
    * Tool calls are omitted because interruption precedes dispatch; retaining
    * one would require a fabricated result. Open unknown blocks are also omitted.
    * @returns the kept blocks; empty when nothing streamed before the interruption.

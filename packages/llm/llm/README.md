@@ -118,6 +118,7 @@ File detection reads current content, including tool-role result content, on eve
 - **File projection is unconditional** — no provider receives file bytes; every route gets one deterministic handle line per `FileBlock`, and the model reads the saved copy with its file tools on demand.
 - **Protocol ordering** — `usage` precedes `finish`, tool arguments stay raw JSON strings, and nothing follows the terminal `finish`.
 - **Registry mutations are atomic** — route and directory registration validates the whole candidate set before anything moves, so a refused change leaves the previous state serving.
+- **Degenerate text repetition collapses at assembly** — a committed `text` block that is exactly two or more copies of the message's reasoning text, or of its own repeated unit of two or more characters, commits one copy, while the embedded stream records keep the raw provider deltas as evidence.
 
 </details>
 

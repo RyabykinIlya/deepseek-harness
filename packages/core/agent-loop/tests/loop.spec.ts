@@ -182,6 +182,40 @@ describe('agent loop', () => {
     })
   })
 
+  it('settles collapsed content while the embedded stream keeps the raw repeated deltas', async () => {
+    const chunks: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'reasoning' },
+      { type: 'reasoning-delta', index: 0, text: 'plan' },
+      { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'plan' } },
+      { type: 'block-start', index: 1, blockType: 'text' },
+      { type: 'text-delta', index: 1, text: 'planplanplanplan' },
+      { type: 'block-end', index: 1, block: { type: 'text', text: 'planplanplanplan' } },
+      { type: 'usage', usage: { inputTokens: 1, outputTokens: 2 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const ctx = await harness(new MockAdapter([chunks]))
+    const agent = await ctx.agentLoop.create(SessionId('degenerate-repetition-settlement'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+
+    send(agent, 'repeat yourself')
+    await waitForIdle(ctx, agent)
+
+    // The settled message commits one copy of the repeated text while the
+    // embedded stream keeps the raw deltas as evidence.
+    const message = agent.session.snapshotEvents().find(event => event.type === 'assistant/message')
+    expect(message?.type === 'assistant/message' ? message.data.message.content : undefined).toEqual([
+      { type: 'reasoning', text: 'plan' },
+      { type: 'text', text: 'plan' },
+    ])
+    expect(message?.type === 'assistant/message'
+      ? expandAssistantStream(message.data.stream).some(member => (
+        member.chunk.type === 'text-delta' && member.chunk.text === 'planplanplanplan'
+      ))
+      : false).toBe(true)
+  })
+
   it('settles a failed attempt before retrying with a new dense attempt', async () => {
     const failed: StreamChunk[] = [
       { type: 'usage', usage: { inputTokens: 1, outputTokens: 0 } },

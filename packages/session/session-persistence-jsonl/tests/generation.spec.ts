@@ -578,6 +578,31 @@ describe('JSONL immutable generation publication', () => {
     })))).rejects.toThrow(/replay state disagrees/)
   })
 
+  it('verifies assistant message content up to degenerate-repetition collapse', async () => {
+    const root = await tempRoot()
+    const path = generationPath(root, SESSION_FORMAT_VERSION, 'none')
+    const verify = async (events: readonly SessionFormatEvent[]) => {
+      await writeFile(path, line(header(SESSION_FORMAT_VERSION)) + events.map(line).join(''))
+      return verifyJsonlCurrentGeneration(path, 'none', 'generation-test', events.length)
+    }
+    // A historical generation stores the raw repeated text beside its stream
+    // while reassembling that stream yields the collapsed content.
+    const rawStream: SessionFormatJsonValue = [
+      { type: 'text-chunks', time0: 3, index: 0, dt: [], texts: ['abababab'] },
+      { type: 'chunk', time: 4, chunk: { type: 'usage', usage: assistantUsage } },
+      { type: 'chunk', time: 5, chunk: { type: 'finish', reason: { kind: 'stop' }, replayState: assistantReplayState } },
+    ]
+    expect((await verify(assistantLifecycle('assistant/message', assistantData({
+      content: [{ type: 'text', text: 'abababab' }], stream: rawStream,
+    })))).bytes).toBeGreaterThan(0)
+    expect((await verify(assistantLifecycle('assistant/message', assistantData({
+      content: [{ type: 'text', text: 'ab' }], stream: rawStream,
+    })))).bytes).toBeGreaterThan(0)
+    await expect(verify(assistantLifecycle('assistant/message', assistantData({
+      content: [{ type: 'text', text: 'cdcdcdcd' }], stream: rawStream,
+    })))).rejects.toThrow(/content disagrees/)
+  })
+
   it('accepts an identical publication winner and rejects different bytes', async () => {
     const identicalRoot = await tempRoot()
     const identical = options(identicalRoot, 'none', streamingAdapter())
