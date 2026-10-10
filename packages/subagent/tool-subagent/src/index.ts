@@ -547,7 +547,7 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
       assertSubagentProviderConfiguration(subagentProvider)
       const wording = providerWording(subagentProvider.inheritsParentContext)
       const isolatesForeground = subagentProvider.isolatesContinuableCwd === true
-      const repositorySupported = subagentProvider.capabilities.repository
+      const repositorySupported = subagentProvider.capabilities.repository ?? false
       const providerRouteDefaults = subagentProvider.agentRouteDefaults
       const selectionDescription = providerRouteDefaults !== undefined
         ? ' Child LLM selection is optional. Omit `provider`, `model`, and `reasoning_effort` to use configured child defaults and this provider\'s route defaults. Supply `provider` and `model` together after using `list_subagent_models` to inspect advertised routes and efforts. Changing the effective route without naming an effort uses the selected model\'s default effort.'

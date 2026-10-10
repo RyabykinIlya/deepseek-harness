@@ -51,7 +51,7 @@ export function startPreparedActivation(request: SubagentStartRequest, prepared:
   const provider = `prepared-${randomUUID()}`
   const unregister = ctx.get('subagents')!.registerProvider({
     name: provider,
-    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository: false },
+    capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true },
     inheritsParentContext: prepared.seed !== undefined,
     prepareContinuable: () => Promise.resolve(prepared),
   })

@@ -13,7 +13,6 @@ import { subagentManager } from './manager-internals.ts'
 
 const capabilities: SubagentCapabilities = {
   agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false,
-  repository: false,
 }
 
 async function setup(start: (request: SubagentStartRequest) => Promise<SubagentRun>) {

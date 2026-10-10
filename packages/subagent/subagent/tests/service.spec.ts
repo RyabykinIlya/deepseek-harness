@@ -35,7 +35,6 @@ const ALL_CAPS: SubagentCapabilities = {
   depthLimit: true,
   toolFilter: true,
   persona: true,
-  repository: false,
 }
 const NO_CAPS: SubagentCapabilities = {
   agentOptions: false,
@@ -43,7 +42,6 @@ const NO_CAPS: SubagentCapabilities = {
   depthLimit: false,
   toolFilter: false,
   persona: false,
-  repository: false,
 }
 
 function baseRequest(overrides: Partial<SubagentStartRequest> = {}): SubagentStartRequest {
