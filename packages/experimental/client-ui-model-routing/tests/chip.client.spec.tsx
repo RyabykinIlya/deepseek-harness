@@ -20,15 +20,45 @@ const t = ((key: string, params?: Record<string, unknown>) => {
   })
 }) as ModelRoutingChipProps['t']
 
+/** Stub the projection seat: a key-addressed table of whole values. */
+function projections(values: Record<string, unknown>): ModelRoutingChipProps['useProjection'] {
+  return (key: string) => values[key]
+}
+
+// The chip reads one projection and its own dictionary; every other framework
+// seat is unreachable from this isolated render.
+const unusedHook = (): never => { throw new Error('ModelRoutingChip does not consume this framework seat') }
+const unusedActions: ModelRoutingChipProps['inputActions'] = {
+  captureInsertion: unusedHook,
+  insertText: unusedHook,
+  setDraft: unusedHook,
+  persistDraft: unusedHook,
+  addAttachments: unusedHook,
+  removeAttachment: unusedHook,
+  pruneAttachments: unusedHook,
+  submit: unusedHook,
+}
+
 /** Render the chip over one published routing value and one selection value. */
 function chip(view: ModelRoutingView | null | undefined, selection?: ModelSelectionProjection | null) {
-  const useProjection = ((key: string) => key === 'modelRouting' ? view : selection) as unknown as ModelRoutingChipProps['useProjection']
-  return render(
-    <ModelRoutingChip
-      {...({ useProjection } as unknown as ModelRoutingChipProps)}
-      t={t}
-    />,
-  )
+  const props: ModelRoutingChipProps = {
+    useProjection: projections({ modelRouting: view, modelSelection: selection }),
+    useSession: unusedHook,
+    sessionId: 's1' as ModelRoutingChipProps['sessionId'],
+    useConversation: unusedHook,
+    useInput: unusedHook,
+    inputActions: unusedActions,
+    useTrajectory: unusedHook,
+    useChat: unusedHook,
+    usePanelInfo: unusedHook,
+    useSessions: unusedHook,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
+    useResource: unusedHook,
+    useWorkspaces: unusedHook,
+    t,
+  }
+  return render(<ModelRoutingChip {...props} />)
 }
 
 const DECIDED: ModelRoutingView = {

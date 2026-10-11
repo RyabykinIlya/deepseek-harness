@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import type { ReplayEnvelope, RequestMessage } from '@deepseek-ai/dsh-llm'
 import { readRoutedReplay, unwrapHistory, wrapReplay } from '../src/replay.ts'
 import type { RoutedReplayResponse } from '../src/replay.ts'
@@ -10,11 +11,10 @@ const INNER: ReplayEnvelope = {
 
 /** A durable assistant message as the outer route recorded it. */
 function assistant(replayState: unknown, provider = 'tiers', model = 'flash'): RequestMessage {
-  return {
-    role: 'assistant',
+  return createAssistantMessage({
     content: [{ type: 'text', text: 'done' }],
     source: { provider, model, ...replayState === undefined ? {} : { replayState } },
-  } as unknown as RequestMessage
+  })
 }
 
 describe('wrapReplay and readRoutedReplay', () => {
@@ -70,7 +70,7 @@ describe('unwrapHistory', () => {
 
   it('returns another route\'s messages as the same objects', () => {
     const foreign = assistant(wrapReplay(INNER, 'openrouter', 'deepseek/deepseek-v4-flash'), 'openrouter', 'deepseek/deepseek-v4-flash')
-    const user = { role: 'user', content: [{ type: 'text', text: 'hi' }] } as unknown as RequestMessage
+    const user: RequestMessage = { role: 'user', content: [{ type: 'text', text: 'hi' }] }
     const out = unwrapHistory([foreign, user], 'tiers')
     expect(out[0]).toBe(foreign)
     expect(out[1]).toBe(user)

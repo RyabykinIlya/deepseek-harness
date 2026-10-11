@@ -5,17 +5,26 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { ModelRoutingCard, type ModelRoutingCardProps } from '../src/client/ModelRoutingCard.tsx'
-import type { ModelRoutingCardFace, ModelRoutingCardState, TierRow } from '../src/client/model-routing-card-controller.ts'
+import type {
+  ModelRoutingCardFace, ModelRoutingCardState, TierField, TierRow,
+} from '../src/client/model-routing-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-const t = (key: keyof typeof en, params?: Record<string, unknown>) =>
-  en[key].replace(/\{(\w+)\}/g, (_match, name: string) => {
+const DICTIONARY: Readonly<Record<string, string>> = en
+
+const t: ModelRoutingCardProps['t'] = (key, params) =>
+  (DICTIONARY[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => {
     const value = params?.[name]
     return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
   })
+
+// The card reads only its own namespace and store; the framework seats below
+// are unreachable from this isolated render.
+const unused = (): never => { throw new Error('ModelRoutingCard does not consume framework hooks') }
 
 /** One tier row, as the controller's projection would hand it to the card. */
 function tierRow(over: Partial<TierRow> = {}): TierRow {
@@ -67,21 +76,14 @@ function cardState(over: Partial<ModelRoutingCardState> = {}): ModelRoutingCardS
   }
 }
 
-/**
- * Render the card over a staged state, with every face action wired to update
- * the store the way the real controller would — a spy alone would leave the
- * controlled inputs showing their original value after every `fireEvent`,
- * which would hide exactly the staging bugs these tests exist to catch.
- */
-function renderCard(state: Partial<ModelRoutingCardState> = {}): ModelRoutingCardFace {
-  const store = createSnapshotStore(cardState(state))
-  const face: ModelRoutingCardFace = {
-    hooks: { modelRoutingCard: store },
+/** The card's actions, each wired to update the store the way the real controller would. */
+function cardActions(store: SnapshotStore<ModelRoutingCardState>): Omit<ModelRoutingCardFace, 'hooks'> {
+  return {
     setView: vi.fn(),
     selectTier: vi.fn((index: number) => { store.set({ ...store.getSnapshot(), selectedTier: index }) }),
     setFilter: vi.fn(),
     toggleModel: vi.fn(),
-    setTierField: vi.fn((index: number, field: string, value: string) => {
+    setTierField: vi.fn((index: number, field: TierField, value: string) => {
       const snapshot = store.getSnapshot()
       if (field !== 'contextWindow' && field !== 'maxTokens') return
       const textField = field === 'contextWindow' ? 'contextWindowText' : 'maxTokensText'
@@ -103,14 +105,42 @@ function renderCard(state: Partial<ModelRoutingCardState> = {}): ModelRoutingCar
     save: vi.fn(),
     discard: vi.fn(),
   }
-  const props = {
-    ...face,
-    view: 'full' as const,
+}
+
+/**
+ * The composed props the Plugins page hands the card: the same action
+ * instances it exposes as the face, plus the view the page asks for.
+ */
+function cardProps(
+  store: SnapshotStore<ModelRoutingCardState>,
+  actions: Omit<ModelRoutingCardFace, 'hooks'>,
+  view: 'summary' | 'page',
+): ModelRoutingCardProps {
+  return {
+    ...actions,
+    view,
     t,
     useModelRoutingCard: bindSnapshotSelector(store),
-  } as unknown as ModelRoutingCardProps
-  render(<ModelRoutingCard {...props} />)
-  return face
+    usePanelInfo: unused,
+    useSessions: unused,
+    useSessionStatus: unused,
+    useSessionRetainInfo: unused,
+    useResource: unused,
+    useWorkspaces: unused,
+  }
+}
+
+/**
+ * Render the card over a staged state, with every face action wired to update
+ * the store the way the real controller would — a spy alone would leave the
+ * controlled inputs showing their original value after every `fireEvent`,
+ * which would hide exactly the staging bugs these tests exist to catch.
+ */
+function renderCard(state: Partial<ModelRoutingCardState> = {}): ModelRoutingCardFace {
+  const store = createSnapshotStore(cardState(state))
+  const actions = cardActions(store)
+  render(<ModelRoutingCard {...cardProps(store, actions, 'page')} />)
+  return { hooks: { modelRoutingCard: store }, ...actions }
 }
 
 describe('ModelRoutingCard', () => {
@@ -180,13 +210,7 @@ describe('ModelRoutingCard', () => {
 
   it('renders only the one-liner in the summary view', () => {
     const store = createSnapshotStore(cardState())
-    const props = {
-      hooks: { modelRoutingCard: store },
-      view: 'summary' as const,
-      t,
-      useModelRoutingCard: bindSnapshotSelector(store),
-    } as unknown as ModelRoutingCardProps
-    render(<ModelRoutingCard {...props} />)
+    render(<ModelRoutingCard {...cardProps(store, cardActions(store), 'summary')} />)
     expect(document.body.textContent).toBe('1 tiers, 1 models')
     expect(screen.queryByLabelText(en.trustedUnknownProviders)).toBeNull()
   })

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type {
   OpenRouterCatalogEntry,
   OpenRouterEndpoint,
@@ -115,8 +115,10 @@ async function harness(over: {
   const sent: Dispatched[] = []
   const events: SessionEventMap['model-routing/decision'][] = []
   const records: RoutingDiagnosticsRecord[] = []
-  const record: Harness = {
-    adapter: undefined as unknown as TiersAdapter,
+  // Built before the adapter so the dependency closures below can read the same
+  // mutable record the case drives; `adapter` is added by the spread that
+  // completes the harness once those closures exist.
+  const base: Omit<Harness, 'adapter'> = {
     sent,
     events,
     records,
@@ -125,12 +127,12 @@ async function harness(over: {
     judge: { reply: undefined },
     freeRemaining: 1000,
     origin: undefined,
-    warnings: [] as string[],
+    warnings: [],
     catalogEntries: over.catalog ?? [],
     catalogFails: over.catalogFails ?? false,
     innerUnknown: new Set(over.innerUnknown ?? []),
   }
-  for (const model of Object.keys(endpoints)) record.endpoints[model] = endpoints[model]!
+  for (const model of Object.keys(endpoints)) base.endpoints[model] = endpoints[model]!
 
   const cache = new EndpointsCache(async (model) => {
     const list = record.endpoints[model]
@@ -197,13 +199,15 @@ async function harness(over: {
       record.judge.reply ??= { model: 'typesafe/jev-1.13', latencyMs: 0, error: message }
     },
   }
-  record.adapter = new TiersAdapter(deps, {
-    routeName: 'tiers',
-    routeLabel: 'Tiers',
-    innerRoute: 'openrouter',
-    decisionsUrl: 'https://openrouter.ai/api/alpha/decisions',
-  })
-  record.clock.now = clock
+  const record: Harness = {
+    ...base,
+    adapter: new TiersAdapter(deps, {
+      routeName: 'tiers',
+      routeLabel: 'Tiers',
+      innerRoute: 'openrouter',
+      decisionsUrl: 'https://openrouter.ai/api/alpha/decisions',
+    }),
+  }
   return record
 }
 
@@ -782,8 +786,7 @@ describe('TiersAdapter request shaping', () => {
 
   it('rewrites its own assistant messages for the inner route', async () => {
     const h = await harness()
-    const assistant: RequestMessage = {
-      role: 'assistant',
+    const assistant = createAssistantMessage({
       content: [{ type: 'text', text: 'done' }],
       source: {
         provider: 'tiers',
@@ -799,7 +802,7 @@ describe('TiersAdapter request shaping', () => {
           blocks: [],
         },
       },
-    } as unknown as RequestMessage
+    })
     await run(h.adapter, { messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }, assistant] })
     const inner = h.sent[0]?.options.messages[1] as { source: { provider: string; model: string } }
     expect(inner.source.provider).toBe('openrouter')

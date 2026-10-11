@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import {
+  createAssistantMessage, createToolResultMessage, createUserMessage, ToolCallId,
+} from '@deepseek-ai/dsh-llm'
 import type { RequestMessage } from '@deepseek-ai/dsh-llm'
+import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { Config, readSettings } from '../src/config.ts'
 import type { RoutingSettings } from '../src/config.ts'
 import { askJudge, judgeQuestions, judgeState, tierFromVerdict } from '../src/judge.ts'
@@ -8,6 +14,15 @@ import type { JudgeVerdict } from '../src/types.ts'
 import { decisionOf } from './fixtures.ts'
 
 const MODEL = 'typesafe/jev-1.13'
+
+/** One stored image reference, as a user message that carries no text at all. */
+const IMAGE: ImageAttachmentRef = {
+  attachmentId: AttachmentId('judge-image'),
+  mediaType: 'image/png',
+  bytes: 68,
+  width: 1,
+  height: 1,
+}
 
 function settings(over: Record<string, unknown> = {}): RoutingSettings {
   return readSettings(Config({
@@ -186,7 +201,7 @@ describe('judgeState', () => {
   it('has nothing to judge without user text', () => {
     expect(judgeState([], 3, 12000)).toBeUndefined()
     const assistantOnly: readonly RequestMessage[] = [
-      { role: 'assistant', content: [{ type: 'text', text: 'hi' }] } as unknown as RequestMessage,
+      createAssistantMessage({ content: [{ type: 'text', text: 'hi' }], source: { provider: 'tiers', model: 'flash' } }),
     ]
     expect(judgeState(assistantOnly, 3, 12000)).toBeUndefined()
   })
@@ -194,10 +209,13 @@ describe('judgeState', () => {
   it('collects the latest user message, earlier ones, and the compaction checkpoint', () => {
     const history: readonly RequestMessage[] = [
       { role: 'user', content: [{ type: 'text', text: 'first ask' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] } as unknown as RequestMessage,
+      createAssistantMessage({ content: [{ type: 'text', text: 'answer' }], source: { provider: 'tiers', model: 'flash' } }),
       { role: 'user', content: [{ type: 'text', text: 'second ask' }] },
-      { role: 'tool', content: [{ type: 'text', text: 'tool output' }] } as unknown as RequestMessage,
-      { role: 'user', content: [{ type: 'text', text: 'checkpoint' }], source: { kind: 'compact-checkpoint' } } as unknown as RequestMessage,
+      createToolResultMessage({ callId: ToolCallId('judge-tool-1'), content: [{ type: 'text', text: 'tool output' }], isError: false }),
+      createUserMessage({
+        content: [{ type: 'text', text: 'checkpoint' }],
+        source: compactCheckpointSource(CompactionId('judge-checkpoint')),
+      }),
       { role: 'user', content: [{ type: 'text', text: 'third ask' }] },
     ]
     expect(judgeState(history, 3, 12000)).toEqual({
@@ -221,7 +239,10 @@ describe('judgeState', () => {
     const long = 'x'.repeat(200)
     const history: readonly RequestMessage[] = [
       { role: 'user', content: [{ type: 'text', text: 'old' }] },
-      { role: 'user', content: [{ type: 'text', text: long }], source: { kind: 'compact-checkpoint' } } as unknown as RequestMessage,
+      createUserMessage({
+        content: [{ type: 'text', text: long }],
+        source: compactCheckpointSource(CompactionId('judge-long-checkpoint')),
+      }),
       { role: 'user', content: [{ type: 'text', text: long }] },
     ]
     const state = judgeState(history, 2, 100)!
@@ -233,7 +254,7 @@ describe('judgeState', () => {
   it('joins several text blocks and skips a message that carries none', () => {
     const history: readonly RequestMessage[] = [
       { role: 'user', content: [{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }] },
-      { role: 'user', content: [{ type: 'image', imageId: 'img' }] } as unknown as RequestMessage,
+      { role: 'user', content: [{ type: 'image', attachment: IMAGE }] },
       { role: 'user', content: [] },
     ]
     expect(judgeState(history, 3, 12000)).toEqual({ latest_user_message: 'one\ntwo' })

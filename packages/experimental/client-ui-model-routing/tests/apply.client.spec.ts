@@ -44,7 +44,7 @@ async function bench(served?: string[], mountNamespace = true) {
   // double accepts a mount and records the namespaces the page will then call.
   const mounted: string[] = []
   remote.$mount = (contribution) => {
-    mounted.push(Object.keys(contribution as unknown as Record<string, unknown>).join(','))
+    mounted.push(Object.keys(contribution).join(','))
     return Promise.resolve(async () => { mounted.length = 0 })
   }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
