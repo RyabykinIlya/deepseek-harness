@@ -33,6 +33,11 @@ afterEach(() => {
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
+const SESSION_ID = 's1' as ChatNodeViewProps['sessionId']
+
+// The message-item arms these fixtures render consume neither the session
+// projection seats nor the keyed Turn hooks; a call would be a defect.
+const unused = (): never => { throw new Error('this MessageItem arm does not consume framework hooks') }
 
 // Recency scans the whole transcript; a detached fixture is its own latest row.
 const useDetachedChat: ChatNodeViewProps['useChat'] = bindSnapshotSelector({
@@ -47,6 +52,13 @@ interface MessageItemProps {
   readonly skillNames?: readonly string[]
   readonly restoreAt?: ChatNodeViewProps['restoreAt']
 }
+
+/**
+ * The composed keyed-renderer props this fixture builds, with the key-dependent
+ * `node` widened to the untagged view node: each arm narrows it to its own
+ * `ChatNodeKind` at the render site.
+ */
+type FixtureProps = Omit<ChatNodeViewProps, 'node'> & { readonly node: ChatConversationViewNode }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
 function MessageItem({ node, t: translate, referenceLabels, skillNames, restoreAt }: MessageItemProps) {
@@ -69,10 +81,44 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames, restoreA
         }
         : node,
   }
-  const props = {
-    node: viewNode, t: translate, renderMessageImages, openFile: vi.fn(), openSkill: vi.fn(),
-    useChat: useDetachedChat, restoreAt: restoreAt ?? vi.fn(),
-  } as unknown as ChatNodeViewProps
+  const props: FixtureProps = {
+    node: viewNode,
+    t: translate,
+    renderMessageImages,
+    openFile: vi.fn(),
+    openSkill: vi.fn(),
+    inspectCall: undefined,
+    forkAt: vi.fn(),
+    restoreAt: restoreAt ?? vi.fn(),
+    loadImage: () => Promise.reject(new Error('not used')),
+    fileMentions: () => undefined,
+    useChat: useDetachedChat,
+    useSession: unused,
+    sessionId: SESSION_ID,
+    useProjection: unused,
+    useSessions: unused,
+    useSessionStatus: unused,
+    useSessionRetainInfo: unused,
+    useWorkspaces: unused,
+    usePanelInfo: selector => selector({ activePanelId: null }),
+    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
+    useConversation: unused,
+    useInput: unused,
+    useTrajectory: unused,
+    inputActions: {
+      captureInsertion: unused,
+      insertText: unused,
+      setDraft: unused,
+      persistDraft: unused,
+      addAttachments: unused,
+      removeAttachment: unused,
+      pruneAttachments: unused,
+      submit: unused,
+    },
+    useTurnData: () => undefined,
+    useDisclosure,
+    useGroupAction: useSearchableHidden,
+  }
   switch (node.kind) {
     case 'user':
     case 'steering':

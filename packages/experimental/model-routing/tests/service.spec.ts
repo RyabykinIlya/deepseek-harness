@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ModelRoutingService from '../src/index.ts'
+import type { Config } from '../src/config.ts'
 import type { RoutingDiagnosticsRecord } from '../src/types.ts'
 import type { ModelRoutingService as ModelRoutingServiceClass } from '../src/service.ts'
 
@@ -78,8 +79,8 @@ async function service(keyBody?: unknown, config: Record<string, unknown> = {}) 
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   ctx.llm.registerAdapter(['openrouter'], new EmptyAdapter())
-  await ctx.plugin(ModelRoutingService, { tiers: [PRO, FLASH], ...config } as never)
-  return { ctx, service: ctx.get('modelRouting') as ModelRoutingServiceClass, fetch: fetchStub }
+  const fiber = await ctx.plugin(ModelRoutingService, { tiers: [PRO, FLASH], ...config } as never)
+  return { ctx, fiber, service: ctx.get('modelRouting') as ModelRoutingServiceClass, fetch: fetchStub }
 }
 
 beforeEach(() => {
@@ -177,8 +178,8 @@ describe('Remote quote', () => {
     // real request would now throw, and `quote` must throw too, or the card
     // keeps showing prices for a tier that cannot actually be dispatched.
     const { updateVolatile, createVolatile } = await import('../../../../vendor/cosmokit/src/volatile.ts')
-    const { service: routing } = await service()
-    const config = (routing as unknown as { config: { trustedUnknownProviders: Parameters<typeof updateVolatile>[0] } }).config
+    const { service: routing, fiber } = await service()
+    const config = fiber.config as Config
     updateVolatile(config.trustedUnknownProviders, createVolatile([]))
     await expect(routing.quote({ tier: 'flash', models: ['deepseek/deepseek-v4-flash'] }))
       .rejects.toMatchObject({ code: 'model-routing/invalid-settings' })
