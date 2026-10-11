@@ -18,11 +18,16 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./catalog": {
+      "types": "./lib/types/catalog.d.ts",
+      "default": "./lib/types/catalog.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -53,5 +58,27 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-worktree-manager": "workspace:*"
+  },
+  "dsh": {
+    "catalog": {
+      "tools": {
+        "after": "@deepseek-ai/dsh-experimental-tool-agent-team",
+        "pkg": "@deepseek-ai/dsh-experimental-threads-tool",
+        "dir": "tool-threads",
+        "source": "packages/experimental/tool-threads/src/index.ts",
+        "requires": [
+          "ctx.tools",
+          "a calling Agent owning the Project session",
+          "ctx.threads with the threads projection loaded",
+          "ctx.modelRouting (thread_tier registration)"
+        ],
+        "writes": [
+          "tool/call",
+          "tool/result"
+        ],
+        "mount": "./catalog",
+        "note": "All four tools read only the calling Project Session's own Thread and Library state, and every result is bounded in bytes with an explicit omission line. `thread_status`, `thread_diff` and `thread_tier` read its `threads` projection; `library_list` reads the Library read model, which derives from Session logs and worktrees rather than that projection. `thread_tier` is registered only while @deepseek-ai/dsh-experimental-model-routing is mounted, because without it there are no tiers to name. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only."
+      }
+    }
   }
 }

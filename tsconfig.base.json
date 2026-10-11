@@ -338,6 +338,11 @@
       "@deepseek-ai/dsh-experimental-threads-tool": ["./packages/experimental/tool-threads/src"],
       "@deepseek-ai/dsh-experimental-project-memory": ["./packages/experimental/project-memory/src"],
       "@deepseek-ai/dsh-experimental-project-memory/tools": ["./packages/experimental/project-memory/src/tools.ts"],
+      // The declared `dsh.catalog` mount subpaths have no bare-name alias to
+      // build on, so the catalog generators reach them through these.
+      "@deepseek-ai/dsh-experimental-project-memory/catalog": ["./packages/experimental/project-memory/src/catalog.ts"],
+      "@deepseek-ai/dsh-experimental-model-routing/catalog": ["./packages/experimental/model-routing/src/catalog.ts"],
+      "@deepseek-ai/dsh-experimental-threads-tool/catalog": ["./packages/experimental/tool-threads/src/catalog.ts"],
       "@deepseek-ai/dsh-experimental-worktree": ["./packages/experimental/worktree/src"],
       "@deepseek-ai/dsh-experimental-tool-worktree": ["./packages/experimental/tool-worktree/src"],
       "@deepseek-ai/dsh-experimental-webworker-runtime": ["./packages/experimental/webworker-runtime/src"],

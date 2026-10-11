@@ -26,6 +26,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./catalog": {
+      "types": "./lib/types/catalog.d.ts",
+      "default": "./lib/types/catalog.js"
+    },
     "./typert": {
       "types": "./lib/typert.host.d.ts",
       "default": "./lib/typert.host.js"
@@ -90,5 +94,19 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "dsh": {
+    "catalog": {
+      "service": {
+        "after": "threads",
+        "key": "modelRouting",
+        "title": "Tier-based model and provider selection",
+        "mode": "service",
+        "consumers": [
+          "experimental-tool-threads"
+        ],
+        "note": "Folds model-routing/decision into the modelRouting projection, prices what a tier's models would cost, and records a Thread's tier override. The route adapter is its direct consumer, the thread_tier tool calls setThreadTier, and the settings page reads quote and freeUsage."
+      }
+    }
   }
 }

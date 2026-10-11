@@ -26,6 +26,10 @@
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
+    "./catalog": {
+      "types": "./lib/types/catalog.d.ts",
+      "default": "./lib/types/catalog.js"
+    },
     "./typert": {
       "types": "./lib/typert.host.d.ts",
       "default": "./lib/typert.host.js"
@@ -80,5 +84,33 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "dsh": {
+    "catalog": {
+      "service": {
+        "after": "piAiDispatch",
+        "key": "projectMemory",
+        "title": "Project-shared durable memory",
+        "mode": "service",
+        "note": "Stores a bounded entry set per Project Session on a storage domain and resolves a Thread to its Project through Session lineage. It has no in-process consumer outside its own package: agents reach it through the memory_read and memory_write tools and the browser through its Remote namespace."
+      },
+      "tools": {
+        "after": "@deepseek-ai/dsh-experimental-threads-tool",
+        "pkg": "@deepseek-ai/dsh-experimental-project-memory",
+        "dir": "project-memory",
+        "source": "packages/experimental/project-memory/src/tools.ts",
+        "requires": [
+          "ctx.tools",
+          "ctx.projectMemory (execution time)",
+          "a calling Agent inside a Project"
+        ],
+        "writes": [
+          "tool/call",
+          "tool/result"
+        ],
+        "mount": "./catalog",
+        "note": "Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line."
+      }
+    }
   }
 }

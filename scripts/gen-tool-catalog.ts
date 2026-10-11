@@ -67,9 +67,6 @@ import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
-import * as ToolThreads from '@deepseek-ai/dsh-experimental-threads-tool'
-import type { ModelRoutingControl } from '@deepseek-ai/dsh-experimental-model-routing'
-import * as ProjectMemoryTools from '@deepseek-ai/dsh-experimental-project-memory/tools'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
 import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
@@ -83,25 +80,21 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import {
+  catalogOptionalString,
+  catalogScope,
+  catalogString,
+  catalogStrings,
+  catalogUnknownFields,
+  collectCatalogContributions,
+  spliceCatalogEntries,
+  type CatalogContribution,
+  type CatalogScope,
+  type DeclaredEntry,
+} from './catalog-declarations.ts'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
-/**
- * The routing seam `thread_tier` registers behind.
- *
- * The tool exists to ask this service to record a decision in a Project log, so
- * the schema harvest never reaches the recording path; every call refuses.
- */
-class CatalogModelRouting implements ModelRoutingControl {
-  tierNames(): readonly string[] {
-    return ['pro', 'flash']
-  }
-
-  setThreadTier(): void {
-    throw new Error('gen-tool-catalog: thread_tier execution is unreachable during schema harvest')
-  }
-}
-
 class CatalogAttachmentStore extends AttachmentStore {
   readonly imageLimits: ImageAttachmentLimits = Object.freeze({
     maxImageBytes: 1,
@@ -206,7 +199,7 @@ export interface ToolPackage {
  * `packages/`). Ordered by package name (the render order); the completeness
  * guard proves it is exhaustive against the on-disk glob.
  */
-const TOOL_PACKAGES: ToolPackage[] = [
+const SCRIPTED_TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-plugin-manager',
     dir: 'plugin-manager',
@@ -617,38 +610,6 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
   },
   {
-    pkg: '@deepseek-ai/dsh-experimental-threads-tool',
-    dir: 'tool-threads',
-    source: 'packages/experimental/tool-threads/src/index.ts',
-    requires: ['ctx.tools', 'a calling Agent owning the Project session', 'ctx.threads with the threads projection loaded', 'ctx.modelRouting (thread_tier registration)'],
-    writes: ['tool/call', 'tool/result'],
-    async mount(ctx) {
-      // The tools register from the tool registry alone, so the catalog can
-      // harvest their schemas without the Threads domain; an unavailable
-      // projection is a runtime error, never a missing schema. `thread_tier`
-      // is the one exception: it registers only while a routing service is
-      // present, so the catalog provides the seam its registration waits on.
-      ctx.provide('modelRouting', new CatalogModelRouting())
-      await ctx.plugin(ToolThreads)
-    },
-    note:
-      'All four tools read only the calling Project Session\'s own Thread and Library state, and every result is bounded in bytes with an explicit omission line. `thread_status`, `thread_diff` and `thread_tier` read its `threads` projection; `library_list` reads the Library read model, which derives from Session logs and worktrees rather than that projection. `thread_tier` is registered only while @deepseek-ai/dsh-experimental-model-routing is mounted, because without it there are no tiers to name. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.',
-  },
-  {
-    pkg: '@deepseek-ai/dsh-experimental-project-memory',
-    dir: 'project-memory',
-    source: 'packages/experimental/project-memory/src/tools.ts',
-    requires: ['ctx.tools', 'ctx.projectMemory (execution time)', 'a calling Agent inside a Project'],
-    writes: ['tool/call', 'tool/result'],
-    async mount(ctx) {
-      // The tools resolve `projectMemory` at execution, so schema harvest
-      // needs only the tool registry.
-      await ctx.plugin(ProjectMemoryTools)
-    },
-    note:
-      'Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line.',
-  },
-  {
     pkg: '@deepseek-ai/dsh-tool-todo',
     dir: 'tool-todo',
     source: 'packages/todo/tool-todo/src/index.ts',
@@ -727,6 +688,97 @@ const TOOL_PACKAGES: ToolPackage[] = [
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
   },
 ]
+
+/** Fields a declared `dsh.catalog.tools` entry may carry. */
+const TOOL_FIELDS = ['after', 'pkg', 'dir', 'source', 'requires', 'writes', 'note', 'mount'] as const
+
+/**
+ * Read the tool packages workspace manifests declare under `dsh.catalog.tools`.
+ *
+ * The harvest needs a boot recipe, which JSON cannot hold, so a declaration
+ * names a subpath whose module exports `mount`. The package name and directory
+ * are the manifest's own; the declaration carries them again only so a mismatch
+ * with the manifest is an error rather than a silently wrong catalog section.
+ * @returns One declared entry per contributing package, each with its anchor.
+ */
+function declaredToolPackages(): DeclaredEntry<ToolPackage>[] {
+  const declared: DeclaredEntry<ToolPackage>[] = []
+  for (const contribution of collectCatalogContributions(root, 'gen-tool-catalog')) {
+    const scope = catalogScope(contribution, 'tools', 'gen-tool-catalog')
+    if (scope === undefined) continue
+    catalogUnknownFields(scope, TOOL_FIELDS)
+    const declaredPkg = catalogString(scope, 'pkg')
+    const declaredDir = catalogString(scope, 'dir')
+    if (declaredPkg !== contribution.pkg) {
+      throw new Error(`${scope.label}: pkg ${declaredPkg} disagrees with the manifest name ${contribution.pkg}`)
+    }
+    if (declaredDir !== contribution.leaf) {
+      throw new Error(`${scope.label}: dir ${declaredDir} disagrees with the package directory ${contribution.leaf}`)
+    }
+    const subpath = catalogString(scope, 'mount')
+    declared.push({
+      after: catalogString(scope, 'after'),
+      entry: {
+        pkg: declaredPkg,
+        dir: declaredDir,
+        source: catalogString(scope, 'source'),
+        requires: catalogStrings(scope, 'requires'),
+        writes: catalogStrings(scope, 'writes'),
+        ...catalogNote(scope),
+        mount: harvestMount(contribution, subpath),
+      },
+    })
+  }
+  return declared
+}
+
+/**
+ * Read the optional deployment note.
+ * @param scope - the sub-object being read.
+ * @returns A single-field object, or an empty one when no note is declared.
+ */
+function catalogNote(scope: CatalogScope): { note?: string } {
+  const note = catalogOptionalString(scope, 'note')
+  return note === undefined ? {} : { note }
+}
+
+/**
+ * Resolve a declared mount subpath into the recipe this generator boots.
+ *
+ * The subpath is read at harvest time, not at import time, so the catalog
+ * definitions stay a pure manifest read.
+ * @param contribution - the declaring package.
+ * @param subpath - the declared `./`-prefixed subpath, for example `./catalog`.
+ * @returns The boot recipe the declared module exports.
+ * @throws Error when the subpath is not package-relative or exports no `mount`.
+ */
+function harvestMount(contribution: CatalogContribution, subpath: string): ToolPackage['mount'] {
+  if (!subpath.startsWith('./')) {
+    throw new Error(`${contribution.manifest}: dsh.catalog.tools.mount must be a "./"-prefixed subpath`)
+  }
+  const specifier = contribution.pkg + subpath.slice(1)
+  return async (ctx) => {
+    const module = await import(specifier) as { mount?: (ctx: Context) => Promise<void> }
+    if (typeof module.mount !== 'function') {
+      throw new Error(`${specifier} must export mount(ctx); declared by ${contribution.manifest}`)
+    }
+    await module.mount(ctx)
+  }
+}
+
+/**
+ * The boot manifest: every shipped tool package, ordered by package name (the
+ * render order). Entries stated here are joined by the ones workspace packages
+ * declare under `dsh.catalog.tools`, each placed after the entry it follows;
+ * the completeness guard proves the result is exhaustive against the on-disk
+ * glob.
+ */
+const TOOL_PACKAGES: ToolPackage[] = spliceCatalogEntries({
+  gate: 'gen-tool-catalog',
+  scripted: SCRIPTED_TOOL_PACKAGES,
+  declared: declaredToolPackages(),
+  identities: entry => [entry.pkg, entry.dir],
+})
 
 /** One package's contribution to the catalog: its schemas plus attribution. */
 interface CatalogPackage {
