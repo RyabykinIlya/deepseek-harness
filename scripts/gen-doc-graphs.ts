@@ -893,6 +893,14 @@ const SCRIPTED_SERVICE_ROLES: ServiceRole[] = [
     consumers: ['tool-cordis'],
     note: 'Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport.',
   },
+  {
+    key: 'piAiDispatch',
+    pkg: 'llm-pi-ai',
+    title: 'Per-call pi-ai dispatch with a routing block',
+    mode: 'service',
+    consumers: ['experimental-model-routing'],
+    note: 'Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer.',
+  },
 ]
 
 /** Fields a declared `dsh.catalog.service` entry may carry. */

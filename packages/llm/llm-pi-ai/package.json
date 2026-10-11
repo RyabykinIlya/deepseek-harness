@@ -62,19 +62,5 @@
     "@deepseek-ai/cordis-plugin-loader": {
       "optional": true
     }
-  },
-  "dsh": {
-    "catalog": {
-      "service": {
-        "after": "modelRouting",
-        "key": "piAiDispatch",
-        "title": "Per-call pi-ai dispatch with a routing block",
-        "mode": "service",
-        "consumers": [
-          "experimental-model-routing"
-        ],
-        "note": "Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer."
-      }
-    }
   }
 }
