@@ -545,6 +545,7 @@
       "@deepseek-ai/dsh-web-search-duckduckgo": ["./packages/web/web-search-duckduckgo/src"],
       "@deepseek-ai/dsh-web-search-exa": ["./packages/web/web-search-exa/src"],
       "@deepseek-ai/dsh-web-search-perplexity": ["./packages/web/web-search-perplexity/src"],
+      "@deepseek-ai/dsh-web-search-profile": ["./packages/web/web-search-profile/src"],
       "@deepseek-ai/dsh-web-search-tavily": ["./packages/web/web-search-tavily/src"],
       "@deepseek-ai/dsh-webhook": ["./packages/experimental/webhook/src"],
       "@deepseek-ai/dsh-webhook-github": ["./packages/experimental/webhook-github/src"],

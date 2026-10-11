@@ -437,6 +437,7 @@
     { "path": "./packages/web/web-search-tavily" },
     { "path": "./packages/web/web-fetch-http" },
     { "path": "./packages/web/tool-web" },
+    { "path": "./packages/web/web-search-profile" },
     { "path": "./packages/spill/spill" },
     { "path": "./packages/spill/spill-local" },
     { "path": "./packages/spill/spill-policy" },

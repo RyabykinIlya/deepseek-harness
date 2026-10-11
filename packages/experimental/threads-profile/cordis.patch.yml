@@ -47,6 +47,13 @@
     - id: ui-project-memory
       name: '@deepseek-ai/dsh-experimental-client-ui-project-memory'
 
+    # The Plugins-page card for the Threads presets: the coordinator check-in and
+    # approval knobs and the model every Thread runs on. It edits the
+    # `threads-preset` row below through the `threads` namespace, so it belongs to
+    # this layer rather than to the Web app's own settings pages.
+    - id: ui-settings-threads
+      name: '@deepseek-ai/dsh-client-ui-settings-threads'
+
     # The Project memory service, plus the tools rows the presets mount from it. It
     # takes `storageDomain` and `sessions` from the base layers and adds no tool of its
     # own; `memory_read` and `memory_write` exist only in the two Threads presets.

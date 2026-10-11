@@ -2308,18 +2308,9 @@ importers:
       '@deepseek-ai/dsh-web-fetch-http':
         specifier: workspace:*
         version: link:../../web/web-fetch-http
-      '@deepseek-ai/dsh-web-search-brave':
-        specifier: workspace:*
-        version: link:../../web/web-search-brave
       '@deepseek-ai/dsh-web-search-deepseek':
         specifier: workspace:*
         version: link:../../web/web-search-deepseek
-      '@deepseek-ai/dsh-web-search-duckduckgo':
-        specifier: workspace:*
-        version: link:../../web/web-search-duckduckgo
-      '@deepseek-ai/dsh-web-search-tavily':
-        specifier: workspace:*
-        version: link:../../web/web-search-tavily
       '@deepseek-ai/dsh-workflow-ptc':
         specifier: workspace:*
         version: link:../../workflow/workflow-ptc
@@ -2675,9 +2666,6 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-subagent':
         specifier: workspace:*
         version: link:../../client/ui-settings-subagent
-      '@deepseek-ai/dsh-client-ui-settings-threads':
-        specifier: workspace:*
-        version: link:../../client/ui-settings-threads
       '@deepseek-ai/dsh-client-ui-settings-web-search':
         specifier: workspace:*
         version: link:../../client/ui-settings-web-search
@@ -9285,6 +9273,9 @@ importers:
 
   packages/experimental/threads-profile:
     dependencies:
+      '@deepseek-ai/dsh-client-ui-settings-threads':
+        specifier: workspace:*
+        version: link:../../client/ui-settings-threads
       '@deepseek-ai/dsh-experimental-client-ui-project-memory':
         specifier: workspace:*
         version: link:../client-ui-project-memory
@@ -15573,6 +15564,25 @@ importers:
       '@deepseek-ai/dsh-web':
         specifier: workspace:*
         version: link:../web
+
+  packages/web/web-search-profile:
+    dependencies:
+      '@deepseek-ai/dsh-web-search-brave':
+        specifier: workspace:*
+        version: link:../web-search-brave
+      '@deepseek-ai/dsh-web-search-duckduckgo':
+        specifier: workspace:*
+        version: link:../web-search-duckduckgo
+      '@deepseek-ai/dsh-web-search-tavily':
+        specifier: workspace:*
+        version: link:../web-search-tavily
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.2
 
   packages/web/web-search-tavily:
     dependencies:

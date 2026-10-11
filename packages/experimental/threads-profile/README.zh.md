@@ -42,7 +42,7 @@ profile 必须已经包含本层所扩展的 agent 平面：`@deepseek-ai/dsh-we
 
 ### 获得的功能
 
-本层插入六行，除此之外不做任何改动：
+本层插入八行，除此之外不做任何改动：
 
 | 配置行 | 包 | 职责 |
 |---|---|---|
@@ -50,6 +50,8 @@ profile 必须已经包含本层所扩展的 agent 平面：`@deepseek-ai/dsh-we
 | `threads` | `@deepseek-ai/dsh-experimental-threads` | 仅日志的 `thread/*` 事件与持久的 `threads` Session 投影 |
 | `subagent-thread-worktree` | `@deepseek-ai/dsh-subagent-thread-worktree` | `thread` continuable 提供方：每个子代理一个分支与 worktree，且都由 `project-thread` 组合 |
 | `ui-threads` | `@deepseek-ai/dsh-experimental-client-ui-threads` | Web 的 Thread 名单与可寻址的 Thread 会话资源 |
+| `ui-project-memory` | `@deepseek-ai/dsh-experimental-client-ui-project-memory` | 两个 Project 记忆上限的插件页卡片 |
+| `ui-settings-threads` | `@deepseek-ai/dsh-client-ui-settings-threads` | 插件页卡片：协调者的 check-in 与审批开关，以及每个 Thread 运行的模型 |
 | `project-memory` | `@deepseek-ai/dsh-experimental-project-memory` | `memory_read` 与 `memory_write` 工具背后的 Project 记忆服务，预设会挂载这两个工具 |
 | `threads-preset` | `@deepseek-ai/dsh-experimental-threads-preset` | `project` 协调者预设与 `project-thread` worker 预设 |
 
@@ -63,7 +65,7 @@ profile 必须已经包含本层所扩展的 agent 平面：`@deepseek-ai/dsh-we
 <details>
 <summary>实现内部细节 — 点击展开</summary>
 
-本包的运行时内容就是 [`cordis.patch.yml`](cordis.patch.yml)。它在 base 层与 Web 层之后应用，只插入上述六行，不打任何补丁。有两个行 id 通过配置耦合：`subagent-thread-worktree` 以 `thread` 注册提供方并要求 `childAgentPreset: project-thread`，而 `threads-preset` 在 `project` 协调者 id 旁声明该 worker id，因此两者必须一起修改。
+本包的运行时内容就是 [`cordis.patch.yml`](cordis.patch.yml)。它在 base 层与 Web 层之后应用，只插入上述八行，不打任何补丁。有两个行 id 通过配置耦合：`subagent-thread-worktree` 以 `thread` 注册提供方并要求 `childAgentPreset: project-thread`，而 `threads-preset` 在 `project` 协调者 id 旁声明该 worker id，因此两者必须一起修改。
 
 UI 插件的 Host 入口是惰性的；只有 Web Client loader 会挂载其浏览器入口，因此 headless profile 不需要 Web 服务器。`ui-threads` 不携带配置：客户端行的配置永远不会到达浏览器，名单匹配的是本包自身的默认值 `project`。
 
