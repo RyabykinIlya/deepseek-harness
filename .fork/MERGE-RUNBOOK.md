@@ -63,11 +63,14 @@ pnpm run gen-cordis-catalog
 pnpm run gen-doc-graphs
 pnpm run gen-third-party-notices
 pnpm run verify-translation-pairing --all --write
+pnpm run verify-no-unknown-casts --prune
 ```
 
 Если генератор падает — это настоящая ошибка в коде, а не шум мержа. Разбирать до конца, не обходить.
 
 `packages/extensions/tool-cordis/src/api-catalog.ts` перегенерируется тем же `gen-cordis-catalog` (в его шапке указан `gen-cordis-api` — это совместимый вход в ту же реализацию), так что отдельной команды ему не нужно.
+
+`scripts/no-unknown-casts.baseline.json` — сюда же, и по той же причине: шаг 1 берёт апстримную копию (иначе свои 17 снятых приведений читаются как новые), а `--prune` приводит инвентарь к нашему дереву. Без этого `pnpm run hygiene` красный на устаревших записях — тех приведениях, которые форк снял. Прогонять `--prune` **после** того, как сняты все свои приведения: гейт проверяет добавленные раньше устаревших и на добавленных падает, не дойдя до устаревших.
 
 ## 4. Проверить
 
