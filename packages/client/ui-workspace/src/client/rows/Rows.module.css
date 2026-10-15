@@ -117,8 +117,9 @@
 }
 
 /* Thread rows nest one step under the Project row that owns them. They carry no
-   row verbs, so the hover swap that hides a session's time for its action
-   buttons does not apply to them, and their title reads one step quieter. */
+   row menu, so the hover swap that hides a session's time for its action
+   buttons does not apply to them: the time cell stays visible while their
+   action strip appears beside it, and their title reads one step quieter. */
 .threadRow {
   padding-inline-start: calc(20px + var(--dsh-workspace-indent, 0px));
 }

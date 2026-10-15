@@ -727,6 +727,10 @@ describe('ui-workspace apply', () => {
     // Registration declared the child holes (declaration = render authorization).
     expect(b.slots.spec('sidebar.workspaces.directoryFlow')).toMatchObject({ kind: 'single' })
     expect(b.slots.spec('conversation.hero.workspace.directoryFlow')).toMatchObject({ kind: 'single' })
+    // The Thread row action seat is declared beside the Session row action list
+    // and ships no entry of its own: the Threads feature fills it.
+    expect(b.slots.spec('sidebar.workspaces.thread.row.action')).toEqual({ kind: 'list', scope: 'root' })
+    expect(b.slots.entries('sidebar.workspaces.thread.row.action')).toHaveLength(0)
 
     const browser = faceOf(b.slots.entries('sidebar.workspaces')[0]!) as WorkspaceBrowserInjected
     const picker = faceOf(b.slots.entries('conversation.hero.workspace')[0]!) as WorkspacePickerInjected

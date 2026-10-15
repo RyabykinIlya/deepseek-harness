@@ -101,6 +101,8 @@ Session 行的 "..." 菜单和行尾悬停按钮是 WorkspaceBrowser 注册项�
 
 条目只接收行身份（`sessionId`、`displayTitle`），其余一切自己负责：用自己注入的 hook 读自己关心的 Host 状态（置顶与归档集合，以每次 Workspace 快照只派生一次的 Set 形式），自己决定是否显示（Host 规定归档与置顶互斥，所以 pin 在归档行上不渲染），整套行为放在注册项自己的 `inject` face 里（置顶成功后顺带把会话推到保存顺序最前，归档成功后发提示），浮层也自己带——重命名对话框、停止并归档对话框和行 action 的提示是本包注册在 `shell.overlay` 的条目，由 action 注入的请求驱动。菜单条目渲染一个 `role="menuitem"` 的按钮（本包自己的行用 ui-primitives 的 `MenuItemButton`，它带宿主样式，开启新分组的行加 `separatorBefore`，分隔线随行一起出现和消失），并通过 slot 级 `useMenuOpenState` hook（菜单自身的打开状态，从该行的渲染出现处绑定）关闭菜单；悬停按钮条目渲染一个图标按钮，按钮条会拦住点击、不让它打开该行。browser 不再向行传任何 action 回调，它剩下的动作只有搜索结果里的恢复按钮和标题双击，后者发出的是同一个重命名请求。
 
+Project 行下嵌套的 Thread 行没有菜单——没有重命名、分叉、置顶——其生命周期动作来自自己的悬停按钮列表 `sidebar.workspaces.thread.row.action`，该列表由同一个 browser 注册项声明，由 Threads 特性从自己的包填入。每个条目接收 Thread id、所属的 Project Session 以及 Thread 的任务标签，按钮条同样会拦住点击、不让它打开该行。拥有超过三个 Thread 的 Project 按其持久顺序渲染前三个，其余收在**再显示 {n} 个线程**开关之后；**收起**把列表折叠回前三个。
+
 #### 打包客户端插件
 
 按照 Client 依赖规则，将 `ui-workspace`、`ui-slots`、`ui-renderer`、`client-locale` 与 `ui-primitives` 声明为浏览器／类型开发依赖。纯类型的 `ui-workspace/client` import 会加载本包的 `SlotMap` 声明；缺少该 import 时，独立编译的插件不会知道这些 slot key。Component 保持模块级稳定身份；用户可见文案由贡献包自己的 locale namespace 持有。

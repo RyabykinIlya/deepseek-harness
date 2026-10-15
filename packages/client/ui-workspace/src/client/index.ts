@@ -6,10 +6,12 @@
  * Workspaces through the global useWorkspaces hook, and each declares its
  * own `single` directory-flow child hole for the composed picker package's
  * client half. WorkspaceBrowser additionally declares the two Session row
- * action lists, and this apply registers the shipped actions — pin, rename,
- * fork, archive — into them the way any client plugin would, each with its
- * own behavior, plus the rename dialog and the row-action notice into
- * `shell.overlay` (see the contract module doc). It also declares two
+ * action lists and the Thread row action list, and this apply registers the
+ * shipped Session actions — pin, rename, fork, archive — into them the way
+ * any client plugin would, each with its own behavior, plus the rename dialog
+ * and the row-action notice into `shell.overlay` (see the contract module
+ * doc). The Thread row action list ships no entry here: Thread lifecycle
+ * belongs to the Threads feature. It also declares two
  * Session-row seats: the leading decoration a row renders only while its own
  * primary state is idle, and the section the row's hover card renders between
  * its relative time and its trailing status line. Export discipline:
@@ -57,7 +59,8 @@ import { en, zh, type WorkspaceKey } from './locales.ts'
 export type { StartSessionOptions, UiWorkspace } from './navigation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
-  MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, UseMenuOpenState, WorkspaceBrowserInjected,
+  MenuOpenState, RowToast, SessionRenameTarget, SessionRowOwnerProps, ThreadRowActionOwnerProps, UseMenuOpenState,
+  WorkspaceBrowserInjected,
   SessionRowScheduleOwnerProps,
   WorkspaceBrowserProps,
   WorkspacePickerInjected, WorkspacePickerProps,
@@ -279,6 +282,8 @@ export function apply(ctx: Context): void {
           kind: 'list', scope: 'root', inject: { hooks: { menuOpenState: menuOpenStateFactory, shortcuts: ctx.shortcuts.catalog } },
         },
         'sidebar.workspaces.session.row.action': { kind: 'list', scope: 'root' },
+        // The Threads feature fills this seat with the Thread verbs it owns.
+        'sidebar.workspaces.thread.row.action': { kind: 'list', scope: 'root' },
         'sidebar.session.row.leading': { kind: 'list', scope: 'root' },
         'sidebar.session.row.hover': { kind: 'list', scope: 'root' },
       },

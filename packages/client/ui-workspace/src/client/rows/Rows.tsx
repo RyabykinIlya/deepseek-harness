@@ -7,7 +7,9 @@
  * its hover buttons are the `sidebar.workspaces.session.menu.item` and
  * `sidebar.workspaces.session.row.action` lists, rendered through the
  * browser's `renderSlot` with the menu's open state as the occurrence's hook
- * context; this package's own actions are entries like any plugin's. The
+ * context; this package's own actions are entries like any plugin's. A Thread
+ * row renders the `sidebar.workspaces.thread.row.action` list instead and
+ * registers nothing into it itself. The
  * session and workspace hover cards are suppressed while a menu is open.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -21,6 +23,7 @@ import {
   IconTriangleRightFillRegular, IconUnarchiveOutlineRegular, Menu, relativeTime, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ShortcutCatalogEntry } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
@@ -40,6 +43,7 @@ type RowTranslate = WorkspaceBrowserProps['t']
 type RowRenderSlots = PropsRenderSlots<
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
+  | 'sidebar.workspaces.thread.row.action'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
 >['renderSlot']
@@ -420,24 +424,30 @@ function PinnedIndicator({ t }: { t: RowTranslate }) {
 
 /**
  * One Thread row, nested under the Project row that owns it: the leading
- * status cell, the Thread's task label, and its last-activity time.
+ * status cell, the Thread's task label, its last-activity time, and its action
+ * strip.
  *
- * A Thread is a child Session, not an account member: it carries no row verbs
- * (no menu, rename, pin, archive, or reorder) because its lifecycle belongs to
- * the Threads feature, and it folds with its Workspace group like every other
- * row in it. Its leading cell follows the session-row rule — the status dot
- * while the Thread runs, the leading seat while it is idle — and its own time
- * cell stays off until the Thread's Session summary reaches the list.
+ * A Thread is a child Session, not an account member, so it carries no row
+ * MENU: no rename, fork, or pin, and no reorder — its order is the Project's
+ * durable Thread order. Archiving and stopping it do apply, and arrive through
+ * the `sidebar.workspaces.thread.row.action` seat, which the Threads feature
+ * fills; this row only hosts that strip. The Thread's lifecycle stays owned by
+ * the Threads domain, and the row folds with its Workspace group like every
+ * other row in it. Its leading cell follows the session-row rule — the status
+ * dot while the Thread runs, the leading seat while it is idle — and its own
+ * time cell stays off until the Thread's Session summary reaches the list.
  * @param props.thread - derived Thread node.
+ * @param props.projectSessionId - the Project Session owning this Thread; the seat's archive owner argument.
  * @param props.currentId - selected session id (row highlight).
  * @param props.now - epoch ms for relative-time formatting.
  * @param props.onOpen - open the Thread's own session by id.
- * @param props.renderSlot - child-seat renderer for the leading decoration.
+ * @param props.renderSlot - child-seat renderer for the leading decoration and the row action list.
  * @param props.t - the browser root's locale seat.
  * @returns the thread row.
  */
-export function ThreadNodeItem({ thread, currentId, now, onOpen, renderSlot, t }: {
+export function ThreadNodeItem({ thread, projectSessionId, currentId, now, onOpen, renderSlot, t }: {
   thread: ThreadNode
+  projectSessionId: SessionId
   currentId: string | undefined
   now: number
   onOpen: (id: ThreadNode['id']) => void
@@ -465,6 +475,14 @@ export function ThreadNodeItem({ thread, currentId, now, onOpen, renderSlot, t }
       {thread.updatedAt !== undefined && (
         <span className={css.time}>{timeLabel(thread.updatedAt, now, t)}</span>
       )}
+      {/* The strip's clicks stay in the strip, so a Thread's action button
+          needs no propagation handling to keep the row from opening. */}
+      <span className={css.rowActions} onClick={(e) => { e.stopPropagation() }}>
+        {renderSlot(
+          'sidebar.workspaces.thread.row.action',
+          { threadId: thread.id, projectSessionId, label: thread.label },
+        )}
+      </span>
     </div>
   )
 }

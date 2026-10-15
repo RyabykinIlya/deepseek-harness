@@ -10,9 +10,10 @@
  * (same package — direct composition, no slot between them). A Session row's
  * "..." menu and hover buttons are the `sidebar.workspaces.session.menu.item`
  * and `sidebar.workspaces.session.row.action` lists rendered through this
- * entry's `renderSlot`; the actions in them, this package's own included,
- * are slot entries with their own behavior, so this component threads no
- * action callbacks and hosts no action surface.
+ * entry's `renderSlot`, and a nested Thread row's hover buttons are its
+ * `sidebar.workspaces.thread.row.action` list; the actions in them, this
+ * package's own included, are slot entries with their own behavior, so this
+ * component threads no action callbacks and hosts no action surface.
  */
 import { Fragment, type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
@@ -31,7 +32,7 @@ import { workspaceDisplayTitle } from '@deepseek-ai/dsh-api-workspace-controller
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
-import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState } from '../tree.ts'
+import type { ArchivedFilter, GroupNode, SessionNode, SessionOrderBy, SessionRowState, ThreadNode } from '../tree.ts'
 import {
   deriveFlat, deriveGroups, deriveSearchResults, orderByRecency, owningGroupKey, owningParentFolder,
   pinCurrentBlank, reconcileManualOrder, sessionMemberIds, UNGROUPED_KEY,
@@ -53,6 +54,8 @@ const SEARCH_DEBOUNCE_MS = 250
 const SEARCH_QUERY_MAX_CODE_UNITS = 500
 /** Idle Session rows visible per Workspace before the local overflow control. */
 const COLLAPSED_SESSION_LIMIT = 5
+/** Thread rows visible under one Project Session before the local overflow control. */
+const COLLAPSED_THREAD_LIMIT = 3
 
 /** Keep provisional and running rows outside the idle-session quota, including parents with running children. */
 function collapsedSessionRows(sessions: readonly SessionNode[], limit = COLLAPSED_SESSION_LIMIT): {
@@ -67,6 +70,21 @@ function collapsedSessionRows(sessions: readonly SessionNode[], limit = COLLAPSE
     return true
   })
   return { rows, hiddenCount: sessions.length - rows.length }
+}
+
+/**
+ * The Thread rows one Project row renders: its roster's first `limit` rows in
+ * durable Thread order, plus the count the overflow control still hides.
+ * @param threads - the Project's Thread nodes in projection order.
+ * @param limit - rows to render, or Infinity once the nest is expanded.
+ * @returns the rendered rows and the hidden count.
+ */
+function collapsedThreadRows(threads: readonly ThreadNode[], limit = COLLAPSED_THREAD_LIMIT): {
+  rows: readonly ThreadNode[]
+  hiddenCount: number
+} {
+  const rows = threads.slice(0, limit)
+  return { rows, hiddenCount: threads.length - rows.length }
 }
 
 /** Keep controlled input and RPC payload inside the session.search wire contract. */
@@ -298,6 +316,8 @@ function SessionTree({
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
   const [sessionLimits, setSessionLimits] = useState<Readonly<Record<string, number>>>({})
+  // Thread nest limits, keyed by the owning Project Session's id.
+  const [threadLimits, setThreadLimits] = useState<Readonly<Record<string, number>>>({})
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -422,9 +442,19 @@ function SessionTree({
     rowKeys.push(`workspace:${group.key}`)
     const childRows = group.expanded ? children.map(child => renderGroup(child, depth + 1)) : []
     const sessions = visible.rows
-    for (const node of sessions) {
+    // Each Session row with the Thread rows it actually renders: the keyboard
+    // row keys and the nest below read the same capped list, so they cannot
+    // disagree about which Thread rows exist. `collapsed` judges the roster
+    // against the default limit, keeping the toggle present while expanded.
+    const sessionRows = sessions.map(node => ({
+      node,
+      capped: collapsedThreadRows(node.threads),
+      threads: collapsedThreadRows(node.threads, threadLimits[node.id]),
+    }))
+    for (const { node, capped, threads } of sessionRows) {
       rowKeys.push(`session:${node.id}`)
-      for (const thread of node.threads) rowKeys.push(`thread:${thread.id}`)
+      for (const thread of threads.rows) rowKeys.push(`thread:${thread.id}`)
+      if (capped.hiddenCount > 0) rowKeys.push(`threadOverflow:${node.id}`)
     }
     if (collapsed.hiddenCount > 0) rowKeys.push(`overflow:${group.key}`)
     const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
@@ -533,7 +563,7 @@ function SessionTree({
             {childRows}
           </div>
         )}
-        {sessions.map((node) => {
+        {sessionRows.map(({ node, capped, threads }) => {
         // Session drag never leaves its browser-local account, and pinned
         // rows reorder only within their leading pinned block.
           const sameGroupDrag = drag !== null && drag.accountKey === group.key
@@ -580,15 +610,17 @@ function SessionTree({
                 t={t}
               />
               {/* A Thread is a child Session, so its row rides its Project's
-                  slot: same leading cell, same open path, no row verbs. The
+                  slot: same leading cell, same open path, no row menu. The
                   owner's own overflow limit counts Project rows only, so a
-                  long roster never hides a sibling Session behind it. */}
-              {node.threads.length > 0 && (
+                  long roster never hides a sibling Session behind it, and a
+                  Project's own Thread roster is capped here instead. */}
+              {threads.rows.length > 0 && (
                 <div role="group" className={css.threadNest}>
-                  {node.threads.map(thread => (
+                  {threads.rows.map(thread => (
                     <ThreadNodeItem
                       key={thread.id}
                       thread={thread}
+                      projectSessionId={node.id}
                       currentId={current}
                       now={now}
                       onOpen={open}
@@ -597,6 +629,24 @@ function SessionTree({
                     />
                   ))}
                 </div>
+              )}
+              {capped.hiddenCount > 0 && (
+                <button
+                  type="button"
+                  className={css.sessionOverflowButton}
+                  data-row-key={`threadOverflow:${node.id}`}
+                  aria-expanded={threads.hiddenCount === 0}
+                  onClick={() => {
+                    setThreadLimits(limits => ({
+                      ...limits,
+                      [node.id]: threads.hiddenCount === 0 ? COLLAPSED_THREAD_LIMIT : Infinity,
+                    }))
+                  }}
+                >
+                  {threads.hiddenCount === 0
+                    ? t('threads.collapse')
+                    : t('threads.expand', { n: threads.hiddenCount })}
+                </button>
               )}
             </Fragment>
           )
@@ -636,7 +686,7 @@ function SessionTree({
         label={t('section.sessions')}
         rowKeys={rowKeys}
         ready={list.phase === 'ready' && workspaceReady && !nativeDragActive}
-        resetKey={JSON.stringify([animationResetKey, sessionLimits])}
+        resetKey={JSON.stringify([animationResetKey, sessionLimits, threadLimits])}
       >
         {groups.length === 0 && (
           <EmptySessions rowState={rowState} onLeaveArchivedOnly={onLeaveArchivedOnly} t={t} />

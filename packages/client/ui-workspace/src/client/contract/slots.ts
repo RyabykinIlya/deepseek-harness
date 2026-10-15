@@ -32,6 +32,12 @@
  * client plugin's action lands beside them by `order` and needs nothing from
  * the browser beyond the row identity.
  *
+ * The **Thread row action list** (`sidebar.workspaces.thread.row.action`) is
+ * the same seat one nesting level down, for the Thread rows under a Project
+ * Session row. This package registers nothing into it: Thread lifecycle —
+ * archiving, stopping — belongs to the Threads feature, which contributes its
+ * buttons from its own package.
+ *
  * The browser entry additionally declares two `list` seats per Session row
  * (`sidebar.session.row.leading` / `sidebar.session.row.hover`) for ambient
  * row decorations. Both take the row's Session identity and nothing else: a
@@ -79,6 +85,16 @@ export interface SessionRowOwnerProps {
   sessionId: SessionId
   /** Row display title: persisted title, or empty when the Session has none. */
   displayTitle: string
+}
+
+/** Owner share of one Thread row action occurrence: the Thread and the Project that owns it. */
+export interface ThreadRowActionOwnerProps {
+  /** The Thread's own Session id (a Thread's durable identity is the Session that runs it). */
+  threadId: SessionId
+  /** The Project Session that owns the Thread; this is the owner argument the Threads domain archives by. */
+  projectSessionId: SessionId
+  /** The Thread's task label, for accessible names. */
+  label: string
 }
 
 /** The row menu's open state as its owner holds it: the `useState` pair. */
@@ -183,6 +199,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * handling to keep the row from opening.
      */
     'sidebar.workspaces.session.row.action': { kind: 'list'; scope: 'root'; owner: SessionRowOwnerProps }
+    /**
+     * The hover buttons at the end of one Thread row nested under its Project
+     * Session row, in ascending `order`. An entry renders one icon button (or
+     * nothing, when its action does not apply to the Thread) and owns the
+     * action it performs; Thread archiving and stopping belong to the Threads
+     * feature, which contributes them. Clicks inside the strip stay in the
+     * strip, so the button needs no propagation handling to keep the row from
+     * opening. Labels come from the contributing package's locale namespace.
+     */
+    'sidebar.workspaces.thread.row.action': { kind: 'list'; scope: 'root'; owner: ThreadRowActionOwnerProps }
   }
 }
 
@@ -461,6 +487,7 @@ export type WorkspaceBrowserProps =
     | 'sidebar.workspaces.directoryFlow'
     | 'sidebar.workspaces.session.menu.item'
     | 'sidebar.workspaces.session.row.action'
+    | 'sidebar.workspaces.thread.row.action'
     | 'sidebar.session.row.leading'
     | 'sidebar.session.row.hover'
   >

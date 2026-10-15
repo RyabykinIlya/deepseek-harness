@@ -958,6 +958,39 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('Indexer')).toBeNull()
   })
 
+  it('caps a Project Thread roster at three rows and toggles the rest', () => {
+    const project = summary('project', 20)
+    const threads = Array.from({ length: 5 }, (_, index) =>
+      summary(`thread-${String(index + 1)}`, 10 - index, { origin: 'subagent', parentId: project.id }))
+    mount({
+      useSessions: hook(sessionState([project, ...threads], {
+        projectionsBySession: {
+          [project.id]: {
+            state: 'idle', error: null,
+            values: { threads: threads.map(item => threadRow(item.id, `Task ${item.displayTitle}`)) },
+          },
+        },
+      })),
+      useWorkspaces: hook(workspaceState([workspace('alpha', [project.id])])),
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    const threadRowKeys = () => screen.getAllByRole('treeitem')
+      .map(row => row.getAttribute('data-row-key'))
+      .filter(key => key !== null && key.startsWith('thread:'))
+
+    // The nest shows the first three Threads; the toggle names the rest.
+    expect(threadRowKeys()).toEqual(['thread:thread-1', 'thread:thread-2', 'thread:thread-3'])
+    const expand = screen.getByRole('button', { name: '再显示 2 个线程' })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(threadRowKeys()).toHaveLength(5)
+    const collapse = screen.getByRole('button', { name: '收起' })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(collapse)
+    expect(threadRowKeys()).toEqual(['thread:thread-1', 'thread:thread-2', 'thread:thread-3'])
+    expect(screen.getByRole('button', { name: '再显示 2 个线程' }).getAttribute('aria-expanded')).toBe('false')
+  })
+
   it.each([false, true])('expands 17 ordinary sessions five at a time and resets after the final partial batch (blank: %s)', (withBlank) => {
     const ordinary = Array.from({ length: 17 }, (_, index) => summary(`session-${index + 1}`, 17 - index))
     const blank = summary('blank', 18, { blank: true })

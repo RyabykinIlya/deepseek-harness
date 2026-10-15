@@ -8,7 +8,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
-import type { MenuOpenState, SessionRowOwnerProps } from '../src/client/contract/slots.ts'
+import type { MenuOpenState, SessionRowOwnerProps, ThreadRowActionOwnerProps } from '../src/client/contract/slots.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import {
@@ -25,10 +25,11 @@ const tEn = makeTranslate(en, commonEn) as never
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 
-/** The row lists and child seats a Session row renders. */
+/** The row lists and child seats a Session row or a nested Thread row renders. */
 type RowSlotName =
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
+  | 'sidebar.workspaces.thread.row.action'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
 type RowRenderSlot = PropsRenderSlots<RowSlotName>['renderSlot']
@@ -1127,56 +1128,89 @@ it.each([['未命名', t], ['Untitled', tEn]])('labels unnamed search results as
 })
 
 describe('Thread row', () => {
+  const projectSessionId = sid('project')
   const thread = (overrides: Partial<ThreadNode> = {}): ThreadNode => ({
     id: sid('thread'), label: 'Indexer', running: false, ...overrides,
   })
 
-  it('opens the Thread session and offers no row verbs of its own', () => {
+  it('opens the Thread session and hosts no menu of its own', () => {
     const onOpen = vi.fn()
-    render(<ThreadNodeItem thread={thread()} currentId={undefined} now={0}
+    render(<ThreadNodeItem thread={thread()} projectSessionId={projectSessionId} currentId={undefined} now={0}
       onOpen={onOpen} renderSlot={renderNoRowEntries} t={t} />)
 
     const row = screen.getByRole('treeitem')
     expect(row.getAttribute('data-row-key')).toBe('thread:thread')
     expect(row.getAttribute('aria-selected')).toBe('false')
     expect(screen.getByText('Indexer')).toBeTruthy()
-    // A Thread is a child Session: no menu, rename, archive, pin, or reorder.
+    // A Thread is a child Session: no menu, rename, pin, or reorder; its
+    // lifecycle verbs arrive through the action seat below.
     expect(row.hasAttribute('draggable')).toBe(false)
     expect(screen.queryByRole('button')).toBeNull()
     fireEvent.click(row)
     expect(onOpen).toHaveBeenCalledWith(thread().id)
   })
 
+  it('renders a registered action seat and keeps its button out of the row click', () => {
+    const onOpen = vi.fn()
+    const onArchive = vi.fn()
+    const renderSlot: RowRenderSlot = vi.fn((name: RowSlotName, owner: object) => {
+      if (name !== 'sidebar.workspaces.thread.row.action') return null
+      const { threadId, projectSessionId: ownerProject, label } = owner as ThreadRowActionOwnerProps
+      return (
+        <button
+          type="button"
+          aria-label={`Archive ${label}`}
+          onClick={() => { onArchive(threadId, ownerProject) }}
+        />
+      )
+    })
+    render(<ThreadNodeItem thread={thread()} projectSessionId={projectSessionId} currentId={undefined} now={0}
+      onOpen={onOpen} renderSlot={renderSlot} t={t} />)
+
+    // The seat receives the Thread and its owning Project Session.
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.workspaces.thread.row.action', {
+      threadId: thread().id, projectSessionId, label: 'Indexer',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Indexer' }))
+    expect(onArchive).toHaveBeenCalledWith(thread().id, projectSessionId)
+    expect(onOpen).not.toHaveBeenCalled()
+    // Clicking the row itself still opens the Thread's Session.
+    fireEvent.click(screen.getByRole('treeitem'))
+    expect(onOpen).toHaveBeenCalledWith(thread().id)
+  })
+
   it('marks the selected Thread row and renders its own time cell', () => {
     const node = thread({ updatedAt: Date.now() })
-    render(<ThreadNodeItem thread={node} currentId={node.id} now={Date.now()}
+    render(<ThreadNodeItem thread={node} projectSessionId={projectSessionId} currentId={node.id} now={Date.now()}
       onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
     expect(screen.getByRole('treeitem').getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('刚刚')).toBeTruthy()
   })
 
   it('leaves the time cell off until the Thread Session summary lands', () => {
-    render(<ThreadNodeItem thread={thread()} currentId={undefined} now={Date.now()}
+    render(<ThreadNodeItem thread={thread()} projectSessionId={projectSessionId} currentId={undefined} now={Date.now()}
       onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={t} />)
     expect(screen.getByRole('treeitem').querySelector('[class*="time"]')).toBeNull()
   })
 
   it.each([['未命名', t], ['Untitled', tEn]])('localizes an unnamed Thread as %s', (label, translate) => {
-    render(<ThreadNodeItem thread={thread({ label: '' })} currentId={undefined} now={0}
-      onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={translate} />)
+    render(<ThreadNodeItem thread={thread({ label: '' })} projectSessionId={projectSessionId}
+      currentId={undefined} now={0} onOpen={vi.fn()} renderSlot={renderNoRowEntries} t={translate} />)
     expect(screen.getByText(label)).toBeTruthy()
   })
 
   it('swaps the leading seat for the running dot while the Thread runs', () => {
-    const renderSlot: RowRenderSlot = vi.fn((key: RowSlotName) => <span key={key} data-seat={key} />)
-    const view = render(<ThreadNodeItem thread={thread()} currentId={undefined} now={0}
-      onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
-    expect(renderSlot).toHaveBeenCalledWith('sidebar.session.row.leading', { sessionId: 'thread' })
+    const seat = vi.fn((key: RowSlotName) => <span key={key} data-seat={key} />)
+    const renderSlot: RowRenderSlot = seat
+    const view = render(<ThreadNodeItem thread={thread()} projectSessionId={projectSessionId}
+      currentId={undefined} now={0} onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
+    expect(seat).toHaveBeenCalledWith('sidebar.session.row.leading', { sessionId: 'thread' })
     expect(screen.getByRole('treeitem').querySelector('[data-state]')).toBeNull()
 
-    view.rerender(<ThreadNodeItem thread={thread({ running: true })} currentId={undefined} now={0}
-      onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
-    expect(renderSlot).toHaveBeenCalledTimes(1)
+    view.rerender(<ThreadNodeItem thread={thread({ running: true })} projectSessionId={projectSessionId}
+      currentId={undefined} now={0} onOpen={vi.fn()} renderSlot={renderSlot} t={t} />)
+    // The running row draws its own dot: the leading seat is asked for once.
+    expect(seat.mock.calls.filter(([key]) => key === 'sidebar.session.row.leading')).toHaveLength(1)
     expect(screen.getByRole('treeitem').querySelector('[data-state="ongoing"]')).toBeTruthy()
     expect(screen.getByText('进行中')).toBeTruthy()
   })
