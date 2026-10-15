@@ -9,8 +9,8 @@
   en: b4d102515276953f
   zh: 00b8a42330b8c728
 /deepseek-ai-dsh-experimental-client-ui-threads/summary:
-  en: 67c8d843f39f6308
-  zh: 2593d1b853611be8
+  en: 3fe7335d4b0bf47f
+  zh: a78595b6e1dcf5ff
 /deepseek-ai-dsh-experimental-client-ui-threads/table-of-contents:
   en: 76368b6b1da79c80
   zh: 52384aee991ac542
@@ -27,8 +27,11 @@
   en: 7ba8ea9b21c1f1c0
   zh: ce7b6a79c796d84d
 /deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/row-actions:
-  en: 295345509b3c1180
-  zh: 4f054dc525c1e886
+  en: 62ec481626be976a
+  zh: f588ec81a36eb658
+/deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/sidebar-thread-rows:
+  en: 4b217e6e55262235
+  zh: 940b295c49fb3268
 /deepseek-ai-dsh-experimental-client-ui-threads/use-this-package/opening-a-thread:
   en: 1ba3a0636544fa30
   zh: 30f5dd7765221e6c
@@ -57,8 +60,8 @@
   en: 6bff1b59c4f72ac2
   zh: bf2c99fbd7b20452
 /deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/source-map:
-  en: eea1cb24c2479046
-  zh: 4ca7b00e3df82458
+  en: 58ed6e12ddbc0f60
+  zh: 963f9727378ed5c9
 /deepseek-ai-dsh-experimental-client-ui-threads/understand-the-implementation/the-dropdown-interaction-is-the-catalog-s:
   en: e13ce1dcee3de435
   zh: 59a76585e057e5d9
@@ -90,5 +93,5 @@
   en: 905eeaab5b8651a8
   zh: 7b6d655182cd1b62
 /deepseek-ai-dsh-experimental-client-ui-threads/known-limitations-and-deferred-work/dev-note:
-  en: 320ea535180e5288
-  zh: b5e7e8ef10d00180
+  en: 3cfc5388e49f5a59
+  zh: 894751dea0d7477f

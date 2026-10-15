@@ -1,7 +1,7 @@
 /** ui-threads browser half: the Thread roster seat, the New Project row, and the actions they bind. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Context } from '@deepseek-ai/cordis'
-import { stubConfigForm, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate, stubConfigForm, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -16,9 +16,16 @@ import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { ThreadHeaderAction } from '../src/client/ThreadChatHeader.tsx'
 import { ProjectTokenUsage } from '../src/client/ProjectTokenUsage.tsx'
+import { SidebarThreadAction } from '../src/client/SidebarThreadAction.tsx'
+import { ThreadActionOverlays } from '../src/client/ThreadActionOverlays.tsx'
+import { submitThreadArchive } from '../src/client/ThreadActions.tsx'
+import { en } from '../src/client/locales.ts'
 import { Config } from '../src/client/config.ts'
 type IResources = { register: () => () => void }
-import { fake, newProjectInjected, rosterInjectedFor, threadActionsInjected, tokensInjected } from './support.client.ts'
+import {
+  fake, newProjectInjected, overlayInjected, rosterInjectedFor, sidebarThreadActionsInjected, threadActionsInjected,
+  tokensInjected,
+} from './support.client.ts'
 import { inject, mountThreads } from '../src/client/mount.ts'
 
 const sid = (id: string) => id as SessionId
@@ -64,6 +71,9 @@ async function provideSlotFaces(ctx: Context): Promise<void> {
     children: {
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
+      // Stand-ins for the seats ui-layout and ui-workspace declare in the app.
+      'shell.overlay': { kind: 'list', scope: 'root' },
+      'sidebar.workspaces.thread.row.action': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
 }
@@ -402,6 +412,108 @@ describe('Thread chat tab', () => {
   it('registers the Thread chat type once the resource and Sidebar services exist', async () => {
     const { tabDefinitions } = await fullBench(PROJECT)
     expect(tabDefinitions.map(definition => definition.kind)).toEqual(['threadchat'])
+  })
+})
+
+/** The sidebar Thread row entry as the slot registry holds it. */
+function sidebarEntry(ctx: Context) {
+  return ctx.slots.entries('sidebar.workspaces.thread.row.action')
+    .find(candidate => candidate.component === SidebarThreadAction)!
+}
+
+/** The frame-wide feedback host entry as the slot registry holds it. */
+function overlayEntry(ctx: Context) {
+  return ctx.slots.entries('shell.overlay')
+    .find(candidate => candidate.component === ThreadActionOverlays)!
+}
+
+describe('sidebar Thread row action', () => {
+  it('registers in the Thread row strip in its own locale', async () => {
+    const { ctx } = await fullBench(PROJECT)
+    const entry = sidebarEntry(ctx)
+    expect(entry.options.id).toBe('thread-row-actions')
+    expect(entry.locale).toBe('threads')
+  })
+
+  it('stops and archives through the same Remote calls as the roster', async () => {
+    const { ctx, face } = await fullBench(PROJECT)
+    const actions = sidebarThreadActionsInjected(sidebarEntry(ctx).inject)
+    await actions.stopThread(sid('project'), tid('thread-1'))
+    await actions.archiveThread(sid('project'), tid('thread-1'), false)
+    expect(face.actionCalls).toEqual([
+      { method: 'interruptByParent', args: ['thread-1', 'project', 'continuable'] },
+      { method: 'archive', args: ['project', 'thread-1', { force: false }] },
+    ])
+  })
+})
+
+describe('Thread action feedback host', () => {
+  const t = makeTranslate(en)
+
+  it('registers one frame-wide host in its own locale', async () => {
+    const { ctx } = await fullBench(PROJECT)
+    const entry = overlayEntry(ctx)
+    expect(entry.options.id).toBe('thread-action-feedback')
+    expect(entry.locale).toBe('threads')
+  })
+
+  it('raises an archive success notice in the store the host reads, whatever row asked', async () => {
+    const { ctx } = await fullBench(PROJECT)
+    const row = sidebarThreadActionsInjected(sidebarEntry(ctx).inject)
+    const host = overlayInjected(overlayEntry(ctx).inject)
+    await submitThreadArchive(
+      { parentSessionId: sid('project'), threadId: tid('thread-1'), label: 'worker' },
+      false,
+      { archiveThread: row.archiveThread, refreshProjection: row.refreshProjection, feedback: row.feedback, t },
+    )
+    expect(host.hooks.feedback.getSnapshot().toast).toMatchObject({ text: 'Archived thread worker', tone: 'success' })
+    host.dismissToast()
+    expect(host.hooks.feedback.getSnapshot().toast).toBeNull()
+  })
+
+  it('raises the dirty-worktree confirmation in the shared store, and the forced retry succeeds from the host', async () => {
+    const { ctx, face } = await fullBench(PROJECT, undefined, {
+      archive: vi.fn()
+        .mockResolvedValueOnce({ ok: false, error: { code: 'threads/worktree-dirty', message: 'dirty' } })
+        .mockResolvedValueOnce({ ok: true }),
+    })
+    const row = sidebarThreadActionsInjected(sidebarEntry(ctx).inject)
+    const host = overlayInjected(overlayEntry(ctx).inject)
+    const request = { parentSessionId: sid('project'), threadId: tid('thread-1'), label: 'worker' }
+    await submitThreadArchive(request, false, {
+      archiveThread: row.archiveThread, refreshProjection: row.refreshProjection, feedback: row.feedback, t,
+    })
+    // The refusal is a question, not a failure: no notice, one pending confirmation.
+    expect(host.hooks.feedback.getSnapshot().toast).toBeNull()
+    expect(host.hooks.feedback.getSnapshot().dirty).toEqual(request)
+    host.settleDirtyArchive()
+    expect(host.hooks.feedback.getSnapshot().dirty).toBeNull()
+    // The confirmed retry rides the host's own injected calls with force.
+    await submitThreadArchive(request, true, {
+      archiveThread: host.archiveThread, refreshProjection: host.refreshProjection, feedback: host.writes, t,
+    })
+    expect(face.actionCalls).toEqual([
+      { method: 'archive', args: ['project', 'thread-1', { force: false }] },
+      { method: 'archive', args: ['project', 'thread-1', { force: true }] },
+      { method: 'refreshProjections', args: [sid('project')] },
+    ])
+    expect(host.hooks.feedback.getSnapshot().toast).toMatchObject({ text: 'Archived thread worker', tone: 'success' })
+  })
+
+  it('raises a warning notice for any other refusal', async () => {
+    const { ctx } = await fullBench(PROJECT, undefined, {
+      archive: () => Promise.resolve({ ok: false, error: { code: 'threads/not-found', message: 'gone' } }),
+    })
+    const row = sidebarThreadActionsInjected(sidebarEntry(ctx).inject)
+    const host = overlayInjected(overlayEntry(ctx).inject)
+    await submitThreadArchive(
+      { parentSessionId: sid('project'), threadId: tid('thread-1'), label: 'worker' },
+      false,
+      { archiveThread: row.archiveThread, refreshProjection: row.refreshProjection, feedback: row.feedback, t },
+    )
+    expect(host.hooks.feedback.getSnapshot().dirty).toBeNull()
+    expect(host.hooks.feedback.getSnapshot().toast)
+      .toMatchObject({ text: 'Unable to archive thread worker: gone', tone: 'warning' })
   })
 })
 

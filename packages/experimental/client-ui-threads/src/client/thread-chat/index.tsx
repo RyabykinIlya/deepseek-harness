@@ -23,6 +23,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { NS } from '../locales.ts'
 import type { ThreadActionsInjected } from '../ThreadActions.tsx'
+import type { ThreadsFeedbackWrites } from '../feedback.ts'
 import { ThreadChatHeader } from '../ThreadChatHeader.tsx'
 import css from './ThreadChat.module.css'
 
@@ -219,11 +220,14 @@ export function ThreadChatTab({ useResource, useTabInfo, SessionProvider, render
 
 /**
  * Sidebar tab body that adds the Thread header above the chat.
- * @param actions - Stop, Archive and projection refresh behind the header buttons.
+ * @param actions - Stop, Archive, projection refresh, and the shared feedback writes behind the header buttons.
  * @param projectAgentPresets - agent preset ids this deployment treats as Project identities.
  * @returns the tab component to register.
  */
-function threadChatTabWithHeader(actions: ThreadActionsInjected, projectAgentPresets: readonly string[]) {
+function threadChatTabWithHeader(
+  actions: ThreadActionsInjected & { feedback: ThreadsFeedbackWrites },
+  projectAgentPresets: readonly string[],
+) {
   return function ThreadChatTabWithHeader(props: ThreadChatTabProps & PropsLocale<typeof NS>) {
     return (
       <ThreadChatTab
@@ -248,13 +252,13 @@ function threadChatTabWithHeader(actions: ThreadActionsInjected, projectAgentPre
  * Register the Thread chat resource owner and its right-Sidebar presentation.
  * @param ctx - Client root carrying Sessions, resources, Slots, and Sidebar registries.
  * @param t - Chat namespace translator used for fallback tab titles.
- * @param actions - Thread actions behind the header above the chat.
+ * @param actions - Thread actions and the shared feedback writes behind the header above the chat.
  * @param projectAgentPresets - agent preset ids this deployment treats as Project identities.
  */
 export function registerThreadChat(
   ctx: Context,
   t: TranslateNS<typeof NS>,
-  actions: ThreadActionsInjected,
+  actions: ThreadActionsInjected & { feedback: ThreadsFeedbackWrites },
   projectAgentPresets: readonly string[],
 ): void {
   ctx.effect(

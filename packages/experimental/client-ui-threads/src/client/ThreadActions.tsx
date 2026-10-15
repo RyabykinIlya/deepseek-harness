@@ -1,22 +1,24 @@
 /**
- * Thread actions shared by the header roster and the Thread chat header: Stop,
- * Archive with the dirty-worktree confirmation and forced retry, and Copy
- * branch, together with the feedback they produce.
+ * Thread actions shared by the header roster, the Thread chat header, and the
+ * sidebar Thread row: Stop, Archive with the dirty-worktree confirmation and
+ * forced retry, and Copy branch.
  *
- * The feedback (a Toast and the confirmation dialog) is rendered by the host
- * component through {@link UseThreadActions.overlays}, not by the action
- * buttons: archiving the last Thread removes the row, the menu, and the header
- * that requested it, and the notice must outlive all of them.
+ * The feedback they produce (a Toast and the confirmation dialog) is rendered
+ * by the frame-wide overlay host in `ThreadActionOverlays.tsx`, not by the
+ * action buttons: archiving the last Thread removes the row, the menu, and the
+ * header that requested it, and the notice must outlive all of them. The row
+ * registrations write notices and confirmation requests into the shared
+ * feedback store of `feedback.ts`; the overlay reads it.
  */
-import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
-  IconArchiveOutlineRegular, IconStopFillRegular, IconWarningOutlineRegular, RiskConfirmation, Toast,
-  Tooltip, writeClipboard,
+  IconArchiveOutlineRegular, IconStopFillRegular, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WORKTREE_DIRTY_CODE, type ThreadActionResult } from './actions.ts'
+import type { ThreadsFeedbackWrites } from './feedback.ts'
 import type { NS } from './locales.ts'
 import type { ThreadRosterRow } from './roster.ts'
 
@@ -62,8 +64,54 @@ export interface RowActions {
 export interface UseThreadActions {
   /** Callbacks for the Thread buttons. */
   actions: RowActions
-  /** The Toast and the dirty-archive confirmation; render once, in a component that outlives the row. */
-  overlays: ReactNode
+}
+
+/** The archive one Thread is waiting on: its owner, its identity, and its display label. */
+export interface ThreadArchiveRequest {
+  /** The Project Session that owns the Thread. */
+  readonly parentSessionId: SessionId
+  /** The Thread to archive. */
+  readonly threadId: ThreadStatusRow['threadId']
+  /** Display label, already resolved (an empty label falls back to the identity). */
+  readonly label: string
+}
+
+/** The Remote calls and feedback writes {@link submitThreadArchive} drives. */
+export interface ThreadArchiveDeps {
+  /** Interrupt-free archive; `threads/worktree-dirty` means the worktree holds uncommitted changes. */
+  readonly archiveThread: ThreadActionsInjected['archiveThread']
+  /** Re-read the Project Session's `threads` projection after a successful archive. */
+  readonly refreshProjection: ThreadActionsInjected['refreshProjection']
+  /** Shared feedback writes. */
+  readonly feedback: ThreadsFeedbackWrites
+  /** `threads` namespace translator. */
+  readonly t: TranslateNS<typeof NS>
+}
+
+/**
+ * Archive one Thread and publish the outcome: a success refreshes the
+ * projection and raises a success notice; a dirty-worktree refusal asks for
+ * confirmation instead of failing; anything else raises a warning notice. The
+ * row actions and the overlay's forced retry share this one path, so every
+ * surface reports the same archive the same way.
+ * @param request - the Thread, its owner, and its display label.
+ * @param force - discard uncommitted worktree changes instead of refusing.
+ * @param deps - the Remote call, the projection refresh, the feedback writes, and the translator.
+ */
+export async function submitThreadArchive(
+  request: ThreadArchiveRequest, force: boolean, deps: ThreadArchiveDeps,
+): Promise<void> {
+  const result = await deps.archiveThread(request.parentSessionId, request.threadId, force)
+  if (result.ok) {
+    deps.refreshProjection(request.parentSessionId)
+    deps.feedback.notify(deps.t('toast.archived', { label: request.label }), 'success')
+  } else if (!force && result.code === WORKTREE_DIRTY_CODE) {
+    deps.feedback.requestDirtyArchive({
+      parentSessionId: request.parentSessionId, threadId: request.threadId, label: request.label,
+    })
+  } else {
+    deps.feedback.notify(deps.t('toast.archiveFailed', { label: request.label, message: result.message }), 'warning')
+  }
 }
 
 /**
@@ -87,20 +135,16 @@ export function threadLabel(row: Pick<ThreadRosterRow, 'label' | 'threadId'>): s
 
 /**
  * Own the Stop, Archive and Copy branch behavior for the Threads of one Project.
- * @param options - the Project Session, the injected actions, and the translator.
- * @returns the row callbacks and the feedback overlays to render.
+ * Notices and the dirty-worktree confirmation are published into the shared
+ * feedback store through {@link ThreadsFeedbackWrites}; the frame-wide overlay
+ * renders them, so a row that disappears still leaves its notice on screen.
+ * @param options - the Project Session, the injected actions, the shared feedback writes, and the translator.
+ * @returns the row callbacks and the in-flight set.
  */
-export function useThreadActions({ parentSessionId, stopThread, archiveThread, refreshProjection, t }:
-  ThreadActionsInjected & { parentSessionId: SessionId; t: TranslateNS<typeof NS> }): UseThreadActions {
-  const toastSeq = useRef(0)
-  const [toast, setToast] = useState<{ seq: number; text: string; tone: 'success' | 'warning' } | null>(null)
-  const [dirtyRow, setDirtyRow] = useState<ThreadRosterRow | null>(null)
-  const [acknowledged, setAcknowledged] = useState(false)
+export function useThreadActions({ parentSessionId, stopThread, archiveThread, refreshProjection, feedback, t }:
+  ThreadActionsInjected & { parentSessionId: SessionId; feedback: ThreadsFeedbackWrites; t: TranslateNS<typeof NS> },
+): UseThreadActions {
   const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set())
-  const notify = (text: string, tone: 'success' | 'warning'): void => {
-    toastSeq.current += 1
-    setToast({ seq: toastSeq.current, text, tone })
-  }
   const setPending = (threadId: string, pending: boolean): void => {
     setBusy((current) => {
       const next = new Set(current)
@@ -109,20 +153,14 @@ export function useThreadActions({ parentSessionId, stopThread, archiveThread, r
       return next
     })
   }
-  /** Archive one Thread; a dirty worktree asks for confirmation before the forced retry. */
+  const deps: ThreadArchiveDeps = { archiveThread, refreshProjection, feedback, t }
+  /** Archive one Thread; a dirty worktree asks for confirmation through the shared store. */
   async function archive(row: ThreadRosterRow, force: boolean): Promise<void> {
     setPending(row.threadId, true)
     try {
-      const result = await archiveThread(parentSessionId, row.threadId, force)
-      if (result.ok) {
-        refreshProjection(parentSessionId)
-        notify(t('toast.archived', { label: threadLabel(row) }), 'success')
-      } else if (!force && result.code === WORKTREE_DIRTY_CODE) {
-        setAcknowledged(false)
-        setDirtyRow(row)
-      } else {
-        notify(t('toast.archiveFailed', { label: threadLabel(row), message: result.message }), 'warning')
-      }
+      await submitThreadArchive(
+        { parentSessionId, threadId: row.threadId, label: threadLabel(row) }, force, deps,
+      )
     } finally {
       setPending(row.threadId, false)
     }
@@ -132,7 +170,9 @@ export function useThreadActions({ parentSessionId, stopThread, archiveThread, r
     stop: (row) => {
       setPending(row.threadId, true)
       void stopThread(parentSessionId, row.threadId).then((result) => {
-        if (!result.ok) notify(t('toast.stopFailed', { label: threadLabel(row), message: result.message }), 'warning')
+        if (!result.ok) {
+          feedback.notify(t('toast.stopFailed', { label: threadLabel(row), message: result.message }), 'warning')
+        }
       }).finally(() => { setPending(row.threadId, false) })
     },
     archive: (row) => { void archive(row, false) },
@@ -141,43 +181,12 @@ export function useThreadActions({ parentSessionId, stopThread, archiveThread, r
       /* v8 ignore next -- the copy button renders only for a row with a branch */
       if (branch === undefined) return
       void writeClipboard(branch).then((copied) => {
-        if (copied) notify(t('toast.branchCopied', { branch }), 'success')
-        else notify(t('toast.copyFailed'), 'warning')
+        if (copied) feedback.notify(t('toast.branchCopied', { branch }), 'success')
+        else feedback.notify(t('toast.copyFailed'), 'warning')
       })
     },
   }
-  const overlays = (
-    <>
-      {toast !== null && (
-        <Toast
-          key={toast.seq}
-          text={toast.text}
-          {...toast.tone === 'success' ? { tone: 'success' as const } : { icon: <IconWarningOutlineRegular /> }}
-          holdMs={6000}
-          onDone={() => { setToast(null) }}
-        />
-      )}
-      <RiskConfirmation
-        open={dirtyRow !== null}
-        title={t('archive.dirty.title')}
-        description={dirtyRow === null ? '' : t('archive.dirty.body', { label: threadLabel(dirtyRow) })}
-        acknowledgeLabel={t('archive.dirty.acknowledge')}
-        cancelLabel={t('archive.dirty.cancel')}
-        closeLabel={t('archive.dirty.close')}
-        confirmLabel={t('archive.dirty.confirm')}
-        acknowledged={acknowledged}
-        onAcknowledgedChange={setAcknowledged}
-        onCancel={() => { setDirtyRow(null) }}
-        onConfirm={() => {
-          const row = dirtyRow
-          setDirtyRow(null)
-          /* v8 ignore next -- the dialog confirms only while a dirty row is pending */
-          if (row !== null) void archive(row, true)
-        }}
-      />
-    </>
-  )
-  return { actions, overlays }
+  return { actions }
 }
 
 /** Props of the Thread action buttons. */

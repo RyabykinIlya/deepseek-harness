@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在一个头部控件里展示项目会话的后台线程，并把其中任意一个作为对话打开——可以打开到主工作区，也可以作为侧边栏页签。每一行并列显示读自会话存储的活跃度与上一轮已结束回合的 `stopReason`，并自带「停止」「归档」与「复制分支名」。归档在移除带未提交修改的工作区之前会先询问。在项目里，该集合是一个控件而不只是一份报表：它在第一个线程存在之前就已经在列，并能打开项目的共享记忆供编辑，旁边则是项目的 token 消耗。边栏底部的「新建项目」操作会开启一个这样的会话。
+在一个头部控件里展示项目会话的后台线程，并把其中任意一个作为对话打开——可以打开到主工作区，也可以作为侧边栏页签。每一行并列显示活跃度与上一轮已结束回合的 `stopReason`，并自带「停止」「归档」「复制分支名」；边栏中的线程行也提供同样的「停止」与「归档」。归档在移除带未提交修改的工作区之前会先询问。在项目里，该集合是一个控件而不只是一份报表：它在第一个线程存在之前就已经在列，能打开项目的共享记忆，旁边则是项目的 token 消耗。边栏底部的「新建项目」操作会开启一个这样的会话。
 
 ## 目录
 
@@ -88,7 +88,12 @@ kind: "package-reference"
 
 归档具有破坏性——它会删除线程的 git 工作区——因此当工作区存在未提交修改时会先行询问。宿主会以 `threads/worktree-dirty` 拒绝这类归档；该行随后打开一个确认框，点名该线程并说明这些未提交修改无法恢复，「仍然归档」按钮会保持禁用，直到勾选确认复选框。只有此时才会以 `force: true` 重试同一次调用。其他失败与成功都会以提示条上报。
 
-提示条与确认框由头部席位渲染，而不是渲染在线程集合菜单内部，因为归档最后一个线程会让控件消失：该次归档的通知必须比发起它的菜单更长寿。
+提示条与确认框由覆盖整个窗口框架的浮层宿主（`shell.overlay`）渲染，而不是由发起操作的行或头部渲染：归档最后一个线程会让控件消失、行本身也不复存在，因此该次归档的通知必须比发起它的菜单、头部和行都长寿。集合、线程头部与边栏行写入同一个共享反馈存储，因此无论从哪里发起，通知与确认的表现都一致。
+
+<a id="sidebar-thread-rows"></a>
+### 边栏线程行
+
+边栏工作区树中嵌在项目行下的线程行，在悬停时提供同样的「停止」与「归档」。`ui-workspace` 只声明 `sidebar.workspaces.thread.row.action` 席位，不拥有线程生命周期的任何部分；本包用集合自己的操作填充该席位，因此未提交工作区的确认和每条通知都进入同一个共享反馈宿主。活跃度与集合一样读自会话存储，因此「停止」只在线程运行时出现。
 
 <a id="opening-a-thread"></a>
 ### 打开一个线程
@@ -162,8 +167,11 @@ kind: "package-reference"
 | Path | Role |
 |---|---|
 | [`src/client/ThreadStatus.tsx`](src/client/ThreadStatus.tsx) | 拆成独立取值的两条状态轴，以及每种 `stopReason` 的图标 |
-| [`src/client/ThreadsHeaderAction.tsx`](src/client/ThreadsHeaderAction.tsx) | 头部控件、线程集合、行操作、反馈界面，以及照搬的下拉交互 |
-| [`src/client/ThreadActions.tsx`](src/client/ThreadActions.tsx) | 「停止」「归档」「复制分支名」及其提示条与未提交归档确认，由集合和线程头部共用 |
+| [`src/client/ThreadsHeaderAction.tsx`](src/client/ThreadsHeaderAction.tsx) | 头部控件、线程集合、行操作，以及照搬的下拉交互 |
+| [`src/client/ThreadActions.tsx`](src/client/ThreadActions.tsx) | 「停止」「归档」「复制分支名」，由集合、线程头部与边栏行共用：Remote 调用的结果、进行中集合，以及通知与确认请求的发布 |
+| [`src/client/feedback.ts`](src/client/feedback.ts) | 一条共享通知与一个待确认的未提交归档，放在每个线程操作都写入、浮层宿主读取的存储里 |
+| [`src/client/ThreadActionOverlays.tsx`](src/client/ThreadActionOverlays.tsx) | 渲染共享提示条与未提交工作区确认的 `shell.overlay` 宿主，包括确认后的强制重试 |
+| [`src/client/SidebarThreadAction.tsx`](src/client/SidebarThreadAction.tsx) | 边栏中嵌在项目下的线程行的「停止」与「归档」按钮 |
 | [`src/client/ThreadChatHeader.tsx`](src/client/ThreadChatHeader.tsx) | 侧边栏对话上方和会话头部区域里的线程头部 |
 | [`src/client/ProjectTokenUsage.tsx`](src/client/ProjectTokenUsage.tsx) | 会话头部区域里的项目聚合 token 消耗 |
 | [`src/client/MemoryPanel.tsx`](src/client/MemoryPanel.tsx) | 记忆视图：列表、添加、编辑、删除、就地显示拒绝 |
@@ -240,6 +248,6 @@ kind: "package-reference"
 pnpm vitest run packages/client/ui-threads
 ```
 
-`tests/threads-header-action.client.spec.tsx` 覆盖由投影驱动的行、每种 `stopReason` 各自的图标与文案、读自会话存储的活跃度、键盘遍历与关闭规则、打开线程、行操作（停止、含脏工作区确认与其强制重试的归档、复制分支名，以及每种失败对应的提示条），以及项目身份带来的全部行为——始终可见、空列表文案，以及「新建线程」一行准备出的指令；`tests/roster.client.spec.ts` 覆盖目录投影、合并与活跃度附加；`tests/project-identity.client.spec.ts` 覆盖身份规则、其配置与工作区选择；`tests/new-project-footer-action.client.spec.tsx` 覆盖该按钮的工作区解析、激活、失败文案与防重复进入；`tests/thread-chat.client.spec.tsx` 覆盖地址往返、资源提供者的生命周期与内嵌对话；`tests/browser-plugin.client.spec.ts` 覆盖插槽注册、其绑定的导航行为，以及各操作所发出 Remote 调用的确切形态。 `tests/thread-chat-header.client.spec.tsx` 覆盖线程头部及其共用的操作；`tests/memory-panel.client.spec.tsx` 覆盖记忆视图；`tests/library-panel.client.spec.tsx` 覆盖资料库视图、各区块及其空状态与截断提示；`tests/token-usage.client.spec.ts` 覆盖 `tokenUsage` 的求和、它拒绝接受的读数、空读数以及紧凑数字；`tests/project-token-usage.client.spec.tsx` 覆盖头部条目——仅在项目内可见、已归档线程的归属、占位文案、四个桶的明细、两种字典，以及已挂载组件所跟随的一次存储更新；`tests/index.client.spec.ts` 覆盖包入口。
+`tests/threads-header-action.client.spec.tsx` 覆盖由投影驱动的行、每种 `stopReason` 各自的图标与文案、读自会话存储的活跃度、键盘遍历与关闭规则、打开线程、行操作（停止、含脏工作区确认与其强制重试的归档、复制分支名，以及每种失败对应的提示条——都经共享浮层宿主渲染）、边栏线程行的「停止」与「归档」、元信息行上的线程模型，以及项目身份带来的全部行为——始终可见、空列表文案，以及「新建线程」一行准备出的指令；`tests/roster.client.spec.ts` 覆盖目录投影、合并与活跃度附加；`tests/project-identity.client.spec.ts` 覆盖身份规则、其配置与工作区选择；`tests/new-project-footer-action.client.spec.tsx` 覆盖该按钮的工作区解析、激活、失败文案与防重复进入；`tests/thread-chat.client.spec.tsx` 覆盖地址往返、资源提供者的生命周期与内嵌对话；`tests/browser-plugin.client.spec.ts` 覆盖插槽注册——包括边栏线程行操作与覆盖窗口框架的反馈宿主——、其绑定的导航行为、各操作所发出 Remote 调用的确切形态，以及共享反馈存储的通知、确认与强制重试。 `tests/thread-chat-header.client.spec.tsx` 覆盖线程头部及其共用的操作；`tests/memory-panel.client.spec.tsx` 覆盖记忆视图；`tests/library-panel.client.spec.tsx` 覆盖资料库视图、各区块及其空状态与截断提示；`tests/token-usage.client.spec.ts` 覆盖 `tokenUsage` 的求和、它拒绝接受的读数、空读数以及紧凑数字；`tests/project-token-usage.client.spec.tsx` 覆盖头部条目——仅在项目内可见、已归档线程的归属、占位文案、四个桶的明细、两种字典，以及已挂载组件所跟随的一次存储更新；`tests/index.client.spec.ts` 覆盖包入口。
 
 **运行时不变式：** 不发布伴生入口。本包展示的每个值都投影自 Host 持有的状态——`threads` 行、读自 Session 存储的存活性标志，以及 `projectMemory` Remote 背后的条目——因此它在运行期持有的只是一组随插件卸载而解绑的 slot 注册与 Remote 命名空间注册。

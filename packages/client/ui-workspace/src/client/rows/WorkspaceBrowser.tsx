@@ -444,7 +444,7 @@ function SessionTree({
     const sessions = visible.rows
     // Each Session row with the Thread rows it actually renders: the keyboard
     // row keys and the nest below read the same capped list, so they cannot
-    // disagree about which Thread rows exist. `collapsed` judges the roster
+    // disagree about which Thread rows exist. `capped` judges the roster
     // against the default limit, keeping the toggle present while expanded.
     const sessionRows = sessions.map(node => ({
       node,

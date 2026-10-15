@@ -10,6 +10,7 @@ import type { ResourceProvider } from '@deepseek-ai/dsh-client-resources/client'
 import { sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import { fake, okResult } from './support.client.ts'
 import type { ThreadActionsInjected } from '../src/client/ThreadActions.tsx'
+import type { ThreadsFeedbackWrites } from '../src/client/feedback.ts'
 import type { ConversationViewsProps, UseConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -109,10 +110,11 @@ describe('Thread chat registration', () => {
       sidebarRightTabs: { register: (value: SidebarRightTabDefinition) => { definition = value; return () => {} } },
     })
 
-    const actions: ThreadActionsInjected = {
+    const actions: ThreadActionsInjected & { feedback: ThreadsFeedbackWrites } = {
       refreshProjection: vi.fn(),
       stopThread: vi.fn(okResult),
       archiveThread: vi.fn(okResult),
+      feedback: { notify: vi.fn(), requestDirtyArchive: vi.fn() },
     }
     registerThreadChat(ctx, (key: string) => key === 'sidebar.chat' ? 'Chat' : key, actions, [])
 
@@ -254,6 +256,7 @@ describe('Thread chat components', () => {
       refreshProjection: vi.fn(),
       stopThread: vi.fn(okResult),
       archiveThread: vi.fn(okResult),
+      feedback: { notify: vi.fn(), requestDirtyArchive: vi.fn() },
     }, [])
     const Tab = registrations[0]!.component as ComponentType<ThreadChatTabProps & { t: (key: string) => string }>
     const state = fake<SessionListState>({

@@ -1,27 +1,36 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   SessionListState, SessionProjectionMap, SessionProjectionSnapshot, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ThreadStopReason, ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/types'
 import type { ThreadId } from '@deepseek-ai/dsh-experimental-threads/types'
+import type { ModelRoutingView } from '@deepseek-ai/dsh-experimental-model-routing/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ThreadId as toThreadId } from '@deepseek-ai/dsh-experimental-threads/types'
 import { ThreadsHeaderAction, type ThreadsHeaderActionProps } from '../src/client/ThreadsHeaderAction.tsx'
+import { SidebarThreadAction, type SidebarThreadActionProps } from '../src/client/SidebarThreadAction.tsx'
+import { ThreadActionOverlays } from '../src/client/ThreadActionOverlays.tsx'
+import type { ThreadActionResult } from '../src/client/actions.ts'
+import { createThreadsFeedbackStore, type ThreadsFeedbackHandle } from '../src/client/feedback.ts'
 import { threadStatus } from '../src/client/ThreadStatus.tsx'
 import { zh } from '../src/client/locales.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { MemoryEntry, MemoryEntryId } from '../src/client/memory-types.ts'
 import type { ThreadsLibrary } from '@deepseek-ai/dsh-experimental-threads/client'
-import { fake, okResult } from './support.client.ts'
+import { fake, okResult, overlayPropsFor } from './support.client.ts'
 
 /** Thread ids whose own Session is executing; `props` publishes them in the Session store. */
 const RUNNING = new Set<string>()
 
+/** The feedback store the current test's header props write through; `props` creates it on first use. */
+let feedbackHandle: ThreadsFeedbackHandle | undefined
+
 afterEach(() => {
   RUNNING.clear()
+  feedbackHandle = undefined
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -99,10 +108,12 @@ function props(
   function useSessions<T>(select: (value: SessionListState) => T): T {
     return select(state)
   }
+  feedbackHandle ??= createThreadsFeedbackStore()
   const unused = (): never => { throw new Error('this header seat provides no such source') }
   return fake<ThreadsHeaderActionProps>({
     sessionId: PARENT,
     useSessions,
+    feedback: feedbackHandle.writes,
     usePanelInfo: unused,
     useSessionRetainInfo: unused,
     useWorkspaces: unused,
@@ -142,6 +153,24 @@ function props(
     t,
     ...over,
   })
+}
+
+/**
+ * The header beside the frame-wide overlay host over the same feedback store,
+ * the composition the mount registers: notices and the dirty-worktree
+ * confirmation a row action raises render in the host, not in the header.
+ */
+function renderWithOverlays(p: ThreadsHeaderActionProps) {
+  return render(
+    <>
+      <ThreadsHeaderAction {...p} />
+      <ThreadActionOverlays
+        {...overlayPropsFor(feedbackHandle ?? (() => { throw new Error('props built no feedback store') })(), {
+          archiveThread: p.archiveThread, refreshProjection: p.refreshProjection, t,
+        })}
+      />
+    </>,
+  )
 }
 
 function openRoster(): void {
@@ -240,6 +269,29 @@ describe('ThreadsHeaderAction rows', () => {
     }))} />)
     openRoster()
     expect(within(screen.getByRole('listbox')).getByText('t-empty')).toBeDefined()
+  })
+
+  it('shows the Thread\'s dispatched model on the metadata line', () => {
+    // The model is read from the Thread's own projection block, not the parent row.
+    const view: ModelRoutingView = {
+      requested: 'flash', tier: 'flash', model: 'deepseek/deepseek-v4-flash',
+      providerName: 'StreamLake', quantization: 'fp8', boundary: 'start', decidedAt: 1, unpinned: false,
+    }
+    const projection = snapshot({ state: 'ready', values: { threads: [row({ threadId: 't-1', label: 'worker' })] } })
+    const state = fake<SessionListState>({
+      ids: [PARENT],
+      byId: { [PARENT]: fake<SessionSummary>({ running: false, projectionValues: { agentPreset: 'project' } }) },
+      phase: 'ready',
+      projectionsBySession: {
+        [PARENT]: projection,
+        [sid('t-1')]: fake<SessionProjectionSnapshot>({ values: { modelRouting: view } }),
+      },
+    })
+    render(<ThreadsHeaderAction {...props(projection, {
+      useSessions: <T,>(select: (value: SessionListState) => T): T => select(state),
+    }, PROJECT)} />)
+    openRoster()
+    expect(within(screen.getByRole('listbox')).getByText('flash deepseek-v4-flash · StreamLake')).toBeDefined()
   })
 
   it('shows branch, commits ahead and uncommitted count on one line and the closing note below', () => {
@@ -784,7 +836,7 @@ describe('ThreadsHeaderAction row actions', () => {
     over: Partial<ThreadsHeaderActionProps>,
     threads: ThreadStatusRow[] = [row({ threadId: 't-1', label: 'worker', branch: 'dsh/t-1' })],
   ): void {
-    render(<ThreadsHeaderAction {...props(snapshot({ state: 'ready', values: { threads } }), over)} />)
+    renderWithOverlays(props(snapshot({ state: 'ready', values: { threads } }), over))
     openRoster()
   }
 
@@ -863,13 +915,25 @@ describe('ThreadsHeaderAction row actions', () => {
 
   it('keeps the archive toast after the last Thread leaves the roster', async () => {
     const archiveThread = vi.fn(okResult)
-    const view = render(<ThreadsHeaderAction {...props(snapshot({
+    const view = renderWithOverlays(props(snapshot({
       state: 'ready', values: { threads: [row({ threadId: 't-1', label: 'worker' })] },
-    }), { archiveThread })} />)
+    }), { archiveThread }))
     openRoster()
     fireEvent.click(screen.getByRole('button', { name: '归档线程 worker' }))
     await settle()
-    view.rerender(<ThreadsHeaderAction {...props(snapshot({ state: 'ready', values: { threads: [] } }), { archiveThread })} />)
+    // The roster hides, and the notice it raised stays: it renders in the
+    // frame-wide host, which does not unmount with the roster.
+    const empty = props(snapshot({ state: 'ready', values: { threads: [] } }), { archiveThread })
+    view.rerender(
+      <>
+        <ThreadsHeaderAction {...empty} />
+        <ThreadActionOverlays
+          {...overlayPropsFor(feedbackHandle ?? (() => { throw new Error('props built no feedback store') })(), {
+            archiveThread: empty.archiveThread, refreshProjection: empty.refreshProjection, t,
+          })}
+        />
+      </>,
+    )
     expect(screen.queryByRole('listbox')).toBeNull()
     expect(screen.getByText('已归档线程 worker')).toBeDefined()
   })
@@ -905,6 +969,100 @@ describe('ThreadsHeaderAction row actions', () => {
     archive.focus()
     fireEvent.keyDown(archive, { key: 'ArrowDown' })
     expect(document.activeElement).toBe(rosterOptions()[1])
+  })
+})
+
+describe('SidebarThreadAction', () => {
+  function sidebarProps(over: Partial<SidebarThreadActionProps> & { running?: boolean } = {}): SidebarThreadActionProps {
+    const { running = false, ...rest } = over
+    feedbackHandle ??= createThreadsFeedbackStore()
+    const threadSession = 'thread-1' as SessionId
+    const state = fake<SessionListState>({
+      ids: [PARENT, threadSession],
+      byId: {
+        [PARENT]: fake<SessionSummary>({ running: false }),
+        [threadSession]: fake<SessionSummary>({ running, parentId: PARENT }),
+      },
+      phase: 'ready',
+      projectionsBySession: {},
+    })
+    return fake<SidebarThreadActionProps>({
+      threadId: threadSession,
+      projectSessionId: PARENT,
+      label: 'worker',
+      useSessions: <T,>(select: (value: SessionListState) => T): T => select(state),
+      refreshProjection: vi.fn(),
+      stopThread: vi.fn(okResult),
+      archiveThread: vi.fn(okResult),
+      feedback: feedbackHandle.writes,
+      t,
+      ...rest,
+    })
+  }
+
+  /** The row buttons beside the shared overlay host, as the mount composes them. */
+  function renderSidebarAction(over: Parameters<typeof sidebarProps>[0] = {}): SidebarThreadActionProps {
+    const p = sidebarProps(over)
+    render(
+      <>
+        <SidebarThreadAction {...p} />
+        <ThreadActionOverlays
+          {...overlayPropsFor(feedbackHandle ?? (() => { throw new Error('props built no feedback store') })(), {
+            archiveThread: p.archiveThread, refreshProjection: p.refreshProjection, t,
+          })}
+        />
+      </>,
+    )
+    return p
+  }
+
+  it('offers Stop only while the Thread runs, and stops it as that Thread', async () => {
+    const stopThread = vi.fn(okResult)
+    renderSidebarAction({ running: true, stopThread })
+    fireEvent.click(screen.getByRole('button', { name: '停止线程 worker' }))
+    await settle()
+    expect(stopThread).toHaveBeenCalledWith(PARENT, toThreadId('thread-1'))
+    cleanup()
+    renderSidebarAction({ running: false })
+    expect(screen.queryByRole('button', { name: '停止线程 worker' })).toBeNull()
+  })
+
+  it('archives through the same behavior as the roster: refresh and a success notice', async () => {
+    const p = renderSidebarAction()
+    fireEvent.click(screen.getByRole('button', { name: '归档线程 worker' }))
+    expect(await screen.findByText('已归档线程 worker')).toBeDefined()
+    expect(p.archiveThread).toHaveBeenCalledWith(PARENT, toThreadId('thread-1'), false)
+    expect(p.refreshProjection).toHaveBeenCalledWith(PARENT)
+  })
+
+  it('confirms a dirty worktree through the shared host, then forces the retry', async () => {
+    const archiveThread = vi.fn((_owner: SessionId, _id: ThreadStatusRow['threadId'], force: boolean) =>
+      Promise.resolve(force ? { ok: true as const } : { ok: false as const, code: 'threads/worktree-dirty', message: 'dirty' }))
+    renderSidebarAction({ archiveThread })
+    fireEvent.click(screen.getByRole('button', { name: '归档线程 worker' }))
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: '仍然归档' }))
+    expect(await screen.findByText('已归档线程 worker')).toBeDefined()
+    expect(archiveThread.mock.calls.map(call => call[2])).toEqual([false, true])
+  })
+
+  it('reports a refused archive in a warning notice', async () => {
+    renderSidebarAction({
+      archiveThread: () => Promise.resolve({ ok: false, code: 'threads/not-found', message: 'gone' }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '归档线程 worker' }))
+    expect(await screen.findByText('无法归档线程 worker：gone')).toBeDefined()
+  })
+
+  it('disables the row buttons while a request is in flight', async () => {
+    let release: ((result: ThreadActionResult) => void) | undefined
+    const archiveThread = vi.fn(() => new Promise<ThreadActionResult>((resolve) => { release = resolve }))
+    renderSidebarAction({ archiveThread })
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: '归档线程 worker' })
+    fireEvent.click(button)
+    await waitFor(() => { expect(button.disabled).toBe(true) })
+    release?.({ ok: true })
+    await waitFor(() => { expect(button.disabled).toBe(false) })
   })
 })
 
@@ -1008,9 +1166,9 @@ describe('trigger keyboard while open', () => {
 describe('action feedback lifetime', () => {
   it('dismisses the toast after its hold time', async () => {
     vi.useFakeTimers()
-    render(<ThreadsHeaderAction {...props(snapshot({
+    renderWithOverlays(props(snapshot({
       state: 'ready', values: { threads: [row({ threadId: 't-1', label: 'one' })] },
-    }), { archiveThread: vi.fn(okResult) })} />)
+    }), { archiveThread: vi.fn(okResult) }))
     fireEvent.click(screen.getByRole('button', { expanded: false }))
     fireEvent.click(screen.getByRole('button', { name: '归档线程 one' }))
     await act(async () => { await Promise.resolve(); await Promise.resolve() })

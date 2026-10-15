@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-/** The Thread header: status, branch, and the Stop and Archive actions shared with the roster. */
+/**
+ * The Thread header: status, branch, and the Stop and Archive actions shared
+ * with the roster, whose feedback renders through the frame-wide overlay host
+ * over one shared feedback store.
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -7,9 +11,11 @@ import type { SessionListState, SessionProjectionSnapshot, SessionSummary } from
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ThreadId as toThreadId, type ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/types'
 import { ThreadChatHeader, ThreadHeaderAction, type ThreadChatHeaderProps, type ThreadHeaderActionProps } from '../src/client/ThreadChatHeader.tsx'
+import { ThreadActionOverlays } from '../src/client/ThreadActionOverlays.tsx'
+import { createThreadsFeedbackStore } from '../src/client/feedback.ts'
 import { zh } from '../src/client/locales.ts'
 import { threadSessionId } from '../src/client/thread-chat/index.tsx'
-import { fake, okResult } from './support.client.ts'
+import { fake, okResult, overlayPropsFor } from './support.client.ts'
 
 afterEach(cleanup)
 
@@ -46,6 +52,7 @@ function headerProps(over: HeaderOverrides = {}): ThreadChatHeaderProps {
     refreshProjection: vi.fn(),
     stopThread: vi.fn(okResult),
     archiveThread: vi.fn(okResult),
+    feedback: { notify: vi.fn(), requestDirtyArchive: vi.fn() },
     placement: 'tab',
     // This file's cases drive the header entirely through `threads` projection
     // rows, never the delegation catalog, so Project identity never gates
@@ -56,9 +63,28 @@ function headerProps(over: HeaderOverrides = {}): ThreadChatHeaderProps {
   }
 }
 
+/**
+ * Render the header beside the frame-wide overlay host over one shared
+ * feedback store, the same composition the mount registers: the header raises
+ * notices and confirmations, the host renders them.
+ */
+function renderHeader(over: HeaderOverrides = {}): ThreadChatHeaderProps {
+  const feedback = createThreadsFeedbackStore()
+  const props = headerProps({ ...over, feedback: feedback.writes })
+  render(
+    <>
+      <ThreadChatHeader {...props} />
+      <ThreadActionOverlays
+        {...overlayPropsFor(feedback, { archiveThread: props.archiveThread, refreshProjection: props.refreshProjection, t })}
+      />
+    </>,
+  )
+  return props
+}
+
 describe('ThreadChatHeader', () => {
   it('shows the label, the last outcome, the idle state and the branch', () => {
-    render(<ThreadChatHeader {...headerProps()} />)
+    renderHeader()
     const header = screen.getByRole('group', { name: '线程 Indexer' })
     expect(header.getAttribute('data-thread-header')).toBe('tab')
     expect(header.textContent).toContain('Indexer')
@@ -71,9 +97,9 @@ describe('ThreadChatHeader', () => {
 
   it('shows a running Thread without an outcome and stops it', async () => {
     const stopThread = vi.fn(okResult)
-    render(<ThreadChatHeader {...headerProps({
+    renderHeader({
       rows: [{ threadId: THREAD, label: '' }], running: true, stopThread,
-    })} />)
+    })
     expect(screen.getByText('运行中')).toBeDefined()
     // An empty label falls back to the identity; no branch, no outcome.
     expect(screen.getByRole('group', { name: '线程 thread-1' })).toBeDefined()
@@ -83,17 +109,16 @@ describe('ThreadChatHeader', () => {
   })
 
   it('reports a failed stop in a toast', async () => {
-    render(<ThreadChatHeader {...headerProps({
+    renderHeader({
       running: true,
       stopThread: () => Promise.resolve({ ok: false, code: 'x', message: 'down' }),
-    })} />)
+    })
     fireEvent.click(screen.getByRole('button', { name: '停止线程 Indexer' }))
     expect(await screen.findByText('无法停止线程 Indexer：down')).toBeDefined()
   })
 
   it('archives, refreshes the projection and confirms in a toast', async () => {
-    const props = headerProps()
-    render(<ThreadChatHeader {...props} />)
+    const props = renderHeader()
     fireEvent.click(screen.getByRole('button', { name: '归档线程 Indexer' }))
     expect(await screen.findByText('已归档线程 Indexer')).toBeDefined()
     expect(props.archiveThread).toHaveBeenCalledWith(PARENT, THREAD, false)
@@ -103,7 +128,7 @@ describe('ThreadChatHeader', () => {
   it('asks before discarding a dirty worktree, then forces the archive', async () => {
     const archiveThread = vi.fn((_owner: SessionId, _id: ThreadStatusRow['threadId'], force: boolean) =>
       Promise.resolve(force ? { ok: true as const } : { ok: false as const, code: 'threads/worktree-dirty', message: 'dirty' }))
-    render(<ThreadChatHeader {...headerProps({ archiveThread })} />)
+    renderHeader({ archiveThread })
     fireEvent.click(screen.getByRole('button', { name: '归档线程 Indexer' }))
     fireEvent.click(await screen.findByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: '仍然归档' }))
@@ -111,19 +136,31 @@ describe('ThreadChatHeader', () => {
     expect(archiveThread.mock.calls.map(call => call[2])).toEqual([false, true])
   })
 
+  it('reports a failed forced retry in a toast', async () => {
+    const archiveThread = vi.fn((_owner: SessionId, _id: ThreadStatusRow['threadId'], force: boolean) =>
+      Promise.resolve(force
+        ? { ok: false as const, code: 'threads/not-found', message: 'gone' }
+        : { ok: false as const, code: 'threads/worktree-dirty', message: 'dirty' }))
+    renderHeader({ archiveThread })
+    fireEvent.click(screen.getByRole('button', { name: '归档线程 Indexer' }))
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: '仍然归档' }))
+    expect(await screen.findByText('无法归档线程 Indexer：gone')).toBeDefined()
+  })
+
   it('keeps the dirty confirmation closed when it is cancelled', async () => {
-    render(<ThreadChatHeader {...headerProps({
+    renderHeader({
       archiveThread: () => Promise.resolve({ ok: false, code: 'threads/worktree-dirty', message: 'dirty' }),
-    })} />)
+    })
     fireEvent.click(screen.getByRole('button', { name: '归档线程 Indexer' }))
     fireEvent.click(await screen.findByRole('button', { name: '取消' }))
     await waitFor(() => { expect(screen.queryByRole('checkbox')).toBeNull() })
   })
 
   it('reports a refused archive', async () => {
-    render(<ThreadChatHeader {...headerProps({
+    renderHeader({
       archiveThread: () => Promise.resolve({ ok: false, code: 'x', message: 'busy' }),
-    })} />)
+    })
     fireEvent.click(screen.getByRole('button', { name: '归档线程 Indexer' }))
     expect(await screen.findByText('无法归档线程 Indexer：busy')).toBeDefined()
   })

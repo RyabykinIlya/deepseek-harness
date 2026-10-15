@@ -1,8 +1,9 @@
 /**
  * Lifecycle of the Threads browser half: mounts the `threads` Remote namespace
- * and registers the roster, the Thread chat resources, and the New Project
- * action. The generated Remote contribution is passed in so this module needs
- * no built artifact, and so the shipped Remote assembly (`dsh-api-remotes`)
+ * and registers the roster, the Thread chat resources, the sidebar Thread row
+ * actions, the frame-wide action feedback host, and the New Project action.
+ * The generated Remote contribution is passed in so this module needs no
+ * built artifact, and so the shipped Remote assembly (`dsh-api-remotes`)
  * never depends on this experimental package.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -15,9 +16,12 @@ import {
   NewProjectFooterAction, type NewProjectInjected, type NewProjectResult,
 } from './project/NewProjectFooterAction.tsx'
 import { toActionResult, toLibraryResult, toMemoryResult } from './actions.ts'
+import { createThreadsFeedbackStore } from './feedback.ts'
 import { projectAgentPreset } from './project.ts'
 import type { Config as ThreadsConfig } from './config.ts'
 import { ThreadHeaderAction } from './ThreadChatHeader.tsx'
+import { ThreadActionOverlays, type ThreadsOverlayInjected } from './ThreadActionOverlays.tsx'
+import { SidebarThreadAction, type SidebarThreadActionInjected } from './SidebarThreadAction.tsx'
 import type { ThreadActionsInjected } from './ThreadActions.tsx'
 import { registerThreadChat, threadChatAddress, threadSessionId } from './thread-chat/index.tsx'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -88,8 +92,13 @@ export async function mountThreads(
 }
 
 /**
- * Register the dictionaries, the Thread chat resources, the header roster, and
- * the New Project footer action.
+ * Register the dictionaries, the Thread chat resources, the header roster, the
+ * sidebar Thread row actions, the frame-wide action feedback host, and the New
+ * Project footer action. The feedback store is created once here and threaded
+ * through every inject factory: the row registrations receive its write
+ * callbacks, the `'shell.overlay'` host receives the source through its
+ * reserved `hooks` compartment, so a notice raised by a Thread row that the
+ * archive then removes still renders.
  * @param ctx - client root context.
  * @param config - resolved plugin config; schema defaults apply.
  */
@@ -97,6 +106,7 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
   // Schemastery's field default is materialized before Cordis calls apply.
   const projectAgentPresets = config.projectAgentPresets as readonly string[]
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-threads: dictionaries')
+  const feedback = createThreadsFeedbackStore()
   const threadActions: ThreadActionsInjected = {
     refreshProjection: (ownerSessionId) => {
       void ctx.sessions.refreshProjections(ownerSessionId)
@@ -111,10 +121,11 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
     ),
   }
   ctx.inject(['resources', 'sidebarRightTabs'], (scope) => {
-    registerThreadChat(scope, ctx.locale.bind(NS), threadActions, projectAgentPresets)
+    registerThreadChat(scope, ctx.locale.bind(NS), { ...threadActions, feedback: feedback.writes }, projectAgentPresets)
   })
   const rosterActions = (parentSessionId: SessionId): ThreadsRosterInjected => ({
     ...threadActions,
+    feedback: feedback.writes,
     openThread: (threadId) => {
       ctx.uiWorkspace.openSession(threadSessionId(threadId))
     },
@@ -158,7 +169,7 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
       // A Thread's own header leads its band; the roster of a Project never shares a Session with it.
       order: -26,
       locale: NS,
-      inject: () => ({ ...threadActions, projectAgentPresets }),
+      inject: () => ({ ...threadActions, feedback: feedback.writes, projectAgentPresets }),
     }, ThreadHeaderAction),
   )
   ctx.slots.inject(
@@ -208,5 +219,39 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
       locale: NS,
       inject: newProjectActions,
     }, NewProjectFooterAction),
+  )
+  ctx.slots.inject(
+    'sidebar.workspaces.thread.row.action',
+    () => ctx.slots.register({
+      name: 'sidebar.workspaces.thread.row.action',
+      // The only occupant of the Thread row strip: Stop and Archive ride one
+      // entry so they share one in-flight set.
+      id: 'thread-row-actions',
+      locale: NS,
+      inject: (): SidebarThreadActionInjected => ({
+        stopThread: threadActions.stopThread,
+        archiveThread: threadActions.archiveThread,
+        refreshProjection: threadActions.refreshProjection,
+        feedback: feedback.writes,
+      }),
+    }, SidebarThreadAction),
+  )
+  ctx.slots.inject(
+    'shell.overlay',
+    () => ctx.slots.register({
+      name: 'shell.overlay',
+      // The frame-wide host of every Thread action's feedback: a row that an
+      // archive removes cannot render its own notice.
+      id: 'thread-action-feedback',
+      locale: NS,
+      inject: (): ThreadsOverlayInjected => ({
+        hooks: { feedback: feedback.source },
+        writes: feedback.writes,
+        dismissToast: feedback.dismissToast,
+        settleDirtyArchive: feedback.settleDirtyArchive,
+        archiveThread: threadActions.archiveThread,
+        refreshProjection: threadActions.refreshProjection,
+      }),
+    }, ThreadActionOverlays),
   )
 }

@@ -35,6 +35,7 @@ import {
   ArchiveThreadButton, keepActivation, StopThreadButton, threadLabel, useThreadActions,
   type RowActions, type ThreadActionsInjected,
 } from './ThreadActions.tsx'
+import type { ThreadsFeedbackWrites } from './feedback.ts'
 import { MemoryPanel, type MemoryInjected } from './MemoryPanel.tsx'
 import { LibraryPanel, type LibraryInjected } from './LibraryPanel.tsx'
 import { isProjectSession } from './project.ts'
@@ -46,6 +47,8 @@ import css from './ThreadsHeaderAction.module.css'
 
 /** Business actions supplied by the slot registration. */
 export interface ThreadsRosterInjected extends ThreadActionsInjected, MemoryInjected, LibraryInjected {
+  /** Shared feedback writes: notices and the dirty-archive confirmation the overlay host renders. */
+  feedback: ThreadsFeedbackWrites
   /** Open the Thread as the main workspace conversation. */
   openThread: (threadId: ThreadStatusRow['threadId']) => void
   /** Open the Thread as a chat tab in the right Sidebar. */
@@ -519,7 +522,7 @@ function ThreadsRoster({
  */
 export function ThreadsHeaderAction({
   sessionId, useSessions, projectAgentPresets, openThread, openThreadAside, refreshProjection,
-  stopThread, archiveThread, listMemory, addMemory, updateMemory, removeMemory, listLibrary, inputActions, t,
+  stopThread, archiveThread, feedback, listMemory, addMemory, updateMemory, removeMemory, listLibrary, inputActions, t,
 }: ThreadsHeaderActionProps) {
   const { snapshot, roster } = useThreadRoster(useSessions, sessionId, projectAgentPresets)
   // The composition a Session runs is its identity, so it is read from the list
@@ -536,11 +539,11 @@ export function ThreadsHeaderAction({
     const view = readThreadModel(projectionsBySession, String(row.threadId))
     return [String(row.threadId), view === undefined ? undefined : threadModelLabel(view)]
   })), [projectionsBySession, roster.entries])
-  // Feedback and the confirmation are rendered here, not in the roster menu: the
-  // menu closes and the roster hides when its last Thread is archived, and the
-  // notice for that archive must outlive both.
-  const { actions, overlays } = useThreadActions({
-    parentSessionId: sessionId, stopThread, archiveThread, refreshProjection, t,
+  // Feedback and the confirmation are published into the shared store, not
+  // rendered here: the menu closes and the roster hides when its last Thread
+  // is archived, and the notice for that archive must outlive both.
+  const { actions } = useThreadActions({
+    parentSessionId: sessionId, stopThread, archiveThread, refreshProjection, feedback, t,
   })
   // The model, not this plugin, decides that a Thread is started: the composer
   // receives a prepared instruction the user edits and sends, and the model
@@ -551,23 +554,20 @@ export function ThreadsHeaderAction({
   }
   if (snapshot === undefined && !project) return null
   return (
-    <>
-      <ThreadsRoster
-        key={sessionId}
-        threadModels={threadModels}
-        rootSessionId={sessionId}
-        roster={roster}
-        project={project}
-        startThread={startThread}
-        openThread={openThread}
-        openThreadAside={openThreadAside}
-        refreshProjection={refreshProjection}
-        actions={actions}
-        memory={{ listMemory, addMemory, updateMemory, removeMemory }}
-        library={{ listLibrary }}
-        t={t}
-      />
-      {overlays}
-    </>
+    <ThreadsRoster
+      key={sessionId}
+      threadModels={threadModels}
+      rootSessionId={sessionId}
+      roster={roster}
+      project={project}
+      startThread={startThread}
+      openThread={openThread}
+      openThreadAside={openThreadAside}
+      refreshProjection={refreshProjection}
+      actions={actions}
+      memory={{ listMemory, addMemory, updateMemory, removeMemory }}
+      library={{ listLibrary }}
+      t={t}
+    />
   )
 }

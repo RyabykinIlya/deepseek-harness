@@ -23,10 +23,23 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 // branding FUNCTION would be a cross-plugin value import, which the client
 // bundle purity gate rejects. The brand carries no runtime behaviour.
 import type { ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Brand a raw child id as a Thread id without importing the branding function. */
 function threadId(id: string): ThreadStatusRow['threadId'] {
   return id as ThreadStatusRow['threadId']
+}
+
+/**
+ * The Thread a Session hosts: a Thread's durable identity IS the identity of
+ * the Session that runs it, the same fact `threadSessionId` asserts in the
+ * other direction. Both brands wrap `string`, so widening to `string` first
+ * needs no `unknown` assertion and imports no branding function.
+ * @param sessionId - the Session that runs the Thread.
+ * @returns the Thread identity that the same string carries.
+ */
+export function threadIdOfSession(sessionId: SessionId): ThreadStatusRow['threadId'] {
+  return String(sessionId) as ThreadStatusRow['threadId']
 }
 
 /** A durable Thread row plus its client-computed liveness. */

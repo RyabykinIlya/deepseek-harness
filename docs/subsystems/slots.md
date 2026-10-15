@@ -122,7 +122,8 @@ root
 │  ├─ sidebar.workspaces
 │  │  ├─ sidebar.workspaces.directoryFlow
 │  │  ├─ sidebar.workspaces.session.menu.item
-│  │  └─ sidebar.workspaces.session.row.action
+│  │  ├─ sidebar.workspaces.session.row.action
+│  │  └─ sidebar.workspaces.thread.row.action
 │  └─ sidebar.settings
 │     ├─ settings.trigger
 │     ├─ settings.header

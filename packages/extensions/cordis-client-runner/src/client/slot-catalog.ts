@@ -2987,6 +2987,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-workspace SessionRenameDialog id \'workspace.session-rename\'',
       'client-ui-workspace SessionArchiveConfirmDialog id \'workspace.session-archive\'',
       'client-ui-workspace RowActionToast id \'workspace.row-toast\'',
+      'experimental-client-ui-threads ThreadActionOverlays id \'thread-action-feedback\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -4003,7 +4004,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.thread.chat.conversation\', () => ctx.slots.register(\n      { name: \'sidebar.thread.chat.conversation\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/experimental/client-ui-threads/src/client/thread-chat/index.tsx:94',
+    source: 'packages/experimental/client-ui-threads/src/client/thread-chat/index.tsx:95',
   },
   {
     key: 'sidebar.toggle.badge',
@@ -4250,7 +4251,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.workspaces\' (client-ui-workspace), so it exists while that entry is mounted',
-    occupants: [],
+    occupants: [
+      'experimental-client-ui-threads SidebarThreadAction id \'thread-row-actions\'',
+    ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces.thread.row.action\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces.thread.row.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-workspace/src/client/contract/slots.ts:211',
