@@ -16,7 +16,7 @@
 import { z } from 'zod'
 import type { SessionEvent, SessionEventMap, SessionHeader, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import type { JudgeRule, ModelRoutingState, ModelRoutingView, RoutingBoundary, RoutingEndpoint, RoutingSource } from './types.ts'
+import type { JudgeRule, ModelRoutingState, ModelRoutingView, RoutingBoundary, RoutingDecision, RoutingEndpoint, RoutingSource } from './types.ts'
 
 const routingBoundarySchema = z.enum(['start', 'selection-change', 'compaction', 'idle', 'failure'])
 
@@ -162,6 +162,23 @@ export function applyModelRoutingEvent(state: ModelRoutingState, event: SessionE
 }
 
 /**
+ * The model id a decision's request dispatched.
+ *
+ * An OpenRouter decision dispatches the model it ranked, so the decision's own
+ * id is already the dispatched one. A direct source ranks under a canonical id
+ * but dispatches its route's own id, which is the only id a request to that
+ * route carried. A decision recorded before `source` existed names no route id,
+ * and its canonical id is the only id it has.
+ * @param decision - the decision whose dispatched model to read.
+ * @returns the model id the request carried.
+ */
+function dispatchedModel(decision: RoutingDecision): string {
+  const { source } = decision
+  if (source === undefined || source.kind === 'openrouter') return decision.model
+  return source.tag
+}
+
+/**
  * Project what the composer chip and the Threads roster render.
  * @param state - current model-routing state.
  * @returns the current decision's view, or `null` before the first decision.
@@ -172,7 +189,7 @@ export function modelRoutingView(state: ModelRoutingState): ModelRoutingView | n
   return {
     requested: decision.requested,
     tier: decision.tier,
-    model: decision.model,
+    model: dispatchedModel(decision),
     ...decision.endpoint?.providerName === undefined ? {} : { providerName: decision.endpoint.providerName },
     ...decision.endpoint?.quantization === undefined ? {} : { quantization: decision.endpoint.quantization },
     boundary: decision.boundary,

@@ -139,7 +139,7 @@ describe('modelRoutingProjectionDefinition', () => {
 })
 
 describe('a decision that named a direct source', () => {
-  it('folds and projects the source the pin came from', () => {
+  it('names the model the route dispatched, not the canonical id it ranked', () => {
     const decision: SessionEventMap['model-routing/decision'] = {
       boundary: 'start',
       requested: 'flash',
@@ -155,6 +155,42 @@ describe('a decision that named a direct source', () => {
     const applied = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', decision, 10))
     expect(applied.decision?.source).toEqual({ kind: 'xiaomi-plan', tag: 'mimo-v2.6-pro' })
     const view = modelRoutingView(applied)
-    expect(view).toMatchObject({ model: 'xiaomi/mimo-v2.6-pro', providerName: 'xiaomi-plan', unpinned: false })
+    expect(view).toMatchObject({ model: 'mimo-v2.6-pro', providerName: 'xiaomi-plan', unpinned: false })
+  })
+
+  it('names the dispatched id when the route id differs from the canonical id', () => {
+    // One `modelMap` entry ranks a canonical model and dispatches the route's
+    // own id: the chip and the roster must name the id the request carried.
+    const decision: SessionEventMap['model-routing/decision'] = {
+      boundary: 'start',
+      requested: 'pro',
+      tier: 'pro',
+      model: 'xiaomi/mimo-v2.6-pro',
+      source: { kind: 'claude-proxy', tag: 'claude-opus-5' },
+      endpoint: { tag: 'claude-opus-5', providerName: 'claude-proxy', promptUsd: 1e-12, completionUsd: 1e-12 },
+      blendedUsdPerToken: 1e-12,
+      considered: 118,
+      runnersUp: [],
+      excludedTags: [],
+    }
+    const applied = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', decision, 10))
+    const view = modelRoutingView(applied)
+    expect(view).toMatchObject({ model: 'claude-opus-5', providerName: 'claude-proxy' })
+    expect(modelRoutingProjectionDefinition.wire.viewSchema.parse(view)).toEqual(view)
+  })
+
+  it('still names an unranked id when the decision predates `source`', () => {
+    const decision: SessionEventMap['model-routing/decision'] = {
+      boundary: 'start',
+      requested: 'flash',
+      tier: 'flash',
+      model: 'xiaomi/mimo-v2.6-pro',
+      endpoint: { tag: 'mimo-v2.6-pro', providerName: 'xiaomi-plan', promptUsd: 1e-9, completionUsd: 1e-9 },
+      considered: 1,
+      runnersUp: [],
+      excludedTags: [],
+    }
+    const applied = applyModelRoutingEvent(emptyModelRoutingState(), event('model-routing/decision', decision, 10))
+    expect(modelRoutingView(applied)).toMatchObject({ model: 'xiaomi/mimo-v2.6-pro', providerName: 'xiaomi-plan' })
   })
 })

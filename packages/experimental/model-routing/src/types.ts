@@ -214,6 +214,15 @@ export interface ModelRoutingState {
 export interface ModelRoutingView {
   requested: string
   tier: string
+  /**
+   * The model id the request dispatched, which is what a surface names.
+   *
+   * The decision's own `model` is the canonical id the ranking keyed a direct
+   * source by, and one `modelMap` entry may rank several routes under one such
+   * id while dispatching each route's own. A surface that named the canonical
+   * id would name a model no request asked for, so the view resolves the id the
+   * request carried.
+   */
   model: string
   providerName?: string
   quantization?: string

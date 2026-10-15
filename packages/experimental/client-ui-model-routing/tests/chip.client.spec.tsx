@@ -137,6 +137,18 @@ describe('ModelRoutingChip', () => {
     chip({ ...DECIDED, tier: 'turbo' })
     expect(screen.getByTestId('model-routing-chip').textContent).toBe('turbo · deepseek-v4-flash')
   })
+
+  it('names the dispatched model on a direct source, so label and tooltip agree', () => {
+    // The view resolves a direct source to the id the request carried, so the
+    // chip never names a canonical id beside the route that dispatched another.
+    chip({ ...DECIDED, tier: 'pro', model: 'claude-opus-5', providerName: 'claude-proxy' })
+    const element = screen.getByTestId('model-routing-chip')
+    expect(element.textContent).toBe('pro · claude-opus-5')
+    const title = element.getAttribute('title')
+    expect(title).toContain('claude-opus-5')
+    expect(title).toContain('claude-proxy')
+    expect(title).not.toContain('mimo')
+  })
 })
 
 describe('pendingModel', () => {

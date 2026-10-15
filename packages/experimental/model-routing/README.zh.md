@@ -50,7 +50,7 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 直连来源不声明 status、uptime 与 quantization，所以这些过滤器对它是中性的：缺失的测量值不得成为拒绝理由，否则任何直连来源都无法进入排序。能力过滤器仍然生效。`tools` 是路由必须声明的一项——来源上的 `tools`（默认 `true`）——而 `context` 与按模型的 `modality` 规则的约束力与 endpoint 完全相同。`@deepseek-ai/dsh-llm-pi-ai` 未配置的路由所对应的来源从不参与排序：决策会把它报告为不可派发，而不是把请求钉在一条无人服务的路由上。
 
-被选中的直连来源以它自己的路由作为 `provider` 派发，并且不带 OpenRouter 的 `provider` 块：pi-ai 会拒绝把该块加在不讲 `openai-completions` 的模型上。`model-routing/decision` 事件记录获胜来源的种类（`source: { kind, tag }`，`kind` 为 `openrouter` 或路由键），对声明了价格的直连来源还记录其混合价格所依据的逐 token 价格，因此决策日志能说明某个来源为何胜出。
+被选中的直连来源以它自己的路由作为 `provider` 派发，并且不带 OpenRouter 的 `provider` 块：pi-ai 会拒绝把该块加在不讲 `openai-completions` 的模型上。`model-routing/decision` 事件记录获胜来源的种类（`source: { kind, tag }`，`kind` 为 `openrouter` 或路由键），对声明了价格的直连来源还记录其混合价格所依据的逐 token 价格，因此决策日志能说明某个来源为何胜出。`modelRouting` 视图指名的是该请求实际派发的 id——直连来源是 `source.tag`，OpenRouter endpoint 是参与排序的 id——因为事件的 `model` 是排序所依据的规范 id，而一条 `modelMap` 会把多个路由各自的 id 归到同一个规范 id 之下。
 
 <a id="snapshots"></a>
 ### 快照
