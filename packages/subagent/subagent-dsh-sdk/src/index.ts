@@ -118,7 +118,7 @@ function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undef
 
 /**
  * The SDK provider. It resolves Agent route options into the child runtime's
- * process-wide handshake; output schema, depth, tool filter, persona, and
+ * process-wide handshake; output schema, depth, independent preset selection, and
  * repository stay unsupported because their ownership does not cross this
  * process boundary.
  */

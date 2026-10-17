@@ -38,7 +38,7 @@ function fetchResult(marker: string): WebFetchResult {
 }
 
 /** Mount a WebRuntime on a fresh root context with the given config. */
-async function mountWeb(config: ConstructorParameters<typeof WebRuntime>[1] = {}): Promise<{ ctx: Context; web: WebRuntime }> {
+async function mountWeb(config: { searchProvider?: string; fetchProvider?: string } = {}): Promise<{ ctx: Context; web: WebRuntime }> {
   const ctx = new Context()
   await ctx.plugin(WebRuntime, config)
   return { ctx, web: ctx.web }
@@ -266,51 +266,28 @@ describe('WebRuntime provider id vocabulary', () => {
   })
 })
 
-describe('WebRuntime selection inputs', () => {
-  it('auto-selects when neither configuration nor environment names an id', async () => {
-    const ctx = new Context()
-    const web = new WebRuntime(ctx)
-    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
-    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
-  })
 
-  it('reads a plain configured id supplied directly to the constructor', async () => {
+describe('live provider selection', () => {
+  it('applies a saved search and fetch selection to the next operation without remounting', async () => {
+    const { liveConfig } = await import('../../../settings/settings/tests/live-config.ts')
     const ctx = new Context()
-    const web = new WebRuntime(ctx, { searchProvider: 'exa' })
-    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
-    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
-    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
-  })
-
-  it('falls back to the environment override when no id is configured', async () => {
-    process.env.DSH_WEB_SEARCH_PROVIDER = 'perplexity'
-    onTestFinished(() => { delete process.env.DSH_WEB_SEARCH_PROVIDER })
-    const ctx = new Context()
-    const web = new WebRuntime(ctx)
-    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
-    web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
-    await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
-  })
-
-  it('falls back to the environment override when a live reference holds no value', async () => {
-    process.env.DSH_WEB_FETCH_PROVIDER = 'http'
-    onTestFinished(() => { delete process.env.DSH_WEB_FETCH_PROVIDER })
-    const { web } = await mountWeb()
-    web.registerFetchProvider(makeFetchProvider('http', available, fetchResult('http')))
-    web.registerFetchProvider(makeFetchProvider('other', available, fetchResult('other')))
-    await expect(web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({
-      body: { content: 'http' },
-    })
+    try {
+      const live = await liveConfig(ctx, WebRuntime, { searchProvider: 'first', fetchProvider: 'first' })
+      const fiber = live.fiber
+      for (const id of ['first', 'second']) {
+        ctx.web.registerSearchProvider(makeSearchProvider(id, true, () => Promise.resolve(searchResult(id))))
+        ctx.web.registerFetchProvider(makeFetchProvider(id, true, fetchResult(id)))
+      }
+      await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'first' })
+      await expect(ctx.web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({ body: { content: 'first' } })
+      await live.update({ searchProvider: 'second', fetchProvider: 'second' })
+      expect(Object.is(live.entry.fiber, fiber)).toBe(true)
+      await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'second' })
+      await expect(ctx.web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({ body: { content: 'second' } })
+    } finally { await ctx.fiber.dispose() }
   })
 })
 
-/**
- * These drive the seam through the real Host path a settings write takes:
- * `SettingsForms.write` -> `ConfigEditor.edit` -> `Include` -> `Entry.update`.
- * `searchProvider` is volatile, so the Loader commits it into the running fiber
- * in place and the plugin is never remounted — the selection must therefore be
- * re-read per call rather than snapshotted at construction.
- */
 describe('WebRuntime live provider selection', () => {
   it('dispatches to a newly configured provider without reconstructing the runtime', async () => {
     const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })

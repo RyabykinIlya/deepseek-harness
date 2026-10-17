@@ -60,6 +60,10 @@ kind: "package-reference"
 
 `startActivation({ provider, label, request, signal, delivery })` 返回 `{ childId, messageId?, result, dispose }`。提供 `childId` 会选择本地后端，并保证返回 `messageId`。本地子级接受后续消息并支持冷恢复；外部子级只暴露一次执行，拒绝继续输入。`request.agentOptions` 覆盖后端支持的子级模型设置。`delivery: 'parent'` 提供面向模型的完成通知；`delivery: 'caller'` 让工作流等待结果，不发送父级通知，也不附加初始返回指导。本地父级投递需要持久化，调用方投递可以使用临时本地会话；冷恢复需要持久化与 Session 查询服务。
 
+### 子级 preset
+
+进程内 spawn 接受独立的 `agentPreset`；fork 与外部后端拒绝此选项。省略选择时，本地子级加入父方当前的 preset 代际。显式 id 挂载当前可用代际，即使该 id 与父方相同。通过 [`dsh-tool-subagent`](../tool-subagent/README.zh.md#selecting-a-child-preset) 配置模型可选项，并在 [preset 组装](../../preset/agent-preset-registry/README.zh.md)中配置 persona 与工具。冷恢复保留历史子级 descriptor 记录的 persona 和工具限制。
+
 ### 消息、中断与发现
 
 每个确切在线 Agent 都可以对直接可继续 child 使用 `sendMessage()`；驻留的可继续 child 还可以对自己的直接 parent 使用它。正在工作的目标通过 Steer 在最近 step 接收 Agent 消息；空闲目标启动轮次，且只有直接 child 可以冷恢复。parent 也可以随时中断正在运行的后代或列举自己的子级。浏览器发出的继续执行 prompt 会独立选择 Queue 或 Steer，并且可以携带图片部分：Host 先通过附件存储完成整批图片的准入与持久化，子级 inbox 才接受这条消息；当子级声明的模型不接受图片输入时拒绝投递。 直接子级发现读取 parent 自有的 `subagentCatalog` projection。`listChildren(parentSessionId, signal?)` 持有一次优先实时来源的 Session 观察，异步返回目录，不读取子级日志。它转发取消信号，并在物化后释放观察。物化以 O(D) 时间保留 D 条事实的父日志事件顺序。外部条目是叶节点，不需要观察子 Session。后代发现按父事件顺序递归读取子级目录，每个可达 Session 观察一次。无法读取目录的分支会被跳过，并返回诊断；两条路径都不加载或恢复子级 Agent。
@@ -119,6 +123,13 @@ kind: "package-reference"
 continuable provider 的 `prepareContinuable` 可在可选 `seed` 之外返回 `cwd`、`agentPreset` 和 `handles`。管理器要求 `cwd` 是绝对路径、已存在且可进入的目录，并要求 `agentPreset` 指向 agent preset 注册表中可用的 preset；否则启动会在 child 创建前以 `INVALID_PROVIDER_CWD` 或 `UNKNOWN_AGENT_PRESET` 失败。两个值都写入 child 的 session header：child 在该目录运行，并按该 preset（而非 parent 的 preset）组合；冷恢复从 header 还原它们，不会再次调用 provider。`handles` 的方向相反：它们是 provider 命名的事实，从准备阶段原样复制进启动结果，让委派方引用 provider 自有的值，而不是从 child id 推导它们；任何持久化记录都不取自它们。当 child 的 cwd 与 parent 不同时，其初始提示词会说明它在自己独立的 checkout 中工作，parent 在检查该 checkout 之前看不到它在其中改动的文件，并要求其 `send_message` 结果写明改了什么、在哪里、如何验证；与 parent 共享 cwd 的 child 保留共享工作区的原有措辞。带字符串 `code` 的 provider 错误（例如 worktree provider 的 `NOT_A_GIT_REPO`）会以 `subagent/provider-rejected` 和 `{ code, message }` 到达 Remote 调用方；本包自身的 `SubagentError` code 保持原有映射，不带 code 的错误仍为 `gateway/internal`。
 
 本地创建成功后，无论结果交付给谁，都会向父 Session 追加 `subagent/catalog` 事实。外部创建仅在使用 `delivery: 'parent'` 时追加目录事实；调用方拥有的外部执行保留调用方自己的成员记录。外部条目以 `mode: 'external'` 标记没有本地 Session 的子级。目录仅在创建时记录一次成员关系，不携带执行状态。完整结果交给调用方或父级完成通知。投影排除继承事实。直接列表读取一个父级投影，因此已完成的本地工作流子级仍可被发现、打开或继续。Catalog 载荷 v0 记录本地模式，v1 还接受未知模式，v2 记录外部执行，读取器支持三版。历史迁移在 descriptor 不可用时根据可读子 header 追加 v1 `subagent/catalog`；本地创建保留 v0。其 `mode: 'unknown'` 投影让子会话保持可见，但不表示支持继续执行；已有完整条目仍具有权威性。
+
+<a id="restoring-child-composition"></a>
+### 恢复子级组装
+
+独立选择的 spawn 在首条自有 `subagent/descriptor` 之前记录 `agent-preset/selected`。冷恢复排除继承事件前缀并检查此顺序，再从已有 `agentPreset` 投影读取 preset id。恢复挂载该 id，不要求原始 subagent 提供方仍然注册。所选 preset 缺失或损坏时拒绝恢复，不回退到父方或部署默认值。
+
+首条自有 descriptor 前没有该选择的日志，包括历史 spawn 与 fork 日志，继续通过 `composeFrom` 加入父方当前组装。header 中的 preset id、继承的选择或 descriptor 之后的选择，都不会让子级采用独立恢复；没有继承事件的 fork 也遵守此规则。Session 与 descriptor 格式不变。独立冷恢复使用当前注册的 preset 定义，不跨重启保留旧代际。
 
 ### 所有权与不变式
 

@@ -8,7 +8,7 @@ import type {
   ChatConversationViewNode, ConversationNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
+import type { ChatNodeViewProps, UserContentInput } from '../src/client/contract/slots.ts'
 import {
   formatMessageClock, msUntilNextLocalMidnight, startOfLocalDay,
 } from '../src/client/chat/message-chrome.ts'
@@ -16,8 +16,10 @@ import {
   CompactionNodeView, ContextMessageNodeView, RetryNodeView, UnknownNodeView,
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
-import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
 import { useDetailedPresentation } from './presentation-fixture.client.ts'
+import { unusedImageLoader } from './reasoning-component-fixture.tsx'
+import { createUserContentFixture } from './user-content-component-fixture.tsx'
 import { useDisclosure } from '../src/client/chat/use-disclosure.ts'
 import { useSearchableHidden } from '../src/client/chat/searchable-hidden.ts'
 import { ActivityPill, UsagePill, type StatPillProps } from '../src/client/chat/StatsPills.tsx'
@@ -31,13 +33,13 @@ afterEach(() => {
 })
 
 const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
-const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
+const renderUserImages: Parameters<ReturnType<typeof createUserContentFixture>>[1] = () => null
+let renderUserContent: ReturnType<typeof createUserContentFixture>
+beforeEach(() => { renderUserContent = createUserContentFixture() })
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
-const SESSION_ID = 's1' as ChatNodeViewProps['sessionId']
 
 // The message-item arms these fixtures render consume neither the session
 // projection seats nor the keyed Turn hooks; a call would be a defect.
-const unused = (): never => { throw new Error('this MessageItem arm does not consume framework hooks') }
 
 // Recency scans the whole transcript; a detached fixture is its own latest row.
 const useDetachedChat: ChatNodeViewProps['useChat'] = bindSnapshotSelector({
@@ -58,7 +60,6 @@ interface MessageItemProps {
  * `node` widened to the untagged view node: each arm narrows it to its own
  * `ChatNodeKind` at the render site.
  */
-type FixtureProps = Omit<ChatNodeViewProps, 'node'> & { readonly node: ChatConversationViewNode }
 
 /** Legacy-node fixture adapter for the independently registered renderers. */
 function MessageItem({ node, t: translate, referenceLabels, skillNames, restoreAt }: MessageItemProps) {
@@ -81,43 +82,14 @@ function MessageItem({ node, t: translate, referenceLabels, skillNames, restoreA
         }
         : node,
   }
-  const props: FixtureProps = {
-    node: viewNode,
-    t: translate,
-    renderMessageImages,
-    openFile: vi.fn(),
-    openSkill: vi.fn(),
-    inspectCall: undefined,
-    forkAt: vi.fn(),
-    restoreAt: restoreAt ?? vi.fn(),
-    loadImage: () => Promise.reject(new Error('not used')),
-    fileMentions: () => undefined,
+  const renderUserFactory: ChatNodeViewProps['renderFactorySlot'] = (name, input) => {
+    if (name !== 'conversation.chat.user.content') throw new Error(`Unexpected user Factory: ${name}`)
+    return renderUserContent(input as UserContentInput, renderUserImages, translate)
+  }
+  const props: Partial<Omit<ChatNodeViewProps, 'node'>> & { node: ChatConversationViewNode } = {
+    node: viewNode, t: translate, loadImage: unusedImageLoader, renderFactorySlot: renderUserFactory,
+    openFile: vi.fn(), inspectCall: undefined, forkAt: vi.fn(), restoreAt: restoreAt ?? vi.fn(),
     useChat: useDetachedChat,
-    useSession: unused,
-    sessionId: SESSION_ID,
-    useProjection: unused,
-    useSessions: unused,
-    useSessionStatus: unused,
-    useSessionRetainInfo: unused,
-    useWorkspaces: unused,
-    usePanelInfo: selector => selector({ activePanelId: null }),
-    useResource: () => ({ status: 'none', value: undefined, failure: undefined }),
-    useConversation: unused,
-    useInput: unused,
-    useTrajectory: unused,
-    inputActions: {
-      captureInsertion: unused,
-      insertText: unused,
-      setDraft: unused,
-      persistDraft: unused,
-      addAttachments: unused,
-      removeAttachment: unused,
-      pruneAttachments: unused,
-      submit: unused,
-    },
-    useTurnData: () => undefined,
-    useDisclosure,
-    useGroupAction: useSearchableHidden,
   }
   switch (node.kind) {
     case 'user':
@@ -217,16 +189,21 @@ describe('MessageItem arms', () => {
     // Same-day clock: construct "today at 14:24" so the label stays `HH:mm`.
     const now = new Date()
     const time = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 24).getTime()
-    render(
+    const view = render(
       <MessageItem t={t} node={{
         kind: 'user', seq: 1, time,
-        content: [{ type: 'text', text: 'hello bubble' }] as never,
+        content: [{ type: 'text', text: 'hello ' }, { type: 'text', text: 'bubble' }],
         source: null,
       }}
       />,
     )
     expect(screen.getByText('14:24')).toBeTruthy()
     expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
+    const stack = view.getByText('hello bubble').closest('div')?.parentElement
+    expect(stack?.parentElement).toBe(view.container.firstElementChild)
+    expect(stack?.contains(screen.getByText('14:24'))).toBe(false)
+    expect(stack?.contains(screen.getByRole('button', { name: '复制' }))).toBe(false)
+    expect(stack?.nextElementSibling?.contains(screen.getByRole('button', { name: '复制' }))).toBe(true)
     expect(screen.queryByRole('button', { name: '在新对话中分支' })).toBeNull()
     expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
@@ -1155,7 +1132,7 @@ describe('small branch tails', () => {
         t={t}
         blocks={[{ kind: 'reasoning', text: 'one-liner' }]}
         streaming={false}
-        renderMessageImages={renderMessageImages}
+        loadImage={unusedImageLoader}
       />,
     )
     expect(view.getByText('one-liner')).toBeTruthy()
