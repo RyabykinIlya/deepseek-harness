@@ -583,18 +583,17 @@ declare class Session {
    *
    * @param type - The event type (key of {@link SessionEventMap}).
    * @param data - The event payload; must be JSON-serializable.
-   * @param opts - For non-surface types, an optional {@link AppendOptions}:
-   *   `{ ignorable: true }` stamps the envelope marker that lets a reader which
-   *   does not know `type` skip the event instead of refusing the log; use it
-   *   only for purely informational records. For surface types, surface metadata: `surfaceOp` controls how the event enters
-   *   the ordered surface; `sourceEventSeqs` lists the seq numbers of earlier
-   *   events this one derives from. REQUIRED for
-   *   {@link SurfaceEventType} events (every message-producing event must
-   *   declare how it joins the surface, the sole source of derived model
-   *   history) and
-   *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/attempt`. Assistant messages embed their exact provider
-   *   stream and cannot cite top-level source events.
+   * @param opts - Surface metadata for {@link SurfaceEventType} events, where it
+   *   is REQUIRED: `surfaceOp` controls how the event enters the ordered surface
+   *   and `sourceEventSeqs` lists the seq numbers of earlier events this one
+   *   derives from. Every message-producing event must declare how it joins the
+   *   surface, the sole source of derived model history; the compiler rejects
+   *   this metadata on non-surface types like `turn/start` or
+   *   `assistant/attempt`, and Assistant messages embed their exact provider
+   *   stream and cannot cite top-level source events. Log-only types take an
+   *   optional {@link AppendOptions}: `{ ignorable: true }` stamps the envelope
+   *   marker that lets a reader which does not know `type` skip the event
+   *   instead of refusing the log, so it belongs only on informational records.
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.

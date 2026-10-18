@@ -15,7 +15,8 @@ Optional `request.cwd` selects the child's initial directory; relative paths res
  * Start-time options supported by a registered backend. The manager checks
  * every requested option before preparing a local child or starting an external
  * execution. depthLimit controls maxDepth; the remaining flag names match
- * SubagentStartRequest fields.
+ * SubagentStartRequest fields. repository is optional; an absent value means
+ * the provider does not support it.
  */
 interface SubagentCapabilities {
   readonly agentOptions: boolean
@@ -23,7 +24,7 @@ interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
-  readonly repository: boolean
+  readonly repository?: boolean
 }
 ```
 
@@ -52,6 +53,13 @@ interface SubagentActivation {
   readonly childId: SessionId
   /** Accepted inbox message, when the backend has a local inbox. */
   readonly messageId?: MessageId
+  /**
+   * The handles {@link ContinuableCreateSpec.handles} reported for this child,
+   * copied unchanged; absent when the provider reported none. A provider that
+   * isolates the child owns these values, so a caller quotes them instead of
+   * reconstructing them from the child id.
+   */
+  readonly handles?: Readonly<Record<string, string>>
   /**
    * Execution result after teardown settles and notifications are sent; capture failures reject.
    * Teardown failures are reported by dispose() without replacing a captured result.
@@ -229,7 +237,7 @@ interface ContinuableCreateSpec {
    * of whatever the provider established for it. Keys are the provider's own
    * vocabulary and values are exact; a provider reporting none omits the field
    * and its start result carries only the child id. The manager copies them
-   * into {@link ContinuableStart} unchanged, and the delegation tool renders
+   * into {@link SubagentActivation} unchanged, and the delegation tool renders
    * each entry as its own line.
    */
   readonly handles?: Readonly<Record<string, string>>

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give an agent a named tool that delegates work to a configured backend. Every call starts a managed activation and returns a child id; the runtime owns completion notices and cleanup. In `one-shot` mode, calls wait for the child by default; in `continuable` mode, they start a persistent child in the background and return an id for later messages. Local children support messages and restoration, while external backends execute one task and return their final answer through the completion notice. Supported backends can expose approved child LLM routes. Each instance can select a child preset and depth limit, while failed runs return errors instead of partial success.
+Use this package to give an agent a tool that delegates to a configured backend. Every call starts a managed activation and returns a child id; the runtime owns completion notices and cleanup. `one-shot` calls wait for the child; `continuable` calls start a persistent child in the background and return an id for later messages. Local children support messages and restoration, while external backends run one task and return their answer in the completion notice. Supported backends can expose approved child LLM routes. Each instance can select a child preset and depth limit; failed runs return errors, not partial success.
 
 ## Table of Contents
 
