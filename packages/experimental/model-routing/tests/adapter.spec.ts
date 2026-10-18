@@ -1273,6 +1273,54 @@ describe('TiersAdapter direct sources', () => {
       ])
   })
 
+  it('reroutes a spent subscription onto another model\'s live subscription before any pay-per-token endpoint', async () => {
+    // The failure contract this seam owns: a failure re-ranks the whole tier, so
+    // the cheapest healthy candidate serves the rest of the turn even when it
+    // runs a different model. A spent subscription of one model must not spend
+    // on that model's OpenRouter endpoint while another model's subscription
+    // sits live — the subscriptions are the resource the ranking exists to spend
+    // last.
+    const spent: ExtraSource = {
+      route: 'claude-proxy',
+      models: [],
+      modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
+      price: {},
+      tools: true,
+    }
+    const live: ExtraSource = {
+      route: 'zai',
+      models: [],
+      modelMap: { 'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":2e-8}' },
+      price: {},
+      tools: true,
+    }
+    const h = await harness({
+      tiers: [{ ...MIMO, models: ['xiaomi/mimo-v2.6-pro', 'z-ai/glm-5.3'], extraSources: [spent, live] }],
+      endpoints: {
+        'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.2e-7)],
+      },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+      },
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[0]?.options.provider).toBe('claude-proxy')
+    expect(h.sent[0]?.options.model).toBe('mimo-v2.6-pro')
+    expect(h.sent[1]?.options.provider).toBe('zai')
+    expect(h.sent[1]?.options.model).toBe('glm-5.3')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)).toMatchObject({
+      boundary: 'failure',
+      model: 'z-ai/glm-5.3',
+      source: { kind: 'zai', tag: 'glm-5.3' },
+      excludedTags: ['claude-proxy:mimo-v2.6-pro'],
+    })
+  })
+
   it('leaves the subscription for OpenRouter when the quota is spent and the Session allows it', async () => {
     // The default setting, and the behavior every deployment had before the
     // switch existed: a spent quota benches the source at once and the same

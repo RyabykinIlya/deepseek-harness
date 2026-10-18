@@ -75,7 +75,6 @@ async function rank(
   options: {
     allowFree?: boolean
     excludedTags?: string[]
-    preferModel?: string
     requiredInput?: RequiredInput
     modalities?: ReadonlyMap<string, readonly string[] | undefined>
   } = {},
@@ -87,7 +86,6 @@ async function rank(
     policyFor(tier, settings, {
       allowFree: options.allowFree ?? true,
       excludedTags: new Set(options.excludedTags ?? []),
-      ...options.preferModel === undefined ? {} : { preferModel: options.preferModel },
       ...options.requiredInput === undefined ? {} : { requiredInput: options.requiredInput },
       ...options.modalities === undefined ? {} : { modalities: options.modalities },
     }),
@@ -216,32 +214,21 @@ describe('rankEndpoints over the recorded replies', () => {
   })
 })
 
-describe('preferModel after a failure', () => {
+describe('ranking after a failure', () => {
   const excluded = { excludedTags: ['streamlake/fp8'] }
 
-  it('exhausts the same model before another model may serve the request', async () => {
+  it('moves to the cheapest healthy candidate, crossing models when that is cheaper', async () => {
+    // The failure contract: the exclusion list is the only carried state, so the
+    // re-rank crosses to another model's candidate the moment it is cheaper than
+    // the failed model's remaining providers.
     const settings = settingsOf()
-    const withPreference = await rank(PRO, settings, { ...excluded, preferModel: 'deepseek/deepseek-v4-pro' })
-    expect(withPreference.length).toBe(19)
-    expect(withPreference.top.slice(0, 4)).toEqual([
-      'deepseek/deepseek-v4-pro gmicloud/fp8=1.8661499999999998e-7',
-      'deepseek/deepseek-v4-pro parasail/fp8=1.9559999999999998e-7',
-      'deepseek/deepseek-v4-pro deepinfra/fp8=2.46e-7',
-      'deepseek/deepseek-v4-pro siliconflow/fp8=3.043296e-7',
-    ])
-    expect(withPreference.rejections).toEqual({
-      excluded: 1, status: 2, context: 2, quantization: 12, 'untrusted-unknown': 20,
-    })
-  })
-
-  it('changes the model when nothing says otherwise — the failure this rule prevents', async () => {
-    const withoutPreference = await rank(PRO, settingsOf(), excluded)
-    expect(withoutPreference.length).toBe(19)
-    expect(withoutPreference.top.slice(0, 2)).toEqual([
+    const reranked = await rank(PRO, settings, excluded)
+    expect(reranked.length).toBe(19)
+    expect(reranked.top.slice(0, 2)).toEqual([
       'z-ai/glm-5.3 novita/fp8=1.302e-7',
       'deepseek/deepseek-v4-pro gmicloud/fp8=1.8661499999999998e-7',
     ])
-    expect(withoutPreference.rejections).toEqual({
+    expect(reranked.rejections).toEqual({
       excluded: 1, status: 2, context: 2, quantization: 12, 'untrusted-unknown': 20,
     })
   })

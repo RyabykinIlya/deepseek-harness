@@ -13,9 +13,9 @@
  * Two rules shape everything below. The decision is taken **at boundaries only**
  * (see `boundary.ts`), because changing model or provider invalidates the prompt
  * cache and a cache miss costs about six times a cache hit. And when an endpoint
- * fails, the re-decision prefers *another provider of the same model* before any
- * other model is considered, because switching model mid-dialog is the one outcome
- * the whole design exists to avoid.
+ * fails, the re-decision benches the failed candidate and ranks the whole tier
+ * by price again, because a live subscription is the resource the ranking
+ * exists to spend last — the replacement may run another model.
  *
  * @module dsh-experimental-model-routing/adapter
  */
@@ -658,13 +658,12 @@ export class TiersAdapter extends LlmAdapter {
       defaultMix(settings),
       settings.mixMinTokens,
     )
-    // Only a failure boundary may hold the session's model against price: the
-    // reroute prefers another provider of the same model. Every other boundary
-    // (`start`, `idle`, `compaction`, `selection-change`) is where the prompt
-    // cache is already gone or was never warm, so those re-decisions rank purely
-    // by price and a degraded pin drifts back to the cheapest healthy endpoint.
-    const preferModel = input.boundary === 'failure' && pin !== undefined
-      && pin.tier === tier.name && target.kind !== 'fixed' ? pin.model : undefined
+    // Every boundary ranks the whole tier by price; no boundary holds the
+    // session's model against price. At `failure` the only carried state is the
+    // exclusion list: the failed candidate is benched and the cheapest healthy
+    // candidate serves the rest of the turn, whichever model it runs — a spent
+    // subscription is replaced by another live subscription before any
+    // pay-per-token endpoint of the failed model.
     const requirement = requiredInput === undefined ? undefined : {
       requiredInput,
       modalities: await this.declaredModalities(settings, models, requiredInput, signal),
@@ -700,7 +699,6 @@ export class TiersAdapter extends LlmAdapter {
         allowFree,
         excludedTags: excluded.tags,
         ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
-        ...preferModel === undefined ? {} : { preferModel },
         ...requirement,
         ...extraSources.size === 0 ? {} : { extraSources },
         ...subscriptionOnly === undefined ? {} : { subscriptionOnly },
@@ -1304,7 +1302,10 @@ export class TiersAdapter extends LlmAdapter {
     return options.sessionId === undefined ? undefined : this.deps.session(options.sessionId)
   }
 
-  /** Re-decide after a failure, preferring another provider of the same model. */
+  /**
+   * Re-decide after a failure: the exclusions bench the failed candidate and
+   * the cheapest healthy candidate of the tier serves the rest of the turn.
+   */
   private reroute(input: {
     settings: RoutingSettings
     target: RequestedTarget

@@ -59,7 +59,7 @@ A subscription source is usually the cheapest candidate, so it wins the ranking 
 
 What happens next depends on the OpenRouter fallback switch. `fallbackToOpenRouter` (default `true`) is the deployment's value, and each Session may choose its own from the composer chip; the choice is a `model-routing/openrouter-fallback` event in that Session's log, so it survives a Host restart, and a Session that never chose keeps following the deployment default as it changes. The effective value is recorded on every decision as `openRouterFallback`.
 
-- **On.** OpenRouter stays a candidate. The re-decision moves to the same model's OpenRouter endpoint and the turn continues.
+- **On.** OpenRouter stays a candidate. The re-decision ranks the whole tier, so the turn continues on the cheapest healthy candidate — another model's live subscription when one ranks, otherwise an OpenRouter endpoint.
 - **Off.** The model is served only by its subscription: for every model the tier's `extraSources` serve, OpenRouter candidates are rejected as `subscription-only`. With every subscription benched the turn fails with `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, whose message names the remaining cooldown; the next message after it tries the subscription again. A model the tier serves only from OpenRouter keeps its OpenRouter endpoint in both states — otherwise the switch would delete models rather than choose their source.
 
 <a id="snapshots"></a>
@@ -81,7 +81,7 @@ The same cached catalog read also states what each release accepts as input, and
 <a id="ranking"></a>
 ### Ranking
 
-`rankEndpoints` sorts candidates by a **blended** price per token, `cached · cacheRead + fresh · prompt + output · completion`, because an agent turn is overwhelmingly cached input and the providers that look cheapest on prompt alone frequently publish no cache-read discount at all. `preferModel` puts one model's endpoints ahead of every other model's while leaving price order intact inside that group, which is what keeps a failed provider from re-routing a conversation onto a different model mid-dialog. `rankWithRelaxation` re-runs once without the uptime floor when that floor is what emptied the list, and reports `relaxedUptime` so the decision log says so.
+`rankEndpoints` sorts candidates by a **blended** price per token, `cached · cacheRead + fresh · prompt + output · completion`, because an agent turn is overwhelmingly cached input and the providers that look cheapest on prompt alone frequently publish no cache-read discount at all. No rule overrides that price, at a failure boundary or anywhere else: a failed provider benches its candidate and the cheapest healthy candidate of the tier serves the rest of the turn, whichever model it runs, so a spent subscription is replaced by another model's live subscription before any pay-per-token endpoint. `rankWithRelaxation` re-runs once without the uptime floor when that floor is what emptied the list, and reports `relaxedUptime` so the decision log says so.
 
 An `extraSources` candidate is ranked under the same formula from the prices its entry declares, and a direct source is excluded by `route:id` rather than by its route id alone: one route may serve the same id as several models' candidates, and only the pair says which one failed.
 

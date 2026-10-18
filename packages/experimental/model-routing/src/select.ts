@@ -26,10 +26,9 @@
  * tier whose candidates are all text-only refuses the request instead of sending
  * it. Silence in the catalog is not a capability.
  *
- * `preferModel` is what keeps a mid-dialog failure from changing the model. When
- * an endpoint fails, the exclusion list takes it out and the re-rank must exhaust
- * the *same* model's other providers before it reaches a different model; without
- * that rule one provider's rate limit would silently re-route a conversation.
+ * After a failure the exclusion list is the only carried state: the failed
+ * candidate is benched and the re-rank may cross models, because a subscription
+ * that answers is worth more than the failed model's identity.
  *
  * @module dsh-experimental-model-routing/select
  */
@@ -154,8 +153,6 @@ export interface SelectionPolicy {
    * modalities and a missing entry are both an absent capability.
    */
   modalities?: ReadonlyMap<string, readonly string[] | undefined>
-  /** Model whose endpoints sort before every other model's, used when re-routing after a failure. */
-  preferModel?: string
   /** Non-OpenRouter candidates the tier's `extraSources` named, keyed by canonical model id. */
   extraSources?: ReadonlyMap<string, readonly DirectSource[]>
   /**
@@ -451,10 +448,10 @@ function tagOf(candidate: Candidate): string {
  * Filter and rank every candidate of every candidate model.
  *
  * Models are considered in the tier's own order — OpenRouter endpoints first,
- * then the model's direct sources in `extraSources` order — which is what makes
- * `preferModel` the only ordering rule that can override price: it sorts one
- * model's entries ahead of every other model's, and everything inside that group
- * is still price-ordered. Ties break on measured uptime, then on model and tag,
+ * then the model's direct sources in `extraSources` order — and the ranking
+ * itself is price-only across every model: no rule can override the blended
+ * price, which is what lets a failure move the turn to another model's live
+ * subscription. Ties break on measured uptime, then on model and tag,
  * so the same fixture list always produces the same decision; a direct source
  * states no uptime and therefore sorts behind an equally priced endpoint that
  * measures one.
@@ -511,11 +508,6 @@ export function rankEndpoints(
     }
   }
   ranked.sort((left, right) => {
-    if (policy.preferModel !== undefined) {
-      const leftPreferred = left.model === policy.preferModel
-      const rightPreferred = right.model === policy.preferModel
-      if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1
-    }
     if (left.blendedUsdPerToken !== right.blendedUsdPerToken) {
       return left.blendedUsdPerToken - right.blendedUsdPerToken
     }
@@ -536,7 +528,7 @@ export function rankEndpoints(
  * Build the policy for one tier and one request.
  * @param tier - the tier whose filters apply.
  * @param settings - the whole settings value.
- * @param options - per-request overrides: free admission, recent failures, the model to keep, and the modality the request carries.
+ * @param options - per-request overrides: free admission, recent failures, and the modality the request carries.
  * @returns the policy to rank under.
  */
 export function policyFor(
@@ -545,7 +537,6 @@ export function policyFor(
   options: {
     allowFree: boolean
     excludedTags: ReadonlySet<string>
-    preferModel?: string
     ignoreUptime?: boolean
     requiredInput?: RequiredInput
     modalities?: ReadonlyMap<string, readonly string[] | undefined>
@@ -567,7 +558,6 @@ export function policyFor(
     // §19 №5 / §3.3: the uptime floor is soft, so an unpassable one is dropped
     // rather than turned into a failure, and the relaxation is reported.
     ...options.ignoreUptime === true ? { ignoreUptime: true as const } : {},
-    ...options.preferModel === undefined ? {} : { preferModel: options.preferModel },
     ...options.requiredInput === undefined ? {} : { requiredInput: options.requiredInput },
     ...options.modalities === undefined ? {} : { modalities: options.modalities },
     ...options.extraSources === undefined ? {} : { extraSources: options.extraSources },

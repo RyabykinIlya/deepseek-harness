@@ -59,7 +59,7 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 接下来发生什么取决于 OpenRouter 回退开关。`fallbackToOpenRouter`（默认 `true`）是部署级取值，每个会话都可以在输入栏的标签处选择自己的值；该选择是该会话日志中的 `model-routing/openrouter-fallback` 事件，因此能跨 Host 重启保留，而从未选择过的会话则持续跟随部署默认值的变化。每次决策都会把生效值记录为 `openRouterFallback`。
 
-- **开启。** OpenRouter 仍是候选。重新决策会转到同一模型的 OpenRouter endpoint，该轮继续进行。
+- **开启。** OpenRouter 仍是候选。重新决策会对整个 tier 排序，因此该轮继续运行在最便宜的健康候选上——若有其他模型的存活订阅排在前面则用它，否则用 OpenRouter endpoint。
 - **关闭。** 该模型只由订阅服务：对于 tier 的 `extraSources` 服务的每个模型，OpenRouter 候选都以 `subscription-only` 被拒。当所有订阅都被停用，该轮以 `MODEL_ROUTING_SUBSCRIPTION_LIMIT` 失败，其消息给出剩余冷却时间；此后的下一条消息会再次尝试订阅。只由 OpenRouter 服务的模型在两种状态下都保留其 OpenRouter endpoint——否则这个开关会删掉模型，而不是为它们选择来源。
 
 <a id="snapshots"></a>
@@ -81,7 +81,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 <a id="ranking"></a>
 ### 排序
 
-`rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。`preferModel` 把某个模型的 endpoint 排在其他所有模型的 endpoint 之前，同时在该组内部保持价格顺序不变，这正是防止某个失败的提供方在对话中途把一场会话改路由到另一个模型的原因。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
+`rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。无论在失败边界还是其他任何地方，都没有规则可以凌驾于这个价格之上：失败的提供方将其候选停用，由 tier 中最便宜的健康候选完成本轮的剩余部分——无论它运行的是哪个模型，因此一个耗尽的订阅会先被另一个模型的存活订阅替代，然后才轮到任何按 token 计费的 endpoint。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
 
 `extraSources` 的候选项按同一公式、由其声明的价格参与排序；直连来源按 `route:id` 而不是仅按其路由 id 被排除：同一条路由可以以同一个 id 服务多个模型的候选，只有这一对才能说明失败的是哪一个。
 
