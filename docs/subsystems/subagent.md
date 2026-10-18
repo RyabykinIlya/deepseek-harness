@@ -158,23 +158,6 @@ The provider participates only in preparing the initial creation spec, where `sp
 The manager validates `cwd` (absolute, existing, enterable directory: `INVALID_PROVIDER_CWD`) and `agentPreset` (defined and usable in the preset registry: `UNKNOWN_AGENT_PRESET`) before materialization. Both land in the child's session header; the child mounts the header preset instead of joining the parent's, so a cold resume composes the same way without the provider. When the child cwd differs from the parent's, the initial return guidance states that the child works in its own separate checkout and must send a self-contained result (what changed, where, how verified) with `send_message`; a child sharing the parent cwd keeps the shared-workspace wording. A provider error with a string `code` reaches Remote callers as `subagent/provider-rejected` (`{ code, message }`); `SubagentError` codes keep their mappings and uncoded errors stay `gateway/internal`.
 
 ```ts type-equiv
-/** Identities and provider-reported handles returned once a continuable child accepted its initial prompt. */
-interface ContinuableStart {
-  /** The durable child session id, stable across activations. */
-  readonly childId: SessionId
-  /** The accepted initial prompt's inbox message id. */
-  readonly messageId: MessageId
-  /**
-   * The handles {@link ContinuableCreateSpec.handles} reported for this child,
-   * copied unchanged; absent when the provider reported none. A provider that
-   * isolates the child owns these values, so a caller quotes them instead of
-   * reconstructing them from the child id.
-   */
-  readonly handles?: Readonly<Record<string, string>>
-}
-```
-
-```ts type-equiv
 /**
  * What the continuation manager asks a provider for while materializing one
  * continuable child's FIRST activation. The manager has already reserved the

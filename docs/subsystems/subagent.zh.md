@@ -158,23 +158,6 @@ interface ResolvedSubagentStartRequest extends SubagentStartRequest {
 管理器在物化之前校验 `cwd`（绝对路径、已存在且可进入的目录：`INVALID_PROVIDER_CWD`）与 `agentPreset`（在 preset 注册表中已定义且可用：`UNKNOWN_AGENT_PRESET`）。两者都写入 child 的 session header；child 挂载 header 中的 preset，而不是加入 parent 的 preset，因此冷恢复无需 provider 即可用相同方式组合。当 child 的 cwd 与 parent 不同时，初始返回指引会说明 child 在自己独立的 checkout 中工作，并必须用 `send_message` 发送自包含的结果（改了什么、在哪里、如何验证）；与 parent 共享 cwd 的 child 保留共享工作区的措辞。带字符串 `code` 的 provider 错误会以 `subagent/provider-rejected`（`{ code, message }`）到达 Remote 调用方；`SubagentError` code 保持原有映射，不带 code 的错误仍为 `gateway/internal`。
 
 ```ts type-equiv
-/** Identities and provider-reported handles returned once a continuable child accepted its initial prompt. */
-interface ContinuableStart {
-  /** The durable child session id, stable across activations. */
-  readonly childId: SessionId
-  /** The accepted initial prompt's inbox message id. */
-  readonly messageId: MessageId
-  /**
-   * The handles {@link ContinuableCreateSpec.handles} reported for this child,
-   * copied unchanged; absent when the provider reported none. A provider that
-   * isolates the child owns these values, so a caller quotes them instead of
-   * reconstructing them from the child id.
-   */
-  readonly handles?: Readonly<Record<string, string>>
-}
-```
-
-```ts type-equiv
 /**
  * What the continuation manager asks a provider for while materializing one
  * continuable child's FIRST activation. The manager has already reserved the
