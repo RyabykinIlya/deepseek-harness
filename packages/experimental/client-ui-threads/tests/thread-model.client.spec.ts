@@ -13,6 +13,7 @@ const VIEW: ModelRoutingView = {
   boundary: 'start',
   decidedAt: 1,
   unpinned: false,
+  openRouterFallback: true,
 }
 
 describe('readThreadModel', () => {

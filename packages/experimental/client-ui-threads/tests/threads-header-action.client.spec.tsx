@@ -276,6 +276,7 @@ describe('ThreadsHeaderAction rows', () => {
     const view: ModelRoutingView = {
       requested: 'flash', tier: 'flash', model: 'deepseek/deepseek-v4-flash',
       providerName: 'StreamLake', quantization: 'fp8', boundary: 'start', decidedAt: 1, unpinned: false,
+      openRouterFallback: true,
     }
     const projection = snapshot({ state: 'ready', values: { threads: [row({ threadId: 't-1', label: 'worker' })] } })
     const state = fake<SessionListState>({
