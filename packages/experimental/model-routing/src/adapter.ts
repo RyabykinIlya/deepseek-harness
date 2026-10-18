@@ -631,7 +631,13 @@ export class TiersAdapter extends LlmAdapter {
       defaultMix(settings),
       settings.mixMinTokens,
     )
-    const preferModel = pin !== undefined && pin.tier === tier.name && target.kind !== 'fixed' ? pin.model : undefined
+    // Only a failure boundary may hold the session's model against price: the
+    // reroute prefers another provider of the same model. Every other boundary
+    // (`start`, `idle`, `compaction`, `selection-change`) is where the prompt
+    // cache is already gone or was never warm, so those re-decisions rank purely
+    // by price and a degraded pin drifts back to the cheapest healthy endpoint.
+    const preferModel = input.boundary === 'failure' && pin !== undefined
+      && pin.tier === tier.name && target.kind !== 'fixed' ? pin.model : undefined
     const requirement = requiredInput === undefined ? undefined : {
       requiredInput,
       modalities: await this.declaredModalities(settings, models, requiredInput, signal),
