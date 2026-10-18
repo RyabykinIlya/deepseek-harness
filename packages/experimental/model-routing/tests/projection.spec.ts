@@ -82,6 +82,22 @@ describe('applyModelRoutingEvent', () => {
     expect(moved.overrides).toEqual({ t1: 'flash', t2: 'flash' })
   })
 
+  it('records the Session fallback choice until it is changed again', () => {
+    // `null` is "never chose", not "off": an unchosen Session follows the
+    // deployment default, so the absence has to be distinguishable from a person
+    // turning the switch off.
+    const off = applyModelRoutingEvent(
+      emptyModelRoutingState(),
+      event('model-routing/openrouter-fallback', { enabled: false }, 1),
+    )
+    expect(off.openRouterFallback).toBe(false)
+    const on = applyModelRoutingEvent(off, event('model-routing/openrouter-fallback', { enabled: true }, 2))
+    expect(on.openRouterFallback).toBe(true)
+    // Repeating the same choice is not a state change: the registry caches views
+    // by state identity, and a streaming conversation must not rebuild the chip.
+    expect(applyModelRoutingEvent(on, event('model-routing/openrouter-fallback', { enabled: true }, 3))).toBe(on)
+  })
+
   it('returns the same reference for an event it does not own', () => {
     const state = emptyModelRoutingState()
     expect(applyModelRoutingEvent(state, event('turn/start', {} as never))).toBe(state)
@@ -104,6 +120,7 @@ describe('modelRoutingView', () => {
       boundary: 'start',
       decidedAt: 42,
       unpinned: false,
+      openRouterFallback: true,
     })
   })
 

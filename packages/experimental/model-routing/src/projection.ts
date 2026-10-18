@@ -16,6 +16,7 @@
 import { z } from 'zod'
 import type { SessionEvent, SessionEventMap, SessionHeader, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { DEFAULT_OPENROUTER_FALLBACK } from './config.ts'
 import type { JudgeRule, ModelRoutingState, ModelRoutingView, RoutingBoundary, RoutingDecision, RoutingEndpoint, RoutingSource } from './types.ts'
 
 const routingBoundarySchema = z.enum(['start', 'selection-change', 'compaction', 'idle', 'failure'])
@@ -83,6 +84,7 @@ const modelRoutingStateSchema = z.object({
   compactedSinceDecision: z.boolean(),
   explicitSelection: z.boolean(),
   overrides: overridesSchema,
+  openRouterFallback: z.boolean().nullable(),
 }).strict() as z.ZodType<ModelRoutingState>
 
 // Nullable because the registry validates every published value, and the value
@@ -97,6 +99,7 @@ const modelRoutingViewSchema = z.object({
   boundary: routingBoundarySchema,
   decidedAt: z.number(),
   unpinned: z.boolean(),
+  openRouterFallback: z.boolean(),
 }).strict().nullable() as z.ZodType<ModelRoutingView | null>
 
 /**
@@ -111,6 +114,7 @@ export function emptyModelRoutingState(): ModelRoutingState {
     compactedSinceDecision: false,
     explicitSelection: false,
     overrides: {},
+    openRouterFallback: null,
   }
 }
 
@@ -118,6 +122,7 @@ export function emptyModelRoutingState(): ModelRoutingState {
 export type ModelRoutingEventType =
   | 'model-routing/decision'
   | 'model-routing/tier-override'
+  | 'model-routing/openrouter-fallback'
   | 'assistant/message'
   | 'assistant/attempt'
   | 'compaction/end'
@@ -156,6 +161,10 @@ export function applyModelRoutingEvent(state: ModelRoutingState, event: SessionE
       const { threadId, tier } = event.data
       return { ...state, overrides: { ...state.overrides, [threadId]: tier } }
     }
+    case 'model-routing/openrouter-fallback':
+      return state.openRouterFallback === event.data.enabled
+        ? state
+        : { ...state, openRouterFallback: event.data.enabled }
     default:
       return state
   }
@@ -195,6 +204,11 @@ export function modelRoutingView(state: ModelRoutingState): ModelRoutingView | n
     boundary: decision.boundary,
     decidedAt,
     unpinned: decision.endpoint === undefined,
+    // A decision recorded before the switch existed names no value, and the
+    // deployment default of that day was the same one this constant states.
+    openRouterFallback: state.openRouterFallback
+      ?? decision.openRouterFallback
+      ?? DEFAULT_OPENROUTER_FALLBACK,
   }
 }
 

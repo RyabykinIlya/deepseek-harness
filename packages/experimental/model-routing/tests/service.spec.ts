@@ -198,6 +198,22 @@ describe('Remote freeUsage', () => {
   })
 })
 
+describe('Remote setOpenRouterFallback', () => {
+  it('records the choice in the Session log, so a resume keeps it', async () => {
+    const { ctx, service: routing } = await service()
+    const session = ctx.sessions.create(SessionId('s1'))
+    routing.setSessionOpenRouterFallback({ sessionId: session.id, enabled: false })
+    expect(session.ownEvents().filter(event => event.type === 'model-routing/openrouter-fallback'))
+      .toEqual([expect.objectContaining({ data: { enabled: false }, ignorable: true })])
+  })
+
+  it('refuses a Session the Host no longer holds', async () => {
+    const { service: routing } = await service()
+    expect(() => { routing.setSessionOpenRouterFallback({ sessionId: SessionId('gone'), enabled: true }) })
+      .toThrow(/"gone" is not open/)
+  })
+})
+
 describe('the diagnostics history', () => {
   it('appends one line per decision to the configured file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'model-routing-history-'))

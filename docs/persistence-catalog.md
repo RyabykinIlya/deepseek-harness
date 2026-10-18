@@ -48,7 +48,8 @@ The [format references](persistence-changes/historical-formats/README.md) cover 
 | `event:job/settled` | event | `edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf` | [`{ type: "job/settled" }`](#persistence-type-sha256-edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
-| `event:model-routing/decision` | event | `bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4) |
+| `event:model-routing/decision` | event | `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3) |
+| `event:model-routing/openrouter-fallback` | event | `ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136` | [`{ type: "model-routing/openrouter-fallback" }`](#persistence-type-sha256-ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136) |
 | `event:model-routing/tier-override` | event | `54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86` | [`{ type: "model-routing/tier-override" }`](#persistence-type-sha256-54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
 | `event:permission/preset` | event | `5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b` | [`{ type: "permission/preset" }`](#persistence-type-sha256-5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b) |
@@ -718,7 +719,22 @@ Source: [`packages/api/session-controller/src/types.ts:41`](../packages/api/sess
 'model-routing/decision': RoutingDecision
 ```
 
-Source: [`packages/experimental/model-routing/src/types.ts:191`](../packages/experimental/model-routing/src/types.ts)
+Source: [`packages/experimental/model-routing/src/types.ts:199`](../packages/experimental/model-routing/src/types.ts)
+
+<a id="model-routingopenrouter-fallback--log-only"></a>
+
+#### `model-routing/openrouter-fallback` — log-only
+
+```ts persistence-catalog
+/**
+ * This Session chose whether an exhausted subscription may be replaced by
+ * OpenRouter. Appended with `ignorable: true`: a reader that does not know
+ * the switch sees the deployment default it never changed.
+ */
+'model-routing/openrouter-fallback': { enabled: boolean }
+```
+
+Source: [`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
 
 <a id="model-routingtier-override--log-only"></a>
 
@@ -729,7 +745,7 @@ Source: [`packages/experimental/model-routing/src/types.ts:191`](../packages/exp
 'model-routing/tier-override': { threadId: string; tier: string }
 ```
 
-Source: [`packages/experimental/model-routing/src/types.ts:193`](../packages/experimental/model-routing/src/types.ts)
+Source: [`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
 
 ### `permission/*`
 
@@ -2382,6 +2398,14 @@ SHA-256: `b5da4d78bf8a8906779c6cbfa19d05d02a7b53860b76ab3c1f411879ad846f26`
 
 `"model-routing/decision"`
 
+<a id="persistence-type-sha256-87f0773fd55c9e99b8af0553486bd019e0a584dc6037efc00fcdd369d1919c0c"></a>
+
+### `"model-routing/openrouter-fallback"`
+
+SHA-256: `87f0773fd55c9e99b8af0553486bd019e0a584dc6037efc00fcdd369d1919c0c`
+
+`"model-routing/openrouter-fallback"`
+
 <a id="persistence-type-sha256-112da3cb0a7e1358446e6ab177f15fac38d9f49606c4c217e5d563629344afe9"></a>
 
 ### `"model-routing/tier-override"`
@@ -3021,6 +3045,14 @@ SHA-256: `5ebce1317eacd2c148456627a09668e927ee15c204f0643f5ea76b46b54a2647`
 SHA-256: `0a8a062bc9c3c0d97fd97742262f2ea53dd32297f834e81114870d38ac3dc6da`
 
 `"subagent/model-selection-policy"`
+
+<a id="persistence-type-sha256-e008fb2471a2f204e32be6719c950399912173d954713c0b730a6041bf09ddcc"></a>
+
+### `"subscription-only"`
+
+SHA-256: `e008fb2471a2f204e32be6719c950399912173d954713c0b730a6041bf09ddcc`
+
+`"subscription-only"`
 
 <a id="persistence-type-sha256-511801b0a6470d98566e8385d3dffddb2b67f79fcf73ed6056f46c3cc0a245a7"></a>
 
@@ -5192,7 +5224,7 @@ One of:
 - `"selection-change"`
 - `"start"`
 
-<a id="persistence-type-sha256-490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f"></a>
+<a id="persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc"></a>
 
 <a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingcandidate"></a>
 
@@ -5200,7 +5232,7 @@ One of:
 
 ### `RoutingCandidate`
 
-SHA-256: `490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f`
+SHA-256: `4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc`
 
 Sources: [`packages/experimental/model-routing/src/types.ts:90`](../packages/experimental/model-routing/src/types.ts)
 
@@ -5217,21 +5249,21 @@ Sources: [`packages/experimental/model-routing/src/types.ts:90`](../packages/exp
 | `providerName` | optional | `string` |
 | `quantization` | optional | `string` |
 | `rank` | optional | `number` |
-| `rejection` | optional | [`union (11 variants)`](#persistence-type-sha256-ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84) |
+| `rejection` | optional | [`union (12 variants)`](#persistence-type-sha256-0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812) |
 | `source` | optional | `string` |
 | `status` | optional | `number` |
 | `tag` | required | `string` |
 | `uptimeLast30m` | optional | `number` |
 
-<a id="persistence-type-sha256-5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f"></a>
+<a id="persistence-type-sha256-51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59"></a>
 
 ### `RoutingCandidate[]`
 
-SHA-256: `5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f`
+SHA-256: `51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59`
 
-Array of [`RoutingCandidate`](#persistence-type-sha256-490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f).
+Array of [`RoutingCandidate`](#persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc).
 
-<a id="persistence-type-sha256-82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406"></a>
+<a id="persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504"></a>
 
 <a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingdecision"></a>
 
@@ -5239,7 +5271,7 @@ Array of [`RoutingCandidate`](#persistence-type-sha256-490182a78f9f34ad49a30a9d2
 
 ### `RoutingDecision`
 
-SHA-256: `82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406`
+SHA-256: `384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504`
 
 Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/experimental/model-routing/src/types.ts)
 
@@ -5247,7 +5279,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/ex
 |---|---|---|
 | `blendedUsdPerToken` | optional | `number` |
 | `boundary` | required | [`RoutingBoundary`](#persistence-type-sha256-f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc) |
-| `cheapestRejected` | optional | [`RoutingCandidate[]`](#persistence-type-sha256-5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f) |
+| `cheapestRejected` | optional | [`RoutingCandidate[]`](#persistence-type-sha256-51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59) |
 | `considered` | required | `number` |
 | `endpoint` | optional | [`RoutingEndpoint`](#persistence-type-sha256-d28a3d487881b5a03f6662a90a3bc44f416cb204409f4bc96a8b7be85df6646f) |
 | `excludedTags` | required | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
@@ -5255,7 +5287,8 @@ Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/ex
 | `judge` | optional | [`JudgeVerdict`](#persistence-type-sha256-36f87503cdfb7487bcdcc1b66878db854420f68c230d914e0c21948e7d6c4642) |
 | `mix` | optional | [`MeasuredMix`](#persistence-type-sha256-e0d39b7fb4c2ef8d91fb1a6439a9fcc9957c01c70880fe50d6adb732e4b8e9e8) |
 | `model` | required | `string` |
-| `rejections` | optional | [`{ context, excluded, free, modality, … }`](#persistence-type-sha256-6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf) |
+| `openRouterFallback` | optional | `boolean` |
+| `rejections` | optional | [`{ context, excluded, free, modality, … }`](#persistence-type-sha256-56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f) |
 | `relaxedUptime` | optional | `true` |
 | `requested` | required | `string` |
 | `runnersUp` | required | [`RoutingRunnerUp[]`](#persistence-type-sha256-8485faa709c09804ce2dbbf5f91f8a54cecabba029463f8b9cc09f6783d4e9f8) |
@@ -6437,25 +6470,26 @@ SHA-256: `b993441f8ce7d27b80e619e113e232ae8e62d3d5a8340f6bfe12d8c4c018e62f`
 |---|---|---|
 | 0 | required | [`{ role: "user" }`](#persistence-type-sha256-9a2a9029f8d7ede05336980d8342737557f487b913bfd28853d0ab5214600ab5) |
 
-<a id="persistence-type-sha256-ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84"></a>
+<a id="persistence-type-sha256-0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812"></a>
 
-### `union (11 variants)`
+### `union (12 variants)`
 
-SHA-256: `ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84`
+SHA-256: `0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812`
 
 One of:
 
 - `"context"`
 - `"excluded"`
+- `"untrusted-unknown"`
 - `"uptime"`
 - `"free"`
 - `"modality"`
 - `"paid"`
 - `"quantization"`
 - `"status"`
+- `"subscription-only"`
 - `"tools"`
 - `"unpriced"`
-- `"untrusted-unknown"`
 
 <a id="persistence-type-sha256-1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92"></a>
 
@@ -6954,11 +6988,11 @@ Sources: [`packages/compaction/compaction/src/types.ts:24`](../packages/compacti
 | `sourceCommandId` | optional | `string` |
 | `turn` | required | [`OptionalSessionSeq`](#persistence-type-sha256-3bd652ebfa8726b3ce3937a4f1bd2759e02f86b3a08a20f9e41a8513656fbc5f) |
 
-<a id="persistence-type-sha256-6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf"></a>
+<a id="persistence-type-sha256-56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f"></a>
 
 ### `{ context, excluded, free, modality, … }`
 
-SHA-256: `6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf`
+SHA-256: `56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f`
 
 | Property | Presence | Type |
 |---|---|---|
@@ -6969,6 +7003,7 @@ SHA-256: `6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf`
 | `paid` | required | `number` |
 | `quantization` | required | `number` |
 | `status` | required | `number` |
+| `subscription-only` | required | `number` |
 | `tools` | required | `number` |
 | `unpriced` | required | `number` |
 | `untrusted-unknown` | required | `number` |
@@ -7081,6 +7116,18 @@ Sources: [`packages/experimental/hook-protocol/src/types.ts:19`](../packages/exp
 | `matcher` | optional | `string` |
 | `point` | required | `string` |
 | `turn` | required | `number` |
+
+<a id="persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434"></a>
+
+### `{ enabled }`
+
+SHA-256: `c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434`
+
+Sources: [`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
+
+| Property | Presence | Type |
+|---|---|---|
+| `enabled` | required | `boolean` |
 
 <a id="persistence-type-sha256-9e41386b3a0c9572b0d63078492ebb3997da7d3a830d44e0259418bd02f4bcb2"></a>
 
@@ -8823,7 +8870,7 @@ Sources: [`packages/experimental/threads/src/types.ts:203`](../packages/experime
 
 SHA-256: `c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:193`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -9341,21 +9388,37 @@ SHA-256: `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3`
 | `time` | required | `number` |
 | `type` | required | `"llm/retry-started"` |
 
-<a id="persistence-type-sha256-bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4"></a>
+<a id="persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3"></a>
 
 <a id="persistence-type-eventmodel-routingdecision"></a>
 
 ### `{ type: "model-routing/decision" }`
 
-SHA-256: `bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4`
+SHA-256: `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3`
 
 | Property | Presence | Type |
 |---|---|---|
-| `data` | required | [`RoutingDecision`](#persistence-type-sha256-82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406) |
+| `data` | required | [`RoutingDecision`](#persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504) |
 | `ignorable` | optional | `true` |
 | `seq` | required | `number` |
 | `time` | required | `number` |
 | `type` | required | `"model-routing/decision"` |
+
+<a id="persistence-type-sha256-ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136"></a>
+
+<a id="persistence-type-eventmodel-routingopenrouter-fallback"></a>
+
+### `{ type: "model-routing/openrouter-fallback" }`
+
+SHA-256: `ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136`
+
+| Property | Presence | Type |
+|---|---|---|
+| `data` | required | [`{ enabled }`](#persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434) |
+| `ignorable` | optional | `true` |
+| `seq` | required | `number` |
+| `time` | required | `number` |
+| `type` | required | `"model-routing/openrouter-fallback"` |
 
 <a id="persistence-type-sha256-54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86"></a>
 

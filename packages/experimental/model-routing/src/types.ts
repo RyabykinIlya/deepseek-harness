@@ -171,6 +171,14 @@ export interface RoutingDecision {
   cheapestRejected?: readonly RoutingCandidate[]
   /** The tier filters the ranking applied. */
   filters?: RoutingFilters
+  /**
+   * Whether this decision was allowed to leave a subscription source for OpenRouter.
+   *
+   * Recorded so the effective setting is reconstructable from the log alone, and
+   * so a turn that failed on an exhausted subscription reads as the choice it
+   * was rather than as a route that could not decide.
+   */
+  openRouterFallback?: boolean
 }
 
 /** What one diagnostics line holds: the decision plus the candidate table it could not carry. */
@@ -191,6 +199,12 @@ declare module '@deepseek-ai/dsh-session/types' {
     'model-routing/decision': RoutingDecision
     /** Coordinator changed a Thread's tier. Written to the Project log. Appended with `ignorable: true`. */
     'model-routing/tier-override': { threadId: string; tier: string }
+    /**
+     * This Session chose whether an exhausted subscription may be replaced by
+     * OpenRouter. Appended with `ignorable: true`: a reader that does not know
+     * the switch sees the deployment default it never changed.
+     */
+    'model-routing/openrouter-fallback': { enabled: boolean }
   }
 }
 
@@ -208,6 +222,12 @@ export interface ModelRoutingState {
   explicitSelection: boolean
   /** Thread id → tier; read from a Project log only. */
   overrides: Readonly<Record<string, string>>
+  /**
+   * What this Session chose for the fallback switch, or `null` while it never
+   * chose: an unchosen Session follows the deployment default and stays
+   * following it when that default changes.
+   */
+  openRouterFallback: boolean | null
 }
 
 /** Wire view of the current decision, what the composer chip renders. */
@@ -229,6 +249,11 @@ export interface ModelRoutingView {
   boundary: RoutingBoundary
   decidedAt: number
   unpinned: boolean
+  /**
+   * The fallback setting the route is acting under: this Session's own choice
+   * when it made one, the deployment default otherwise.
+   */
+  openRouterFallback: boolean
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -251,6 +276,17 @@ export interface ModelRoutingControl {
    * @throws Error `model-routing: unknown tier "<tier>"; configured tiers: <a, b>`.
    */
   setThreadTier(project: Session, threadId: string, tier: string): void
+  /**
+   * Choose, for one Session, whether an exhausted subscription source may be
+   * replaced by an OpenRouter candidate.
+   *
+   * The choice is an event in that Session's own log, so it survives a Host
+   * restart and a cold resume, and a Session that never chose keeps following
+   * the deployment default.
+   * @param session - the Session the choice belongs to.
+   * @param enabled - true when an exhausted subscription may fall through to OpenRouter.
+   */
+  setOpenRouterFallback(session: Session, enabled: boolean): void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -265,6 +301,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'model-routing/too-many-models': { readonly limit: number }
     /** The settings document `quote` read cannot be served; message names the field. */
     'model-routing/invalid-settings': Record<string, never>
+    /** The Session the caller named for a routing choice is not open. */
+    'model-routing/unknown-session': { readonly sessionId: string }
   }
 }
 

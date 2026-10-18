@@ -26,4 +26,8 @@ export class CatalogModelRouting implements ModelRoutingControl {
   setThreadTier(): void {
     throw new Error('gen-tool-catalog: thread_tier execution is unreachable during schema harvest')
   }
+
+  setOpenRouterFallback(): void {
+    throw new Error('gen-tool-catalog: routing choices are unreachable during schema harvest')
+  }
 }

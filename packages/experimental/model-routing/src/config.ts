@@ -232,6 +232,28 @@ export interface Config {
    * next decision would pick the endpoint that just failed again.
    */
   excludeAfterFailureMs: Volatile<number>
+  /**
+   * Whether an exhausted subscription source may be replaced by an OpenRouter
+   * candidate (default `true`).
+   *
+   * Deployment default only: a Session that picked its own value in the
+   * composer overrides it for that Session's requests. With it off, a tier that
+   * declares `extraSources` decides only among those sources, so an exhausted
+   * subscription fails the turn with `retryAfterMs` instead of spending money on
+   * OpenRouter — a tier with no `extraSources` has nothing else to decide among
+   * and is unaffected.
+   */
+  fallbackToOpenRouter: Volatile<boolean>
+  /**
+   * How long a subscription source that reported an exhausted quota stays out of
+   * the ranking, in milliseconds (default 600000).
+   *
+   * Separate from {@link excludeAfterFailureMs} because quota codes bench on the
+   * first failure rather than after a streak: every request in between would
+   * otherwise fail on the same exhausted source, and the wait is what makes the
+   * next turn try the subscription again.
+   */
+  quotaCooldownMs: Volatile<number>
   freeForSubagents: Volatile<boolean>
   freeMinRemaining: Volatile<number>
   keyInfoTtlMs: Volatile<number>
@@ -291,6 +313,8 @@ export interface RoutingSettings {
   readonly noRerouteCodes: readonly string[]
   readonly excludeAfterFailures: number
   readonly excludeAfterFailureMs: number
+  readonly fallbackToOpenRouter: boolean
+  readonly quotaCooldownMs: number
   readonly freeForSubagents: boolean
   readonly freeMinRemaining: number
   readonly keyInfoTtlMs: number
@@ -365,6 +389,13 @@ export const DEFAULT_TRUSTED_UNKNOWN_PROVIDERS: readonly string[] = [
   'together',
   'stealth',
 ]
+
+/**
+ * What a Session that never chose a fallback setting follows, and what a
+ * decision that recorded none is read as: OpenRouter may serve an exhausted
+ * subscription unless somebody says otherwise.
+ */
+export const DEFAULT_OPENROUTER_FALLBACK = true
 
 /** Runtime schema for {@link Config}. */
 export const Config = z.object({
@@ -445,6 +476,11 @@ export const Config = z.object({
     .volatile(),
   excludeAfterFailures: z.number().default(5).volatile(),
   excludeAfterFailureMs: z.number().default(600000).volatile(),
+  // On by default: the route's cheapest candidate is usually a subscription
+  // source, and stopping a turn rather than paying for one is a choice the
+  // person should make per Session, not one a deployment default makes for them.
+  fallbackToOpenRouter: z.boolean().default(DEFAULT_OPENROUTER_FALLBACK).volatile(),
+  quotaCooldownMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),
   freeMinRemaining: z.number().default(20).volatile(),
   keyInfoTtlMs: z.number().default(60000).volatile(),
@@ -514,6 +550,8 @@ export function readSettings(config: Config): RoutingSettings {
     noRerouteCodes: config.noRerouteCodes.get(),
     excludeAfterFailures: config.excludeAfterFailures.get(),
     excludeAfterFailureMs: config.excludeAfterFailureMs.get(),
+    fallbackToOpenRouter: config.fallbackToOpenRouter.get(),
+    quotaCooldownMs: config.quotaCooldownMs.get(),
     freeForSubagents: config.freeForSubagents.get(),
     freeMinRemaining: config.freeMinRemaining.get(),
     keyInfoTtlMs: config.keyInfoTtlMs.get(),
@@ -709,6 +747,9 @@ export function validateSettings(settings: RoutingSettings): void {
   }
   if (!Number.isInteger(settings.excludeAfterFailures) || settings.excludeAfterFailures < 1) {
     invalid('excludeAfterFailures must be a positive integer')
+  }
+  if (!Number.isInteger(settings.quotaCooldownMs) || settings.quotaCooldownMs < 1) {
+    invalid('quotaCooldownMs must be a positive integer')
   }
   if (settings.noRerouteCodes.some(code => code.length === 0)
     || new Set(settings.noRerouteCodes).size !== settings.noRerouteCodes.length) {

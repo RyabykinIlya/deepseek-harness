@@ -122,6 +122,7 @@ export type EndpointRejection =
   | 'unpriced'
   | 'free'
   | 'paid'
+  | 'subscription-only'
 
 /** Everything the filters and the ranking read for one decision. */
 export interface SelectionPolicy {
@@ -157,6 +158,16 @@ export interface SelectionPolicy {
   preferModel?: string
   /** Non-OpenRouter candidates the tier's `extraSources` named, keyed by canonical model id. */
   extraSources?: ReadonlyMap<string, readonly DirectSource[]>
+  /**
+   * Models whose OpenRouter endpoints are not candidates for this decision.
+   *
+   * Set when the Session turned OpenRouter fallback off and the tier serves that
+   * model from an `extraSources` route: the model is still decided, just not
+   * there. A model the tier does not serve from any direct source is absent from
+   * this set, because dropping its only source would remove the model instead of
+   * choosing a different one for it.
+   */
+  subscriptionOnly?: ReadonlySet<string>
   /** Drops the uptime floor; set by `rankWithRelaxation` when nothing else passed. */
   readonly ignoreUptime?: true
 }
@@ -427,6 +438,7 @@ function emptyRejections(): Record<EndpointRejection, number> {
     unpriced: 0,
     free: 0,
     paid: 0,
+    'subscription-only': 0,
   }
 }
 
@@ -470,10 +482,17 @@ export function rankEndpoints(
       continue
     }
     const modelRejection = modelRejectionOf(model, policy)
+    const subscriptionOnly = policy.subscriptionOnly?.has(model) === true
     const candidates: readonly Candidate[] = [...list, ...(policy.extraSources?.get(model) ?? [])]
     for (const endpoint of candidates) {
       considered += 1
-      const rejection = modelRejection ?? rejectionOf(endpoint, policy)
+      // An endpoint of a model this Session serves from a subscription is not a
+      // fallback candidate: the Session said an exhausted subscription must fail
+      // the turn rather than be replaced. The reason outranks the rest because it
+      // explains why a cheaper endpoint is absent from a ranking that did read it.
+      const rejection = subscriptionOnly && !isDirect(endpoint)
+        ? 'subscription-only' as const
+        : modelRejection ?? rejectionOf(endpoint, policy)
       if (rejection !== undefined) {
         rejections[rejection] += 1
         rejected.push({ model, endpoint, reason: rejection })
@@ -532,6 +551,7 @@ export function policyFor(
     modalities?: ReadonlyMap<string, readonly string[] | undefined>
     extraSources?: ReadonlyMap<string, readonly DirectSource[]>
     excludedSources?: ReadonlySet<string>
+    subscriptionOnly?: ReadonlySet<string>
   },
 ): SelectionPolicy {
   return {
@@ -552,6 +572,7 @@ export function policyFor(
     ...options.modalities === undefined ? {} : { modalities: options.modalities },
     ...options.extraSources === undefined ? {} : { extraSources: options.extraSources },
     ...options.excludedSources === undefined ? {} : { excludedSources: options.excludedSources },
+    ...options.subscriptionOnly === undefined ? {} : { subscriptionOnly: options.subscriptionOnly },
   }
 }
 

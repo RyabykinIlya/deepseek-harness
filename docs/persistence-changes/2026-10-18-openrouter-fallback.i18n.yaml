@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-18-openrouter-fallback.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-18-openrouter-fallback.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-18-openrouter-fallback:
+  en: 38f55a548212d887
+  zh: 4ccbb5f62b8024c5
+/2026-10-18-openrouter-fallback/summary:
+  en: 9426ce95cbc0465b
+  zh: 042c0ad7d974bdeb
+/2026-10-18-openrouter-fallback/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-18-openrouter-fallback/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-18-openrouter-fallback/compatibility:
+  en: 5da90e86b1255178
+  zh: ea75d425f4f82969
+/2026-10-18-openrouter-fallback/verification:
+  en: b47119344e12984f
+  zh: 4b0ebb41828ecf55
+/2026-10-18-openrouter-fallback/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

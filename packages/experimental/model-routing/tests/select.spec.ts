@@ -587,5 +587,6 @@ function emptyOf(): Record<string, number> {
   return {
     modality: 0, excluded: 0, status: 0, uptime: 0, tools: 0, context: 0,
     quantization: 0, 'untrusted-unknown': 0, unpriced: 0, free: 0, paid: 0,
+    'subscription-only': 0,
   }
 }

@@ -50,7 +50,8 @@
 | `event:job/settled` | event | `edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf` | [`{ type: "job/settled" }`](#persistence-type-sha256-edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
-| `event:model-routing/decision` | event | `bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4) |
+| `event:model-routing/decision` | event | `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3) |
+| `event:model-routing/openrouter-fallback` | event | `ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136` | [`{ type: "model-routing/openrouter-fallback" }`](#persistence-type-sha256-ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136) |
 | `event:model-routing/tier-override` | event | `54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86` | [`{ type: "model-routing/tier-override" }`](#persistence-type-sha256-54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
 | `event:permission/preset` | event | `5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b` | [`{ type: "permission/preset" }`](#persistence-type-sha256-5c45bf4c544a7211dcd8ba6ba7e5f1bc39b49e7a9df9d5cbdc8e87c22771b37b) |
@@ -720,7 +721,22 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model-routing/decision': RoutingDecision
 ```
 
-来源：[`packages/experimental/model-routing/src/types.ts:191`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:199`](../packages/experimental/model-routing/src/types.ts)
+
+<a id="model-routingopenrouter-fallback--log-only"></a>
+
+#### `model-routing/openrouter-fallback` — log-only
+
+```ts persistence-catalog
+/**
+ * This Session chose whether an exhausted subscription may be replaced by
+ * OpenRouter. Appended with `ignorable: true`: a reader that does not know
+ * the switch sees the deployment default it never changed.
+ */
+'model-routing/openrouter-fallback': { enabled: boolean }
+```
+
+来源：[`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
 
 <a id="model-routingtier-override--log-only"></a>
 
@@ -731,7 +747,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model-routing/tier-override': { threadId: string; tier: string }
 ```
 
-来源：[`packages/experimental/model-routing/src/types.ts:193`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
 
 ### `permission/*`
 
@@ -2384,6 +2400,14 @@ SHA-256: `b5da4d78bf8a8906779c6cbfa19d05d02a7b53860b76ab3c1f411879ad846f26`
 
 `"model-routing/decision"`
 
+<a id="persistence-type-sha256-87f0773fd55c9e99b8af0553486bd019e0a584dc6037efc00fcdd369d1919c0c"></a>
+
+### `"model-routing/openrouter-fallback"`
+
+SHA-256: `87f0773fd55c9e99b8af0553486bd019e0a584dc6037efc00fcdd369d1919c0c`
+
+`"model-routing/openrouter-fallback"`
+
 <a id="persistence-type-sha256-112da3cb0a7e1358446e6ab177f15fac38d9f49606c4c217e5d563629344afe9"></a>
 
 ### `"model-routing/tier-override"`
@@ -3023,6 +3047,14 @@ SHA-256: `5ebce1317eacd2c148456627a09668e927ee15c204f0643f5ea76b46b54a2647`
 SHA-256: `0a8a062bc9c3c0d97fd97742262f2ea53dd32297f834e81114870d38ac3dc6da`
 
 `"subagent/model-selection-policy"`
+
+<a id="persistence-type-sha256-e008fb2471a2f204e32be6719c950399912173d954713c0b730a6041bf09ddcc"></a>
+
+### `"subscription-only"`
+
+SHA-256: `e008fb2471a2f204e32be6719c950399912173d954713c0b730a6041bf09ddcc`
+
+`"subscription-only"`
 
 <a id="persistence-type-sha256-511801b0a6470d98566e8385d3dffddb2b67f79fcf73ed6056f46c3cc0a245a7"></a>
 
@@ -5194,7 +5226,7 @@ SHA-256: `f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc`
 - `"selection-change"`
 - `"start"`
 
-<a id="persistence-type-sha256-490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f"></a>
+<a id="persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc"></a>
 
 <a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingcandidate"></a>
 
@@ -5202,7 +5234,7 @@ SHA-256: `f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc`
 
 ### `RoutingCandidate`
 
-SHA-256: `490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f`
+SHA-256: `4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc`
 
 来源：[`packages/experimental/model-routing/src/types.ts:90`](../packages/experimental/model-routing/src/types.ts)
 
@@ -5219,21 +5251,21 @@ SHA-256: `490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f`
 | `providerName` | 可选 | `string` |
 | `quantization` | 可选 | `string` |
 | `rank` | 可选 | `number` |
-| `rejection` | 可选 | [`union (11 variants)`](#persistence-type-sha256-ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84) |
+| `rejection` | 可选 | [`union (12 variants)`](#persistence-type-sha256-0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812) |
 | `source` | 可选 | `string` |
 | `status` | 可选 | `number` |
 | `tag` | 必需 | `string` |
 | `uptimeLast30m` | 可选 | `number` |
 
-<a id="persistence-type-sha256-5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f"></a>
+<a id="persistence-type-sha256-51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59"></a>
 
 ### `RoutingCandidate[]`
 
-SHA-256: `5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f`
+SHA-256: `51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59`
 
-[`RoutingCandidate`](#persistence-type-sha256-490182a78f9f34ad49a30a9d296017af5cf2a62bab5c77b8f41be9f51266118f) 的数组。
+[`RoutingCandidate`](#persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc) 的数组。
 
-<a id="persistence-type-sha256-82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406"></a>
+<a id="persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504"></a>
 
 <a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingdecision"></a>
 
@@ -5241,7 +5273,7 @@ SHA-256: `5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f`
 
 ### `RoutingDecision`
 
-SHA-256: `82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406`
+SHA-256: `384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504`
 
 来源：[`packages/experimental/model-routing/src/types.ts:143`](../packages/experimental/model-routing/src/types.ts)
 
@@ -5249,7 +5281,7 @@ SHA-256: `82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406`
 |---|---|---|
 | `blendedUsdPerToken` | 可选 | `number` |
 | `boundary` | 必需 | [`RoutingBoundary`](#persistence-type-sha256-f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc) |
-| `cheapestRejected` | 可选 | [`RoutingCandidate[]`](#persistence-type-sha256-5efce51122a628c67ec3524061fdd957ddf7b472d5d03adc02934834e56c863f) |
+| `cheapestRejected` | 可选 | [`RoutingCandidate[]`](#persistence-type-sha256-51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59) |
 | `considered` | 必需 | `number` |
 | `endpoint` | 可选 | [`RoutingEndpoint`](#persistence-type-sha256-d28a3d487881b5a03f6662a90a3bc44f416cb204409f4bc96a8b7be85df6646f) |
 | `excludedTags` | 必需 | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
@@ -5257,7 +5289,8 @@ SHA-256: `82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406`
 | `judge` | 可选 | [`JudgeVerdict`](#persistence-type-sha256-36f87503cdfb7487bcdcc1b66878db854420f68c230d914e0c21948e7d6c4642) |
 | `mix` | 可选 | [`MeasuredMix`](#persistence-type-sha256-e0d39b7fb4c2ef8d91fb1a6439a9fcc9957c01c70880fe50d6adb732e4b8e9e8) |
 | `model` | 必需 | `string` |
-| `rejections` | 可选 | [`{ context, excluded, free, modality, … }`](#persistence-type-sha256-6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf) |
+| `openRouterFallback` | 可选 | `boolean` |
+| `rejections` | 可选 | [`{ context, excluded, free, modality, … }`](#persistence-type-sha256-56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f) |
 | `relaxedUptime` | 可选 | `true` |
 | `requested` | 必需 | `string` |
 | `runnersUp` | 必需 | [`RoutingRunnerUp[]`](#persistence-type-sha256-8485faa709c09804ce2dbbf5f91f8a54cecabba029463f8b9cc09f6783d4e9f8) |
@@ -6439,25 +6472,26 @@ SHA-256: `b993441f8ce7d27b80e619e113e232ae8e62d3d5a8340f6bfe12d8c4c018e62f`
 |---|---|---|
 | 0 | 必需 | [`{ role: "user" }`](#persistence-type-sha256-9a2a9029f8d7ede05336980d8342737557f487b913bfd28853d0ab5214600ab5) |
 
-<a id="persistence-type-sha256-ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84"></a>
+<a id="persistence-type-sha256-0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812"></a>
 
-### `union (11 variants)`
+### `union (12 variants)`
 
-SHA-256: `ffa14c177409d3a4f0f5bda81281558b82b9e2c0da74eec455abaf4feed0ea84`
+SHA-256: `0aec9726aa02f4e16d96e54f59d9d9286b9f07a18baf259db1e67fce225a7812`
 
 以下类型之一：
 
 - `"context"`
 - `"excluded"`
+- `"untrusted-unknown"`
 - `"uptime"`
 - `"free"`
 - `"modality"`
 - `"paid"`
 - `"quantization"`
 - `"status"`
+- `"subscription-only"`
 - `"tools"`
 - `"unpriced"`
-- `"untrusted-unknown"`
 
 <a id="persistence-type-sha256-1ab2ef1296f157ba96998f179bb5daa9d21a82480da2901127aeab2730797c92"></a>
 
@@ -6956,11 +6990,11 @@ SHA-256: `3e4e7683b0192c9f0e6a75c59076108f017892cdb302a98032c2632fd79c356f`
 | `sourceCommandId` | 可选 | `string` |
 | `turn` | 必需 | [`OptionalSessionSeq`](#persistence-type-sha256-3bd652ebfa8726b3ce3937a4f1bd2759e02f86b3a08a20f9e41a8513656fbc5f) |
 
-<a id="persistence-type-sha256-6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf"></a>
+<a id="persistence-type-sha256-56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f"></a>
 
 ### `{ context, excluded, free, modality, … }`
 
-SHA-256: `6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf`
+SHA-256: `56622401e85f35af394864f7ee24067e201b6f3ab402cb0ba16936b701552f3f`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -6971,6 +7005,7 @@ SHA-256: `6fef6e1ca09e654e8145e420182db192cf8c7dc1545285369b49ef1141a3b2cf`
 | `paid` | 必需 | `number` |
 | `quantization` | 必需 | `number` |
 | `status` | 必需 | `number` |
+| `subscription-only` | 必需 | `number` |
 | `tools` | 必需 | `number` |
 | `unpriced` | 必需 | `number` |
 | `untrusted-unknown` | 必需 | `number` |
@@ -7083,6 +7118,18 @@ SHA-256: `119abe2b9c0b2f46ecb31d82b9acba4d4b30e049f655e2475e8b4ae12d5a9e25`
 | `matcher` | 可选 | `string` |
 | `point` | 必需 | `string` |
 | `turn` | 必需 | `number` |
+
+<a id="persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434"></a>
+
+### `{ enabled }`
+
+SHA-256: `c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434`
+
+来源：[`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `enabled` | 必需 | `boolean` |
 
 <a id="persistence-type-sha256-9e41386b3a0c9572b0d63078492ebb3997da7d3a830d44e0259418bd02f4bcb2"></a>
 
@@ -8825,7 +8872,7 @@ SHA-256: `e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1`
 
 SHA-256: `c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce`
 
-来源：[`packages/experimental/model-routing/src/types.ts:193`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -9343,21 +9390,37 @@ SHA-256: `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3`
 | `time` | 必需 | `number` |
 | `type` | 必需 | `"llm/retry-started"` |
 
-<a id="persistence-type-sha256-bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4"></a>
+<a id="persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3"></a>
 
 <a id="persistence-type-eventmodel-routingdecision"></a>
 
 ### `{ type: "model-routing/decision" }`
 
-SHA-256: `bf4d24f37c4f70667e05670d31fd81b58c150bd8396244551e47eb030b4d8af4`
+SHA-256: `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `data` | 必需 | [`RoutingDecision`](#persistence-type-sha256-82f0709e19fc7b23e76e3f6110c424d58e891dba758f572c6d5f21ee06dd6406) |
+| `data` | 必需 | [`RoutingDecision`](#persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504) |
 | `ignorable` | 可选 | `true` |
 | `seq` | 必需 | `number` |
 | `time` | 必需 | `number` |
 | `type` | 必需 | `"model-routing/decision"` |
+
+<a id="persistence-type-sha256-ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136"></a>
+
+<a id="persistence-type-eventmodel-routingopenrouter-fallback"></a>
+
+### `{ type: "model-routing/openrouter-fallback" }`
+
+SHA-256: `ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136`
+
+| 属性 | 存在性 | 类型 |
+|---|---|---|
+| `data` | 必需 | [`{ enabled }`](#persistence-type-sha256-c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434) |
+| `ignorable` | 可选 | `true` |
+| `seq` | 必需 | `number` |
+| `time` | 必需 | `number` |
+| `type` | 必需 | `"model-routing/openrouter-fallback"` |
 
 <a id="persistence-type-sha256-54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86"></a>
 

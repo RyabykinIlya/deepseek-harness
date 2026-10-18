@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 // The projections this service folds over, read but never written.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
@@ -173,6 +173,39 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       throw new Error(`model-routing: unknown tier "${tier}"; configured tiers: ${names.join(', ')}`)
     }
     project.append('model-routing/tier-override', { threadId, tier }, { ignorable: true })
+  }
+
+  /**
+   * Choose, for one Session, whether an exhausted subscription source may be
+   * replaced by an OpenRouter candidate.
+   *
+   * The choice is recorded in the Session's own log, so it outlives a Host
+   * restart and a cold resume; a Session that never chose keeps following the
+   * deployment default.
+   * @param session - the Session the choice belongs to.
+   * @param enabled - true when an exhausted subscription may fall through to OpenRouter.
+   */
+  setOpenRouterFallback(session: Session, enabled: boolean): void {
+    session.append('model-routing/openrouter-fallback', { enabled }, { ignorable: true })
+  }
+
+  /**
+   * The Remote form of {@link setOpenRouterFallback}, for the composer chip.
+   *
+   * A browser surface knows the Session it renders but not the Host's Session
+   * object, so the id crosses the wire and is resolved here.
+   * @param request - the Session id the choice belongs to, and the value.
+   * @throws RemoteError `model-routing/unknown-session` when the Host holds no such Session.
+   */
+  @Remote('setOpenRouterFallback')
+  setSessionOpenRouterFallback(request: { sessionId: SessionId; enabled: boolean }): void {
+    const session = this.ctx.get('sessions')?.get(request.sessionId)
+    if (session === undefined) {
+      throw new RemoteError('model-routing/unknown-session', `model-routing: session "${request.sessionId}" is not open`, {
+        sessionId: request.sessionId,
+      })
+    }
+    this.setOpenRouterFallback(session, request.enabled)
   }
 
   /**

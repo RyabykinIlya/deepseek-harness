@@ -15,4 +15,9 @@ describe('model-routing catalog seam', () => {
     const routing = new CatalogModelRouting()
     expect(() => { routing.setThreadTier() }).toThrow(/unreachable during schema harvest/)
   })
+
+  it('refuses a fallback choice, which a schema harvest never performs', () => {
+    const routing = new CatalogModelRouting()
+    expect(() => { routing.setOpenRouterFallback() }).toThrow(/unreachable during schema harvest/)
+  })
 })

@@ -20,7 +20,7 @@
  * @module dsh-experimental-model-routing/adapter
  */
 
-import { LlmAdapter, LlmError, ReasoningEffortId, contentHasImage } from '@deepseek-ai/dsh-llm'
+import { KEY_QUOTA_EXCEEDED_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, contentHasImage } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -65,6 +65,26 @@ export const MODEL_ROUTING_UNAVAILABLE_CODE = 'MODEL_ROUTING_UNAVAILABLE'
 
 /** Machine code for a tier with endpoints, none of which pass the filters. */
 export const MODEL_ROUTING_NO_ENDPOINT_CODE = 'MODEL_ROUTING_NO_ENDPOINT'
+
+/**
+ * Machine code for a Session that refused OpenRouter fallback and whose
+ * subscription sources are all exhausted.
+ *
+ * Distinct from {@link MODEL_ROUTING_NO_ENDPOINT_CODE} because nothing is
+ * misconfigured: the turn failed on a choice, and the next one succeeds once
+ * the cooldown lapses, which is what the error's `retryAfterMs` states.
+ */
+export const MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE = 'MODEL_ROUTING_SUBSCRIPTION_LIMIT'
+
+/**
+ * Failure codes that mean a subscription source has spent its quota.
+ *
+ * `QUOTA` is the account's own ceiling and `KEY_QUOTA` one key's usage limit;
+ * both are answered by waiting or by another key, never by the same request on
+ * the same source. A rate limit is a different failure: it is transient, so it
+ * keeps the ordinary reroute and counts toward the bench streak.
+ */
+const QUOTA_CODES: readonly string[] = [QUOTA_EXCEEDED_CODE, KEY_QUOTA_EXCEEDED_CODE]
 
 /** What the caller asked for, resolved against the configured tiers. */
 type RequestedTarget =
@@ -523,6 +543,10 @@ export class TiersAdapter extends LlmAdapter {
     signal: AbortSignal
   }): AsyncIterable<StreamChunk> {
     const { settings, dispatch, options, target, key, main, session, state, signal } = input
+    // The Session's own choice wins over the deployment default, and a Session
+    // that never chose keeps following that default as it changes. Read here,
+    // once, so every decision and reroute in this request acts on one value.
+    const openRouterFallback = state?.openRouterFallback ?? settings.fallbackToOpenRouter
     let pin = this.pins.get(key)
     // A restart is not a boundary: the log already recorded what this Session
     // decided, and re-deciding would pin a different provider than the one whose
@@ -574,12 +598,13 @@ export class TiersAdapter extends LlmAdapter {
           : target
       const decided = await this.decide({
         settings, target: decisionTarget, pin, session, options, signal, persist: main, key, requiredInput,
+        openRouterFallback,
         ...boundary === undefined ? {} : { boundary },
       })
       pin = decided.pin
       if (main) this.pins.set(key, pin)
     }
-    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key, signal, main, requiredInput })
+    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key, signal, main, requiredInput, openRouterFallback })
   }
 
   /**
@@ -607,9 +632,11 @@ export class TiersAdapter extends LlmAdapter {
     persist: boolean
     key: string
     requiredInput: RequiredInput | undefined
+    /** Whether an exhausted subscription may be replaced by an OpenRouter candidate. */
+    openRouterFallback: boolean
     boundary?: RoutingBoundary
   }): Promise<Decision> {
-    const { settings, target, pin, session, options, signal, persist, key, requiredInput } = input
+    const { settings, target, pin, session, options, signal, persist, key, requiredInput, openRouterFallback } = input
     const boundary = input.boundary ?? 'start'
     const current = pin?.tier
     let tierName: string
@@ -659,6 +686,13 @@ export class TiersAdapter extends LlmAdapter {
       }
       if (usable.length > 0) extraSources.set(model, usable)
     }
+    // A Session that refused OpenRouter fallback keeps every model it can serve
+    // from a subscription to that subscription, even before the quota runs out:
+    // the choice is about where the turn goes when the quota is spent, and
+    // ranking an OpenRouter endpoint now would spend it one boundary too early.
+    // A model with no usable direct source keeps its OpenRouter endpoints, since
+    // the alternative would be dropping the model rather than choosing a source.
+    const subscriptionOnly = openRouterFallback ? undefined : new Set(extraSources.keys())
     const result = rankWithRelaxation(
       lists,
       models,
@@ -669,6 +703,7 @@ export class TiersAdapter extends LlmAdapter {
         ...preferModel === undefined ? {} : { preferModel },
         ...requirement,
         ...extraSources.size === 0 ? {} : { extraSources },
+        ...subscriptionOnly === undefined ? {} : { subscriptionOnly },
       }),
       mix,
     )
@@ -712,6 +747,19 @@ export class TiersAdapter extends LlmAdapter {
       source = { kind: 'openrouter', tag: first }
       block = unpinnedBlock(tier)
       unpinnedReason = reasons
+    } else if (subscriptionOnly !== undefined && this.subscriptionsExhausted(key, extraSources)) {
+      // Nothing ranked because every subscription that could serve these models
+      // is benched: the Session chose to wait rather than spend, so the failure
+      // names that choice and says when trying again is worth it. The wait is
+      // reported in the message rather than as `providerRetryAfterMs`, because a
+      // retry policy that honored that field would hold the turn for the whole
+      // cooldown instead of failing it now.
+      const retryAfterMs = this.earliestRetryMs(key, extraSources)
+      throw new LlmError(
+        `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
+        + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
+        MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+      )
     } else {
       const counts = Object.entries(result.rejections)
         .filter(([, count]) => count > 0)
@@ -755,6 +803,7 @@ export class TiersAdapter extends LlmAdapter {
       rejections: result.rejections,
       cheapestRejected: cheapestRejectedOf(candidates),
       filters: filtersOf(tier, settings, allowFree, requiredInput),
+      openRouterFallback,
     }
     // The file takes every decision, including those no Session asked to keep:
     // a turn that could not record its event is exactly the turn a later
@@ -1107,8 +1156,10 @@ export class TiersAdapter extends LlmAdapter {
     /** Whether this is the agent's own turn, the only request allowed to leave a pin behind. */
     main: boolean
     requiredInput: RequiredInput | undefined
+    /** Whether an exhausted subscription may be replaced by an OpenRouter candidate. */
+    openRouterFallback: boolean
   }): AsyncIterable<StreamChunk> {
-    const { settings, dispatch, options, key, signal, main, requiredInput } = input
+    const { settings, dispatch, options, key, signal, main, requiredInput, openRouterFallback } = input
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
     // `maxReroutes` bounds how many times one request may move to a DIFFERENT
@@ -1163,7 +1214,7 @@ export class TiersAdapter extends LlmAdapter {
         if (!reroutable) throw error
         const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, error.code, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback })
         if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
@@ -1178,7 +1229,7 @@ export class TiersAdapter extends LlmAdapter {
         await iterator.return?.(undefined)
         const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, failure, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback })
         if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
@@ -1264,6 +1315,7 @@ export class TiersAdapter extends LlmAdapter {
     persist: boolean
     key: string
     requiredInput: RequiredInput | undefined
+    openRouterFallback: boolean
   }): Promise<Pin> {
     return this.decide({ ...input, boundary: 'failure' }).then(decision => decision.pin)
   }
@@ -1282,6 +1334,10 @@ export class TiersAdapter extends LlmAdapter {
    * A direct candidate is excluded by `route:id`, not by its id alone: one route
    * may serve the same id as several models' candidates, and only the pair says
    * which one failed.
+   *
+   * A subscription that reports an exhausted quota is benched on the first
+   * failure for `quotaCooldownMs`, not after the configured streak: the source is
+   * not flaky, it is spent, and every attempt in between would fail the same way.
    */
   private excludeEndpoint(key: string, pin: Pin, code: string, settings: RoutingSettings): void {
     const tag = tagOfPin(pin)
@@ -1290,15 +1346,59 @@ export class TiersAdapter extends LlmAdapter {
       const streak = (streaks.get(tag) ?? 0) + 1
       streaks.set(tag, streak)
       this.failureStreaks.set(key, streaks)
-      if (streak >= settings.excludeAfterFailures) {
+      const exhausted = pin.source.kind !== 'openrouter' && QUOTA_CODES.includes(code)
+      if (exhausted || streak >= settings.excludeAfterFailures) {
         const recorded = this.excluded.get(key) ?? new Map<string, number>()
-        recorded.set(tag, this.deps.now() + settings.excludeAfterFailureMs)
+        recorded.set(tag, this.deps.now() + (exhausted ? settings.quotaCooldownMs : settings.excludeAfterFailureMs))
         this.excluded.set(key, recorded)
       }
     }
     const endpoint = pin.endpoint
     const free = endpoint !== undefined && endpoint.promptPrice === 0 && endpoint.completionPrice === 0
     if (free && code === 'RATE_LIMIT') this.freeBlockedUntil = nextUtcMidnight(this.deps.now())
+  }
+
+  /**
+   * Whether every subscription candidate these models have is benched right now.
+   *
+   * Answers the question a failed ranking alone cannot: a tier whose candidates
+   * all rank nothing because of a filter is a configuration fault, while one
+   * whose subscriptions are all benched is a quota that has not expired yet.
+   * @param key - the Session's pin key.
+   * @param extraSources - the direct candidates per canonical model id.
+   * @returns true when at least one candidate exists and none is available.
+   */
+  private subscriptionsExhausted(key: string, extraSources: ReadonlyMap<string, readonly DirectSource[]>): boolean {
+    const now = this.deps.now()
+    const recorded = this.excluded.get(key)
+    let candidates = 0
+    for (const list of extraSources.values()) {
+      for (const candidate of list) {
+        candidates += 1
+        if ((recorded?.get(`${candidate.route}:${candidate.id}`) ?? 0) <= now) return false
+      }
+    }
+    return candidates > 0
+  }
+
+  /**
+   * The soonest moment one of these subscriptions becomes available again.
+   * @param key - the Session's pin key.
+   * @param extraSources - the direct candidates per canonical model id.
+   * @returns milliseconds until the earliest bench expires, zero when one is already live.
+   */
+  private earliestRetryMs(key: string, extraSources: ReadonlyMap<string, readonly DirectSource[]>): number {
+    const now = this.deps.now()
+    const recorded = this.excluded.get(key)
+    let soonest = Number.POSITIVE_INFINITY
+    for (const list of extraSources.values()) {
+      for (const candidate of list) {
+        const until = recorded?.get(`${candidate.route}:${candidate.id}`) ?? 0
+        if (until <= now) return 0
+        soonest = Math.min(soonest, until)
+      }
+    }
+    return soonest === Number.POSITIVE_INFINITY ? 0 : soonest - now
   }
 
   /**

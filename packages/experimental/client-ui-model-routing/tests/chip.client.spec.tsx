@@ -41,7 +41,11 @@ const unusedActions: ModelRoutingChipProps['inputActions'] = {
 }
 
 /** Render the chip over one published routing value and one selection value. */
-function chip(view: ModelRoutingView | null | undefined, selection?: ModelSelectionProjection | null) {
+function chip(
+  view: ModelRoutingView | null | undefined,
+  selection?: ModelSelectionProjection | null,
+  setOpenRouterFallback: ModelRoutingChipProps['setOpenRouterFallback'] = () => Promise.resolve(),
+) {
   const props: ModelRoutingChipProps = {
     ...allowAllAccess,
     useProjection: projections({ modelRouting: view, modelSelection: selection }),
@@ -59,6 +63,7 @@ function chip(view: ModelRoutingView | null | undefined, selection?: ModelSelect
     useResource: unusedHook,
     useWorkspaces: unusedHook,
     t,
+    setOpenRouterFallback,
   }
   return render(<ModelRoutingChip {...props} />)
 }
@@ -72,6 +77,7 @@ const DECIDED: ModelRoutingView = {
   boundary: 'start',
   decidedAt: 1,
   unpinned: false,
+  openRouterFallback: true,
 }
 
 /** A selection projection whose next request would ask for a different model. */
@@ -165,6 +171,31 @@ describe('pendingModel', () => {
   it('returns nothing without a selection projection or without a next value', () => {
     expect(pendingModel('auto', undefined)).toBeUndefined()
     expect(pendingModel('auto', { lastUsed: null, next: null })).toBeUndefined()
+  })
+})
+
+describe('ModelRoutingChip fallback switch', () => {
+  it('shows whether this Session would leave a spent subscription for OpenRouter', () => {
+    chip(DECIDED)
+    const toggle = screen.getByTestId('model-routing-fallback') as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    expect(toggle.closest('label')?.getAttribute('title')).toContain('subscription runs out of quota')
+  })
+
+  it('renders the recorded value rather than a local default', () => {
+    chip({ ...DECIDED, openRouterFallback: false })
+    expect((screen.getByTestId('model-routing-fallback')).checked).toBe(false)
+  })
+
+  it('records the flipped value for this Session', async () => {
+    const recorded: boolean[] = []
+    chip(DECIDED, undefined, (enabled) => {
+      recorded.push(enabled)
+      return Promise.resolve()
+    })
+    const toggle = screen.getByTestId('model-routing-fallback') as HTMLInputElement
+    toggle.click()
+    expect(recorded).toEqual([false])
   })
 })
 

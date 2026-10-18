@@ -13,18 +13,33 @@
  * then. A chip naming only the answered model reads as if that pick had been
  * ignored, so while a selection is waiting the chip names it after an arrow.
  *
+ * Beside the chip sits this Session's fallback switch: whether an exhausted
+ * subscription may be replaced by an OpenRouter candidate. It is per Session
+ * because the answer is a spending decision the person makes about a
+ * conversation, and the chip is where that conversation's route is already read.
+ *
  * The chip renders nothing at all before the route's first decision: a session
  * that has not yet chosen a model has nothing honest to say about one.
  */
 
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { NS } from './locales.ts'
 import css from './ModelRoutingChip.module.css'
 
+/** What the Host offers the composer chip: this Session's fallback choice. */
+export interface ModelRoutingChipFace {
+  /**
+   * Record whether an exhausted subscription may be replaced by OpenRouter.
+   * @param enabled - the value to record for this Session.
+   * @returns after the Host recorded the choice.
+   */
+  setOpenRouterFallback(enabled: boolean): Promise<void>
+}
+
 /** Full props for the composer chip. */
 export type ModelRoutingChipProps =
-  PropsRuntime<'conversation.input.right'> & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.input.right'> & PropsLocale<typeof NS> & InjectFace<ModelRoutingChipFace>
 
 /**
  * The model id without its `author/` prefix.
@@ -67,7 +82,8 @@ export function pendingModel(
  * @param props - session standard props and the translator.
  * @returns the compact chip, or null before the first decision.
  */
-export function ModelRoutingChip({ useProjection, t }: ModelRoutingChipProps) {
+export function ModelRoutingChip(props: ModelRoutingChipProps) {
+  const { useProjection, t } = props
   const view = useProjection('modelRouting')
   const selection = useProjection('modelSelection')
   if (view === undefined || view === null) return null
@@ -84,12 +100,23 @@ export function ModelRoutingChip({ useProjection, t }: ModelRoutingChipProps) {
     ...pending === undefined ? [] : [t('chip.pending', { model: pending })],
   ].join(' · ')
   return (
-    <span
-      className={pending === undefined ? css.chip : `${css.chip} ${css.chipPending}`}
-      title={title}
-      data-testid="model-routing-chip"
-    >
-      {pending === undefined ? label : `${label} → ${shortModel(pending)}`}
+    <span className={css.group}>
+      <span
+        className={pending === undefined ? css.chip : `${css.chip} ${css.chipPending}`}
+        title={title}
+        data-testid="model-routing-chip"
+      >
+        {pending === undefined ? label : `${label} → ${shortModel(pending)}`}
+      </span>
+      <label className={css.fallback} title={t('chip.fallbackHint')}>
+        <input
+          type="checkbox"
+          checked={view.openRouterFallback}
+          onChange={(event) => { void props.setOpenRouterFallback(event.target.checked) }}
+          data-testid="model-routing-fallback"
+        />
+        <span>{t('chip.fallback')}</span>
+      </label>
     </span>
   )
 }

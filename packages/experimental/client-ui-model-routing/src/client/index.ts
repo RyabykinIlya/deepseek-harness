@@ -28,13 +28,13 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import modelRoutingRemote from '@deepseek-ai/dsh-experimental-model-routing/remote'
 import { ModelRoutingCard } from './ModelRoutingCard.tsx'
 import { ModelRoutingChip } from './ModelRoutingChip.tsx'
+import type { ModelRoutingChipFace } from './ModelRoutingChip.tsx'
 import { ModelSwitchNotice } from './ModelSwitchNotice.tsx'
 import { modelSwitchDefinition } from './model-switch.ts'
 import { MODEL_ROUTING_NS, ModelRoutingCardController } from './model-routing-card-controller.ts'
 import { en, NS, zh } from './locales.ts'
 
 export type { ModelRoutingCardProps } from './ModelRoutingCard.tsx'
-export type { ModelRoutingChipProps } from './ModelRoutingChip.tsx'
 export type {
   ModelRoutingCardFace,
   ModelRoutingCardState,
@@ -44,6 +44,7 @@ export type {
 export { MODEL_ROUTING_NS, pricePerMillion, quoteRow, quoteRowKey, splitList } from './model-routing-card-controller.ts'
 export { ModelRoutingCard, cardShell, formLabels } from './ModelRoutingCard.tsx'
 export { ModelRoutingChip, shortModel } from './ModelRoutingChip.tsx'
+export type { ModelRoutingChipFace, ModelRoutingChipProps } from './ModelRoutingChip.tsx'
 export { en, zh } from './locales.ts'
 export type { ModelRoutingLocaleKey } from './locales.ts'
 
@@ -63,14 +64,21 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-model-routing: dictionaries')
 
-  // The chip reads one projection and needs no settings, so it mounts whenever the
-  // conversation surface offers its seat.
-  ctx.inject(['slots'], (scope: ClientContext) => {
+  // The chip reads one projection and one Remote method; it mounts whenever the
+  // conversation surface offers its seat and the Host serves the namespace. A
+  // deployment whose Host runs no routing plugin has no decisions to name, and
+  // the seat stays empty rather than offering a switch nothing acts on.
+  ctx.inject(['slots', 'remote.modelRouting'], (scope: ClientContext) => {
     scope.slots.inject('conversation.input.right', () => scope.slots.register({
       name: 'conversation.input.right',
       id: 'model-routing',
       order: 50,
       locale: NS,
+      inject: (sessionId): ModelRoutingChipFace => ({
+        setOpenRouterFallback: async (enabled) => {
+          await scope.remote.modelRouting.setOpenRouterFallback({ sessionId, enabled })
+        },
+      }),
     }, ModelRoutingChip))
     // The switch row pairs with the `model-retry` rows the retry plugin writes:
     // those name the retries that stayed on one model, this one names the moment

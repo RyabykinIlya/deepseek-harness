@@ -52,6 +52,16 @@ A direct source states no status, uptime or quantization, so those filters are n
 
 A chosen direct source dispatches with `provider` set to its own route and without the OpenRouter `provider` block: pi-ai rejects that block on a model that does not speak `openai-completions`. The `model-routing/decision` event records which kind of source won (`source: { kind, tag }`, `kind: 'openrouter'` or the route key) and, for a priced direct source, the exact per-token prices its blended price was computed from, so a decision log says why a source won. The `modelRouting` view names the id the request dispatched — `source.tag` for a direct source, the ranked id for an OpenRouter endpoint — because the event's `model` is the canonical id the ranking keyed, and one `modelMap` entry ranks several routes' own ids under one canonical id.
 
+<a id="fallback"></a>
+### Exhausted subscriptions and the OpenRouter fallback
+
+A subscription source is usually the cheapest candidate, so it wins the ranking and serves the turn. When it reports that its quota is spent — `QUOTA` or `KEY_QUOTA` — that source leaves the ranking at once for `quotaCooldownMs` (600000 by default), rather than after the `excludeAfterFailures` streak that a flaky route has to reach: a spent quota is an answer, not a blip, and the attempts in between would only fail the same way.
+
+What happens next depends on the OpenRouter fallback switch. `fallbackToOpenRouter` (default `true`) is the deployment's value, and each Session may choose its own from the composer chip; the choice is a `model-routing/openrouter-fallback` event in that Session's log, so it survives a Host restart, and a Session that never chose keeps following the deployment default as it changes. The effective value is recorded on every decision as `openRouterFallback`.
+
+- **On.** OpenRouter stays a candidate. The re-decision moves to the same model's OpenRouter endpoint and the turn continues.
+- **Off.** The model is served only by its subscription: for every model the tier's `extraSources` serve, OpenRouter candidates are rejected as `subscription-only`. With every subscription benched the turn fails with `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, whose message names the remaining cooldown; the next message after it tries the subscription again. A model the tier serves only from OpenRouter keeps its OpenRouter endpoint in both states — otherwise the switch would delete models rather than choose their source.
+
 <a id="snapshots"></a>
 ### Snapshots
 

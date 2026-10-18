@@ -60,6 +60,8 @@ export type ModelRoutingLocaleKey =
   | 'empty'
   | 'threadModel'
   | 'switch.title'
+  | 'chip.fallback'
+  | 'chip.fallbackHint'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -116,6 +118,8 @@ export const en: LocaleDictOf<typeof NS> = {
   empty: 'No tier is configured, so this page has nothing to edit.',
   threadModel: 'model',
   'switch.title': 'Model switched',
+  'chip.fallback': 'OpenRouter fallback',
+  'chip.fallbackHint': 'When the subscription runs out of quota, continue on OpenRouter. Off: the turn fails and the next message tries the subscription again.',
 }
 
 /** Chinese copy. */
@@ -166,4 +170,6 @@ export const zh: LocaleDictOf<typeof NS> = {
   empty: '未配置层级，此页面没有可编辑的内容。',
   threadModel: '模型',
   'switch.title': '模型已切换',
+  'chip.fallback': 'OpenRouter 接管',
+  'chip.fallbackHint': '订阅额度用尽后改用 OpenRouter 继续。关闭时：本轮失败，下一条消息再次尝试订阅。',
 }

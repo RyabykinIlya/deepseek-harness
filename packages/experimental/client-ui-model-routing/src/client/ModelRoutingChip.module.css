@@ -18,3 +18,29 @@
 .chipPending {
   max-width: 340px;
 }
+
+/* The chip and its switch share one seat in the input bar, so they read as one
+   control and the bar does not gain a second gap. */
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The switch is a control, unlike the chip beside it, so it takes the pointer
+   and a hover affordance: it is the only place a Session chooses where an
+   exhausted subscription sends its next turn. */
+.fallback {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fallback:hover {
+  color: var(--dsw-alias-label-secondary);
+}

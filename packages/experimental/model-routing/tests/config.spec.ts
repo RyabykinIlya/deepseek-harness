@@ -154,6 +154,13 @@ describe('model-routing settings validation', () => {
       .toThrow('model-routing: excludeAfterFailures must be a positive integer')
   })
 
+  it('refuses a quota cooldown that is zero or fractional', () => {
+    expect(() =>{  validateSettings(settings({ quotaCooldownMs: 0 })) })
+      .toThrow('model-routing: quotaCooldownMs must be a positive integer')
+    expect(() =>{  validateSettings(settings({ quotaCooldownMs: 1.5 })) })
+      .toThrow('model-routing: quotaCooldownMs must be a positive integer')
+  })
+
   it('refuses a diagnostics budget that is zero or fractional', () => {
     expect(() =>{  validateSettings(settings({ diagnosticsMaxBytes: 0 })) })
       .toThrow('model-routing: diagnosticsMaxBytes must be a positive integer')

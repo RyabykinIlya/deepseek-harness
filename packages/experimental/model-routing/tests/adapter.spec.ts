@@ -11,6 +11,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEventMap } from '@deepseek-ai/dsh-session'
 import { TiersAdapter } from '../src/adapter.ts'
+import { MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE } from '../src/adapter.ts'
 import type { TiersAdapterDeps } from '../src/adapter.ts'
 import { Config, readSettings, validateSettings } from '../src/config.ts'
 import type { ExtraSource } from '../src/config.ts'
@@ -257,6 +258,7 @@ function priorDecision(over: Partial<ModelRoutingState> = {}): ModelRoutingState
     compactedSinceDecision: false,
     explicitSelection: false,
     overrides: {},
+    openRouterFallback: null,
     ...over,
   }
 }
@@ -1267,6 +1269,84 @@ describe('TiersAdapter direct sources', () => {
       ])
   })
 
+  it('leaves the subscription for OpenRouter when the quota is spent and the Session allows it', async () => {
+    // The default setting, and the behavior every deployment had before the
+    // switch existed: a spent quota benches the source at once and the same
+    // turn continues on the model's OpenRouter endpoint.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'openrouter'])
+    expect(h.sent[1]?.options.model).toBe('xiaomi/mimo-v2.6-pro')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)).toMatchObject({ boundary: 'failure', openRouterFallback: true })
+  })
+
+  it('fails the turn on a spent subscription when the Session refused OpenRouter', async () => {
+    // With the switch off, the tier's OpenRouter endpoint is not a candidate for
+    // a model the subscription serves, so a spent quota has nothing left to
+    // decide among. The turn fails with a code that names the choice and a wait
+    // that names the cooldown, rather than quietly spending on OpenRouter.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false },
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    await expect(run(h.adapter)).rejects.toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
+  })
+
+  it('names the filters, not the quota, when a live subscription fails one of them', async () => {
+    // "Nothing ranked" has two causes worth telling apart: every subscription is
+    // benched on its quota, or a subscription is available and fails a filter.
+    // Only the first is a wait; the second is a configuration the person has to
+    // change, and reporting it as a quota wait would send them looking for a
+    // cooldown that does not exist.
+    const h = await scenario({
+      // A source that takes no tool calls cannot serve this request, so it is
+      // rejected while still being available.
+      sources: [{ ...CLAUDE, tools: false, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false },
+    })
+    await expect(run(h.adapter)).rejects.toMatchObject({ code: 'MODEL_ROUTING_NO_ENDPOINT' })
+  })
+
+  it('keeps a model the subscription does not serve even when the Session refused OpenRouter', async () => {
+    // Dropping every OpenRouter candidate would delete the models the tier only
+    // has there. The switch is about which source serves a model, not about
+    // which models exist, so a model with no direct source still ranks.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false },
+    })
+    await run(h.adapter)
+    h.sent.length = 0
+    const other = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/other-pro': 'other-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false },
+    })
+    await run(other.adapter)
+    expect(other.sent[0]?.options.provider).toBe('openrouter')
+    expect(other.sent[0]?.options.model).toBe('xiaomi/mimo-v2.6-pro')
+  })
+
+  it('follows the Session choice over the deployment default', async () => {
+    // The switch is per Session, so the state a resumed Session carries decides
+    // even when the deployment setting says the opposite: a person who turned
+    // fallback off in one conversation must not find it on again because the
+    // Host restarted with `fallbackToOpenRouter: true`.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: true },
+      state: priorDecision({ openRouterFallback: false, decision: null, decidedAt: null }),
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    await expect(run(h.adapter)).rejects.toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
+  })
+
   it('falls back to the next source when the route rejects this client, keeping the request intact', async () => {
     // A client-identity gate rejects the deployment's client, not the request:
     // the same request is servable by the next candidate, so the re-decision
@@ -1507,10 +1587,10 @@ describe('TiersAdapter direct sources', () => {
 
   it('retries a source that throws its key-pool exhaustion, then moves on', async () => {
     // A route with every key cooling throws `KEY_QUOTA` from the first read
-    // rather than reporting it in-band. The retry budget must not be spent by
-    // those retries: charging them ended the request after `maxReroutes + 1`
-    // attempts, so the failure count never reached its threshold and the turn
-    // died on a route the ranking would have replaced one attempt later.
+    // rather than reporting it in-band. That answer is not a blip — the quota is
+    // spent — so the source leaves the ranking on the first failure instead of
+    // the request spending attempts to reach the streak threshold, and the next
+    // candidate serves the turn.
     const tied = (source: ExtraSource): ExtraSource => ({
       ...source,
       modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
@@ -1519,11 +1599,11 @@ describe('TiersAdapter direct sources', () => {
     const h = await scenario({
       sources: [tied(CLAUDE), tied(PLAN)],
       settings: { excludeAfterFailures: 2 },
-      responses: [exhausted(), exhausted(), normalChunks()],
+      responses: [exhausted(), normalChunks()],
     })
     const chunks = await run(h.adapter)
     expect(h.sent.map(entry => entry.options.provider))
-      .toEqual(['claude-proxy', 'claude-proxy', 'xiaomi-plan'])
+      .toEqual(['claude-proxy', 'xiaomi-plan'])
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
     expect(h.events.at(-1)?.excludedTags).toEqual(['claude-proxy:mimo-v2.6-pro'])
   })
