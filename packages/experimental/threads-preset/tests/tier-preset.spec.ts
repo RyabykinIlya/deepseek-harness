@@ -23,7 +23,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { ContinuableCreateSpec, SubagentCapabilities, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
@@ -75,7 +75,7 @@ class RecordingProvider implements SubagentProvider {
   readonly inheritsParentContext = false
 
   constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}, repository = false) {
-    this.capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository }
+    this.capabilities = { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true, repository }
   }
 
   start(): Promise<SubagentRun> {

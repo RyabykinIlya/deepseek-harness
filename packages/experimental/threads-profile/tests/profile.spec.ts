@@ -27,7 +27,7 @@ import * as ThreadsTool from '@deepseek-ai/dsh-experimental-threads-tool'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { ContinuableCreateSpec, SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
@@ -168,7 +168,7 @@ const ThreadProviderStandIn = {
   apply(ctx: Context, config: { providerName: string; childAgentPreset?: string }): void {
     const provider: SubagentProvider = {
       name: config.providerName,
-      capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository: false },
+      capabilities: { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true, repository: false },
       inheritsParentContext: false,
       start: () => Promise.reject(new Error('the Thread stand-in only prepares continuable children')),
       prepareContinuable: (): Promise<ContinuableCreateSpec> => Promise.resolve(

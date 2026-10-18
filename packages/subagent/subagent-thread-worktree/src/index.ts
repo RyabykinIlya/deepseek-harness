@@ -101,10 +101,9 @@ export const Config: z<Config> = z.object({
 class ThreadWorktreeProvider implements SubagentProvider {
   readonly capabilities: SubagentCapabilities = {
     agentOptions: true,
+    agentPreset: false,
     outputSchema: true,
     depthLimit: true,
-    toolFilter: true,
-    persona: true,
     // `prepareContinuable` resolves `request.repository` to the worktree's source repository.
     repository: true,
   }

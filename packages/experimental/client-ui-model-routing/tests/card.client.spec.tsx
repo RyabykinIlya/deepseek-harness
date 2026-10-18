@@ -3,7 +3,7 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { ModelRoutingCard, type ModelRoutingCardProps } from '../src/client/ModelRoutingCard.tsx'
@@ -118,6 +118,7 @@ function cardProps(
 ): ModelRoutingCardProps {
   return {
     ...actions,
+    ...allowAllAccess,
     view,
     t,
     useModelRoutingCard: bindSnapshotSelector(store),

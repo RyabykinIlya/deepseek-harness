@@ -225,21 +225,28 @@ export function applyChildComposition(
  * @param parent - the delegating parent whose composition the child joins by default.
  * @param composition - the per-child persona and tool filter to install.
  * @param agentPreset - preset id recorded in the child's session header, if any.
- * @throws when the preset registry rejects `agentPreset` (unknown or invalid preset).
+ * @param mountSelected - mount `agentPreset` even when the parent composes that same id,
+ *   because a fresh selection names the current generation while the parent may
+ *   still run a retired one.
+ * @throws when the preset registry rejects `agentPreset` (unknown or invalid preset), or
+ *   when a selection is named but no registry is composed.
  */
 export async function applyContinuableChildComposition(
   childCtx: Context,
   parent: Agent,
   composition: ChildComposition,
   agentPreset: string | undefined,
+  mountSelected = false,
 ): Promise<void> {
   const presets = childCtx.get('agentPresets')
-  if (presets !== undefined) {
-    if (agentPreset !== undefined && agentPreset !== presets.composedPreset(parent.ctx)) {
-      await presets.mount(childCtx, agentPreset)
-    } else {
-      presets.composeFrom(childCtx, parent.ctx)
+  if (presets === undefined) {
+    if (agentPreset !== undefined) {
+      throw new SubagentError('selecting a child agent preset requires the agent-presets service', 'PRESET_UNAVAILABLE')
     }
+  } else if (agentPreset !== undefined && (mountSelected || agentPreset !== presets.composedPreset(parent.ctx))) {
+    await presets.mount(childCtx, agentPreset)
+  } else {
+    presets.composeFrom(childCtx, parent.ctx)
   }
   applyChildOverrides(childCtx, composition)
 }

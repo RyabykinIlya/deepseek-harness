@@ -23,7 +23,7 @@ import { ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { ContinuableCreateSpec, SubagentCapabilities, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import { TestSessionQuery } from '../../../subagent/subagent/tests/test-session-query.ts'
@@ -87,7 +87,7 @@ class RecordingProvider implements SubagentProvider {
   prepared = 0
 
   constructor(readonly name: string, private readonly spec: ContinuableCreateSpec = {}, repository = false) {
-    this.capabilities = { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, repository }
+    this.capabilities = { agentOptions: true, agentPreset: false, outputSchema: true, depthLimit: true, repository }
   }
 
   start(): Promise<SubagentRun> {

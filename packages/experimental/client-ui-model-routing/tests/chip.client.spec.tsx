@@ -4,6 +4,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelRoutingView } from '@deepseek-ai/dsh-experimental-model-routing/client'
 import { ModelRoutingChip, pendingModel, shortModel } from '../src/client/ModelRoutingChip.tsx'
 import type { ModelRoutingChipProps } from '../src/client/ModelRoutingChip.tsx'
@@ -42,6 +43,7 @@ const unusedActions: ModelRoutingChipProps['inputActions'] = {
 /** Render the chip over one published routing value and one selection value. */
 function chip(view: ModelRoutingView | null | undefined, selection?: ModelSelectionProjection | null) {
   const props: ModelRoutingChipProps = {
+    ...allowAllAccess,
     useProjection: projections({ modelRouting: view, modelSelection: selection }),
     useSession: unusedHook,
     sessionId: 's1' as ModelRoutingChipProps['sessionId'],

@@ -825,12 +825,12 @@ describe('dsh-tool-subagent local activation', () => {
     const { ctx, parent } = await continuableSetup()
     ctx.subagents.registerProvider({
       name: 'handling',
-      capabilities: { agentOptions: false, outputSchema: false, depthLimit: true, toolFilter: false, persona: false, repository: false },
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: true, repository: false },
       inheritsParentContext: false,
       start: async () => { throw new Error('continuable policy must not start a one-shot child') },
       prepareContinuable: async () => ({ handles: { worktree: '/wt/thread-1', branch: 'dsh/thread-1' } }),
     })
-    tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
+    void tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
@@ -929,14 +929,20 @@ describe('dsh-tool-subagent one-shot background jobs', () => {
     })
     expect(start.isError).toBe(false)
     if (start.isError) throw new Error('expected background subagent success')
-    expect(start.value).toEqual({ kind: 'background', jobId: 'subagent-1' })
-    expect(text(start)).toBe('started background subagent job subagent-1')
+    const value = start.value
+    if (typeof value !== 'object' || value === null || !('jobId' in value) || typeof value.jobId !== 'string') {
+      throw new Error('expected a background start carrying a job id')
+    }
+    const jobId = value.jobId
+    // Job ids are derived from the call identity, not counted per runtime.
+    expect(jobId).toMatch(/^subagent-[0-9a-f]{16}$/)
+    expect(text(start)).toBe(`started background subagent job ${jobId}`)
 
     const collected = await ctx.tools.execute({
       signal: testToolSignal,
       callId: ToolCallId('collect-1'),
       name: 'job_output',
-      arguments: { job_id: 'subagent-1', wait: true },
+      arguments: { job_id: jobId, wait: true },
       agent: parent,
     })
     expect(text(collected)).toBe('background answer\n[status: completed]')
@@ -962,7 +968,7 @@ describe('dsh-tool-subagent one-shot background jobs', () => {
     await ctx.plugin(SubagentRuntime)
     ctx.subagents.registerProvider({
       name: 'continuable-only',
-      capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false, repository: false },
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false, repository: false },
       inheritsParentContext: false,
       prepareContinuable: async () => ({}),
     })

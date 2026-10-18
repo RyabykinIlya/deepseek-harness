@@ -430,6 +430,9 @@ export class SubagentManager {
       // validated before any child exists rather than surfacing on first use.
       if (prepared.cwd !== undefined) this.assertProviderCwd(spec.provider, prepared.cwd)
       if (prepared.agentPreset !== undefined) await this.assertProviderPreset(spec.provider, prepared.agentPreset)
+      // A provider override wins over the caller's selection; either way one id
+      // names the child's composition, its header, and the recorded selection.
+      const selectedPreset = prepared.agentPreset ?? request.agentPreset
 
       const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
       const seed = prepared.seed
@@ -459,15 +462,15 @@ export class SubagentManager {
             seed,
             meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, {
               cwd: prepared.cwd,
-              agentPreset: prepared.agentPreset,
+              agentPreset: selectedPreset,
             }),
             inheritedEventCount,
             delegatedPolicies,
             descriptor,
-            ...prepared.agentPreset === undefined ? {} : { presetOverride: prepared.agentPreset },
+            ...selectedPreset === undefined ? {} : { presetOverride: selectedPreset },
           },
           agentOptions,
-          composition: { agentPreset: request.agentPreset },
+          composition: { agentPreset: selectedPreset },
           signal: spec.signal,
           delivery: spec.delivery,
           outputSchema: spec.request.outputSchema,
@@ -905,9 +908,6 @@ export class SubagentManager {
       const setup = async (childCtx: Context, child: Agent): Promise<void> => {
         // Only fresh creation appends the descriptor and delegated policy after
         // the inherited marker; a cold resume replays those persisted events.
-        if (inputs.composition.agentPreset !== undefined) {
-          await applyChildComposition(childCtx, parent, inputs.composition)
-        }
         if (create !== undefined) {
           if (inputs.composition.agentPreset !== undefined) {
             child.session.append('agent-preset/selected', { agentPreset: inputs.composition.agentPreset })
@@ -918,10 +918,13 @@ export class SubagentManager {
           if (workingDirectory === undefined) throw new Error('local subagents require the working-directory service')
           await workingDirectory.set(child, create.cwd, inputs.signal)
         }
-        // A fresh child carries the provider's override in its header; a cold resume
-        // reads the same header value, so both compose from one preset.
-        const childPreset = create === undefined ? child.session.header.agentPreset : create.presetOverride
-        await applyContinuableChildComposition(childCtx, parent, inputs.composition, childPreset)
+        // The composition carries the effective selection: a fresh child's provider
+        // override or explicit choice, and a cold resume's latest projected selection.
+        // A cold resume without an independent selection joins the parent instead of
+        // remounting its creation header, which the parent may have moved past.
+        const childPreset = inputs.composition.agentPreset
+          ?? (create === undefined ? undefined : create.presetOverride)
+        await applyContinuableChildComposition(childCtx, parent, inputs.composition, childPreset, create !== undefined)
         if (inputs.outputSchema !== undefined) {
           structured = attachStructuredRuntime(childCtx, inputs.outputSchema, () =>
             this.resident.get(childId)?.ownedChildren.size === 0

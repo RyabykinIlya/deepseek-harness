@@ -354,6 +354,23 @@
       "@deepseek-ai/dsh-util-crypto": ["./packages/util/crypto/src"],
       "@deepseek-ai/dsh-util-values": ["./packages/util/values/src"],
       "@deepseek-ai/dsh-util-code-language": ["./packages/util/code-language/src"],
+      // The Threads and model-routing packages carry names the generated aliases
+      // below cannot derive from their directories, so they stay hand-written.
+      "@deepseek-ai/dsh-client-ui-settings-threads": ["./packages/client/ui-settings-threads/src"],
+      "@deepseek-ai/dsh-experimental-threads": ["./packages/experimental/threads/src"],
+      "@deepseek-ai/dsh-experimental-threads-profile": ["./packages/experimental/threads-profile/src"],
+      "@deepseek-ai/dsh-experimental-threads-preset": ["./packages/experimental/threads-preset/src"],
+      "@deepseek-ai/dsh-experimental-threads-tool": ["./packages/experimental/tool-threads/src"],
+      "@deepseek-ai/dsh-experimental-threads-tool/catalog": ["./packages/experimental/tool-threads/src/catalog.ts"],
+      "@deepseek-ai/dsh-experimental-model-routing": ["./packages/experimental/model-routing/src"],
+      "@deepseek-ai/dsh-experimental-model-routing/catalog": ["./packages/experimental/model-routing/src/catalog.ts"],
+      "@deepseek-ai/dsh-experimental-client-ui-model-routing": ["./packages/experimental/client-ui-model-routing/src"],
+      "@deepseek-ai/dsh-experimental-model-routing-profile": ["./packages/experimental/model-routing-profile/src"],
+      "@deepseek-ai/dsh-experimental-client-ui-threads": ["./packages/experimental/client-ui-threads/src"],
+      "@deepseek-ai/dsh-experimental-client-ui-project-memory": ["./packages/experimental/client-ui-project-memory/src"],
+      "@deepseek-ai/dsh-experimental-project-memory": ["./packages/experimental/project-memory/src"],
+      "@deepseek-ai/dsh-experimental-project-memory/tools": ["./packages/experimental/project-memory/src/tools.ts"],
+      "@deepseek-ai/dsh-experimental-project-memory/catalog": ["./packages/experimental/project-memory/src/catalog.ts"],
       // util/ folders are role-named without the util- prefix their npm names carry,
       // so these aliases stay hand-written like dsh-util-crypto above.
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
@@ -505,6 +522,7 @@
       "@deepseek-ai/dsh-subagent-dsh-sdk": ["./packages/subagent/subagent-dsh-sdk/src"],
       "@deepseek-ai/dsh-subagent-fork-in-process": ["./packages/subagent/subagent-fork-in-process/src"],
       "@deepseek-ai/dsh-subagent-spawn-in-process": ["./packages/subagent/subagent-spawn-in-process/src"],
+      "@deepseek-ai/dsh-subagent-thread-worktree": ["./packages/subagent/subagent-thread-worktree/src"],
       "@deepseek-ai/dsh-subprocess": ["./packages/subprocess/subprocess/src"],
       "@deepseek-ai/dsh-subprocess-local": ["./packages/subprocess/subprocess-local/src"],
       "@deepseek-ai/dsh-subprocess-ssh": ["./packages/ssh/subprocess-ssh/src"],
@@ -546,9 +564,13 @@
       "@deepseek-ai/dsh-web-app": ["./packages/bundle/web-app/src"],
       "@deepseek-ai/dsh-web-deepseek-api": ["./packages/web/web-deepseek-api/src"],
       "@deepseek-ai/dsh-web-fetch-http": ["./packages/web/web-fetch-http/src"],
+      "@deepseek-ai/dsh-web-search-brave": ["./packages/web/web-search-brave/src"],
       "@deepseek-ai/dsh-web-search-deepseek": ["./packages/web/web-search-deepseek/src"],
+      "@deepseek-ai/dsh-web-search-duckduckgo": ["./packages/web/web-search-duckduckgo/src"],
       "@deepseek-ai/dsh-web-search-exa": ["./packages/web/web-search-exa/src"],
       "@deepseek-ai/dsh-web-search-perplexity": ["./packages/web/web-search-perplexity/src"],
+      "@deepseek-ai/dsh-web-search-profile": ["./packages/web/web-search-profile/src"],
+      "@deepseek-ai/dsh-web-search-tavily": ["./packages/web/web-search-tavily/src"],
       "@deepseek-ai/dsh-webhook": ["./packages/experimental/webhook/src"],
       "@deepseek-ai/dsh-webhook-github": ["./packages/experimental/webhook-github/src"],
       "@deepseek-ai/dsh-win32-process": ["./packages/subprocess/win32-process/src"],
@@ -556,7 +578,8 @@
       "@deepseek-ai/dsh-workflow-ptc": ["./packages/workflow/workflow-ptc/src"],
       "@deepseek-ai/dsh-working-directory": ["./packages/session/working-directory/src"],
       "@deepseek-ai/dsh-workspace": ["./packages/workspace/workspace/src"],
-      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"]
+      "@deepseek-ai/dsh-workspace-changes": ["./packages/deliverables/workspace-changes/src"],
+      "@deepseek-ai/dsh-worktree-manager": ["./packages/subagent/worktree-manager/src"]
       // END generated package aliases
     }
   }

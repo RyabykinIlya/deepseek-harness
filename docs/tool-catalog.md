@@ -38,10 +38,12 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`, `ctx.workflowEngine`, `ctx.subagents`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents every fresh round)` | `tool/call`, `tool/result`, `workflow and child session events during execution` | - | A fixed foreground workflow starts one fresh structured child per round; the model selects only the immutable objective and an optional round cap. |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.workingDirectory`, `ctx.tools`, `ctx.agents`, `ctx.skills` | `tool/call`, `tool/result`, `user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`, `session_event_search`, `session_event_trace`, `session_search`, `session_trace` | `ctx.tools`, `ctx.systemPrompt`, `ctx.sessionQuery`, `a calling Agent for workspace authority` | `tool/call`, `tool/result` | - | The five read-only tools hide provider cursors and authorize every result from the immutable calling agent session. The package is opt-in; compositions that need enforced deadlines or bounded inline output also mount the generic timeout or spill policies. |
-| `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance selects its backend through `provider` and reads model-selection settings through `modelSelectionSettings`. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically. |
+| `@deepseek-ai/dsh-tool-subagent` | `list_subagent_models`, `subagent` | `ctx.tools`, `ctx.subagents`, `ctx.systemPrompt`, `ctx.llm for model discovery and selected-route validation` | `tool/call`, `tool/result`, `child session events through the chosen provider` | `subagent`, `subagent_fork` | The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance selects its backend through `provider` and reads model-selection settings through `modelSelectionSettings`. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically. The `repository` parameter is provider-gated: it appears only when the chosen provider selects a repository per subagent (the Threads `thread` backend), and the default binding (`spawn`) omits it. |
 | `@deepseek-ai/dsh-tool-subagent-control` | `interrupt_agent`, `list_agents`, `send_message` | `ctx.tools`, `ctx.subagents`, `ctx.agents and ctx.sessionProjections (list_agents only)` | `tool/call`, `tool/result`, `child session events through ctx.subagents` | - | The globally named discovery, interruption, and local-message tools over managed subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries). |
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands and PTY sends are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/task`, `agent/inbox/spliced`, `user/message on inbox claim`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
+| `@deepseek-ai/dsh-experimental-threads-tool` | `library_list`, `thread_diff`, `thread_status`, `thread_tier` | `ctx.tools`, `a calling Agent owning the Project session`, `ctx.threads with the threads projection loaded`, `ctx.modelRouting (thread_tier registration)` | `tool/call`, `tool/result` | - | All four tools read only the calling Project Session's own Thread and Library state, and every result is bounded in bytes with an explicit omission line. `thread_status`, `thread_diff` and `thread_tier` read its `threads` projection; `library_list` reads the Library read model, which derives from Session logs and worktrees rather than that projection. `thread_tier` is registered only while @deepseek-ai/dsh-experimental-model-routing is mounted, because without it there are no tiers to name. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only. |
+| `@deepseek-ai/dsh-experimental-project-memory` | `memory_read`, `memory_write` | `ctx.tools`, `ctx.projectMemory (execution time)`, `a calling Agent inside a Project` | `tool/call`, `tool/result` | - | Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-working-directory` | `working_directory` | `ctx.tools`, `ctx.workingDirectory` | `tool/call`, `working-directory/change`, `user context for directory changes`, `tool/result` | - | Reads or changes the calling Session directory. Existing shells and processes retain their own directories; origin metadata and permission roots stay fixed. |
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Explicit experimental composition only. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
@@ -2090,7 +2092,7 @@ Source: [`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subag
 
 ### `subagent`
 
-Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. This tool starts an independently managed subagent and immediately returns its id. The runtime notifies you when it finishes. The child reports results with `send_message`; use `send_message` to steer it while running or continue its conversation after it finishes.
+Delegate a self-contained task to a subagent (a separate agent that works in its own context) to offload focused, independent work — research, a scoped implementation, an analysis — so it does not consume this conversation's context. The subagent returns its result, not its intermediate steps. This call waits for the result by default.
 
 ```json
 {
@@ -2107,6 +2109,10 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
     "prompt": {
       "type": "string",
       "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+    },
+    "run_in_background": {
+      "type": "boolean",
+      "description": "Run as a background job and return its id (collect with job_output, stop with job_kill). Defaults to false."
     }
   },
   "required": [
@@ -2118,7 +2124,7 @@ Delegate a self-contained task to a subagent (a separate agent that works in its
 
 Source: [`packages/subagent/tool-subagent/src/index.ts`](../packages/subagent/tool-subagent/src/index.ts)
 
-The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance selects its backend through `provider` and reads model-selection settings through `modelSelectionSettings`. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically.
+The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance selects its backend through `provider` and reads model-selection settings through `modelSelectionSettings`. Every delegation returns a child id promptly; local children accept follow-ups, while external backends report their single execution automatically. The `repository` parameter is provider-gated: it appears only when the chosen provider selects a repository per subagent (the Threads `thread` backend), and the default binding (`spawn`) omits it.
 
 <a id="deepseek-aidsh-tool-subagent-control"></a>
 
@@ -2557,6 +2563,176 @@ Wait for the next teammate status, message, or shared-task change after this cal
 Source: [`packages/experimental/tool-agent-team/src/index.ts`](../packages/experimental/tool-agent-team/src/index.ts)
 
 All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.
+
+<a id="deepseek-aidsh-experimental-threads-tool"></a>
+
+## `@deepseek-ai/dsh-experimental-threads-tool`
+
+### `library_list`
+
+List what is already in this Project's Library: attachments sent in the chat, files the Project or its Threads presented, and the files each Thread changed, newest first within each section. This only reports what the Library already holds; it does not fetch new files or read a path you supply. For a Thread's current running state use thread_status, and for its committed diffs or a merge overview use thread_diff. Filter to one section with section, or omit it for all three. Output is bounded and says how many entries were omitted per section; narrow with section or raise limit to see more.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "section": {
+      "type": "string",
+      "description": "Optional: list only this section of the Library. Omit to list all three.",
+      "enum": [
+        "attachments",
+        "presented",
+        "changes"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Entries to list per shown section, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+### `thread_diff`
+
+Inspect what Threads committed on their own branches. With thread_id and without path: base and head commits, commit subjects (newest first), committed files with +/- line counts, the uncommitted count, and how to merge the branch. With thread_id and path: the committed patch of that one file. Without thread_id: an overview of every Thread of this Project that has a live worktree, to use before merging several Threads: per Thread commits, files and uncommitted counts; committed paths touched by two or more Threads; whether each Thread merges cleanly into the Project checkout's HEAD and whether overlapping Threads conflict with each other (needs git 2.38+; otherwise only overlaps are shown); and a suggested merge order. The overview reads committed work only and skips Threads whose worktree is missing or archived, naming the reason. Only Threads from thread_status are accepted. Output is bounded and says what was omitted. Read-only: merging stays your decision, and the work is not in the Project checkout until you merge the branch.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "thread_id": {
+      "type": "string",
+      "description": "Thread id as listed by thread_status. Omit to get the overview across all Threads (call it before merging several Threads)."
+    },
+    "path": {
+      "type": "string",
+      "description": "Repo-relative file to show the committed patch for. Requires thread_id. Omit for the summary."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+### `thread_status`
+
+List the background Threads this Project started, one line per Thread in creation order: id, state, label, branch, commits ahead and uncommitted counts, and the start of the closing message. State is running, idle (not running, no outcome yet), or the last outcome: completed, aborted, error, max-tokens, refusal. Threads report back on their own when they finish, so poll only to survey outstanding work. Output is bounded and says how many Threads were omitted; filter by status to narrow it. A Thread's work lives on its branch until you merge it; use thread_diff to inspect it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Optional exact state filter. Omit for every state.",
+      "enum": [
+        "running",
+        "idle",
+        "completed",
+        "aborted",
+        "error",
+        "max-tokens",
+        "refusal"
+      ]
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Rows to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+### `thread_tier`
+
+Switch one of this Project's Threads to another model tier. The switch applies from the Thread's next model request; the Thread keeps its worktree, branch, and history. Switching discards the Thread's prompt cache, so switch only when its current tier cannot do the work.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "thread_id": {
+      "type": "string",
+      "description": "Thread id from thread_status."
+    },
+    "tier": {
+      "type": "string",
+      "description": "Tier name, for example pro or flash."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/tool-threads/src/index.ts`](../packages/experimental/tool-threads/src/index.ts)
+
+All four tools read only the calling Project Session's own Thread and Library state, and every result is bounded in bytes with an explicit omission line. `thread_status`, `thread_diff` and `thread_tier` read its `threads` projection; `library_list` reads the Library read model, which derives from Session logs and worktrees rather than that projection. `thread_tier` is registered only while @deepseek-ai/dsh-experimental-model-routing is mounted, because without it there are no tiers to name. No shipped bundle mounts the package; the `project` agent preset of @deepseek-ai/dsh-experimental-threads-preset mounts it for Project coordinators only.
+
+<a id="deepseek-aidsh-experimental-project-memory"></a>
+
+## `@deepseek-ai/dsh-experimental-project-memory`
+
+### `memory_read`
+
+Read the Project memory: short facts that every Thread of this Project shares, newest first. Read it when you start a task, before you decide something another Thread may already have settled. Optional query keeps entries containing that text, ignoring case.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Keep only entries containing this text, ignoring case."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Entries to return, 1 through 100. Defaults to 20."
+    }
+  }
+}
+```
+
+Source: [`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+### `memory_write`
+
+Add, update, or remove one entry of the Project memory, which every Thread of this Project reads. Write a decision other Threads will need: an agreed constraint, a date, who to ask, a convention you discovered. Do not store file contents, logs, or transient progress. Keep each entry to one short, self-contained fact. Returns the entry id; use it to update or remove the entry later.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "add needs text; update needs id and text; remove needs id.",
+      "enum": [
+        "add",
+        "update",
+        "remove"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "description": "Entry id from memory_read or a previous memory_write."
+    },
+    "text": {
+      "type": "string",
+      "description": "Entry text for add or update."
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/experimental/project-memory/src/tools.ts`](../packages/experimental/project-memory/src/tools.ts)
+
+Ships as the `./tools` subpath beside the `ctx.projectMemory` service root. No shipped bundle mounts it; both agent presets of @deepseek-ai/dsh-experimental-threads-preset mount it, so only a Project coordinator and its Threads see the tools. A `memory_read` result is bounded in bytes with an explicit truncation line.
 
 <a id="deepseek-aidsh-tool-todo"></a>
 

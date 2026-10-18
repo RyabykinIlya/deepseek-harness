@@ -320,13 +320,6 @@ export interface ChatViewInjected {
   /** Open one HTTP(S) message link at the selected destination, using an external tab if Sidebar Browser is unavailable. */
   openExternalLink: (url: string) => void
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
-  /**
-   * Continue the conversation in a new Session that ends before this event,
-   * with the message text back in the composer.
-   * @param seq - durable seq of the message whose text is restored.
-   * @param text - that message's body, placed in the new composer's draft.
-   */
-  restoreAt: (seq: number, text: string) => void
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */
   loadThrough: (seq: SessionSeq) => Promise<void>
