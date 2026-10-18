@@ -78,11 +78,13 @@ Every row is still one `role="option"` that opens the Thread in the main convers
 | Action | Shown | What it calls |
 |---|---|---|
 | Stop | The Thread is live | `ctx.remote.subagents.interruptByParent(threadId, projectSessionId, 'continuable')` |
-| Archive | Always | `ctx.remote.threads.archive(projectSessionId, threadId, { force })` |
+| Archive | Always | The mounted `threads` namespace: `archive(projectSessionId, threadId, { force })` |
 | Copy branch | The Thread has a branch | The shared clipboard helper |
 | Open in sidebar | Always | The same Thread as a right-Sidebar chat tab |
 
 The `threads` and `projectMemory` namespaces are mounted by this package itself from their domain packages' generated contributions, so the shipped Remote assembly (`dsh-api-remotes`) never depends on an experimental package; both namespaces are withdrawn with the plugin, and a failed second mount withdraws the first.
+
+Registration runs in a scoped fiber that declares `remote.threads` and `remote.projectMemory`. Each mounted namespace is a Cordis service named `remote.<namespace>`, and a context may read a service only when its own fiber declares it, while the plugin's top-level `inject` list cannot name them: they do not exist until these mounts run, so a static dependency would wait on a provider that is itself waiting on that mount. The scoped fiber declares them and therefore activates only once both namespaces are live. Before it starts, the plugin checks that both namespace services exist, so a mount that returns without publishing one fails the plugin's load instead of leaving a button that cannot reach its Host.
 
 Stop goes through the parent address rather than the Project's own live turn, so the Project does not have to be running for a Stop to reach its Thread. A refused Stop is reported in a warning toast and the row stays as it is.
 
@@ -131,7 +133,7 @@ In a Project the roster footer has a `Memory` row next to `New thread`. It repla
 <a id="library"></a>
 ### Library
 
-A `Library` row follows `Memory` in the roster footer. It replaces the Thread list with three read-only sections read from `ctx.remote.threads.library`: attachments sent in the Project chat, files the Project and its Threads declared with `present`, and the changed files of its newest Threads, each newest first. Each section states its own empty case, and a section whose Host-side bound was reached shows how many more entries exist. A failed read shows the Host's message beside a retry button, the same pattern the Thread list itself uses for a failed projection. There is no add, edit, or delete here: every value is derived from Session logs and live worktrees at read time.
+A `Library` row follows `Memory` in the roster footer. It replaces the Thread list with three read-only sections read from the mounted `threads` namespace's `library`: attachments sent in the Project chat, files the Project and its Threads declared with `present`, and the changed files of its newest Threads, each newest first. Each section states its own empty case, and a section whose Host-side bound was reached shows how many more entries exist. A failed read shows the Host's message beside a retry button, the same pattern the Thread list itself uses for a failed projection. There is no add, edit, or delete here: every value is derived from Session logs and live worktrees at read time.
 
 <a id="project-token-spend"></a>
 ### Token spend

@@ -83,6 +83,20 @@ const FAKE_THREADS_REMOTE = fake<TypertRemoteContribution>({ package: '@deepseek
 /** Stand-in for the generated `projectMemory` contribution. */
 const FAKE_MEMORY_REMOTE = fake<TypertRemoteContribution>({ package: '@deepseek-ai/dsh-experimental-project-memory' })
 
+/**
+ * Publish the two namespace services a successful `$mount` leaves behind.
+ *
+ * The plugin reads `remote.threads` and `remote.projectMemory` from the service
+ * store after mounting them, because its `inject` list cannot name services it
+ * provides itself. A context whose `$mount` is stubbed therefore has to publish
+ * the same faces the real mount would.
+ * @param ctx - the spec's root Context, after `remote` is provided.
+ */
+function provideMountedNamespaces(ctx: Context): void {
+  ctx.provide('remote.threads', fake<object>({}))
+  ctx.provide('remote.projectMemory', fake<object>({}))
+}
+
 type RemoteResultOf = { ok: true; value?: unknown } | { ok: false; error: { code: string; message: string } }
 
 /** Scripted Remote namespaces; each call is also recorded in the bench's call log. */
@@ -225,8 +239,28 @@ describe('apply', () => {
         return Promise.resolve()
       }),
     }) as never)
+    provideMountedNamespaces(ctx)
     // No `locale` service: registration throws after both mounts succeeded.
     await expect(mountThreads(ctx, FAKE_THREADS_REMOTE, FAKE_MEMORY_REMOTE, Config({}))).rejects.toThrow()
+    expect(withdrawn).toEqual([
+      '@deepseek-ai/dsh-experimental-project-memory',
+      '@deepseek-ai/dsh-experimental-threads',
+    ])
+  })
+
+  it('rejects and withdraws both namespaces when a mount publishes no namespace service', async () => {
+    const ctx = new Context()
+    const withdrawn: string[] = []
+    ctx.provide('remote', fake<{ $mount: (contribution: TypertRemoteContribution) => Promise<() => Promise<void>> }>({
+      // A mount that resolves without publishing `remote.threads` or
+      // `remote.projectMemory` leaves registration nothing to call.
+      $mount: contribution => Promise.resolve(() => {
+        withdrawn.push(contribution.package)
+        return Promise.resolve()
+      }),
+    }) as never)
+    await expect(mountThreads(ctx, FAKE_THREADS_REMOTE, FAKE_MEMORY_REMOTE, Config({})))
+      .rejects.toThrow('ui-threads: mounted Remote namespace threads, projectMemory is not available')
     expect(withdrawn).toEqual([
       '@deepseek-ai/dsh-experimental-project-memory',
       '@deepseek-ai/dsh-experimental-threads',
@@ -253,6 +287,7 @@ describe('apply', () => {
         ? () => Promise.reject(new Error('unmount failed'))
         : withdrawnThreads),
     }) as never)
+    provideMountedNamespaces(ctx)
     // Registration fails (no locale), which unwinds through the failing disposer.
     await expect(mountThreads(ctx, FAKE_THREADS_REMOTE, FAKE_MEMORY_REMOTE, Config({}))).rejects.toThrow('unmount failed')
     expect(withdrawnThreads).toHaveBeenCalledOnce()

@@ -6,7 +6,7 @@
  * built artifact, and so the shipped Remote assembly (`dsh-api-remotes`)
  * never depends on this experimental package.
  */
-import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { Context as ClientContext, Fiber } from '@deepseek-ai/cordis'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -53,13 +53,13 @@ function projectIdOf(sessionId: SessionId): ProjectId {
 
 /**
  * Mount the `threads` and `projectMemory` Remote namespaces, then register the
- * plugin's contributions.
+ * plugin's contributions in a context that declares them.
  * @param ctx - client root context.
  * @param contribution - generated `threads` Remote contribution.
  * @param memoryContribution - generated `projectMemory` Remote contribution.
  * @param config - resolved plugin config; schema defaults apply.
- * @returns disposer withdrawing both Remote namespaces; the registrations are
- * effects of `ctx` and unwind with it.
+ * @returns disposer that unregisters the contributions, then withdraws both
+ * Remote namespaces.
  */
 export async function mountThreads(
   ctx: ClientContext,
@@ -82,13 +82,69 @@ export async function mountThreads(
       await disposeThreads()
     }
   }
+  let scope: Fiber
   try {
-    registerThreads(ctx, config)
+    scope = await startRegistration(ctx, config)
   } catch (error: unknown) {
     await dispose()
     throw error
   }
-  return dispose
+  return async (): Promise<void> => {
+    try {
+      await scope.dispose()
+    } finally {
+      await dispose()
+    }
+  }
+}
+
+/**
+ * Start the registrations in a fiber that declares the two mounted namespaces.
+ *
+ * A Cordis context reads only services its own fiber declares, and this
+ * plugin's `inject` list cannot name these two: they do not exist until the
+ * mounts above run, so a static dependency would wait on a provider that is
+ * itself waiting on that mount. This fiber declares them and therefore
+ * activates only once both namespaces are live.
+ * @param ctx - client root context, after both `$mount` calls settled.
+ * @param config - resolved plugin config; schema defaults apply.
+ * @returns the started registration fiber.
+ * @throws {Error} when a namespace service is missing; the fiber is disposed.
+ */
+async function startRegistration(ctx: ClientContext, config: ThreadsConfig): Promise<Fiber> {
+  // Presence first: a fiber whose declared dependency never appears would wait
+  // forever, turning a failed mount into a plugin that silently registers
+  // nothing rather than one that reports the missing namespace.
+  assertNamespacesMounted(ctx)
+  const fiber = ctx.inject(['remote.threads', 'remote.projectMemory'], (scoped) => {
+    registerThreads(scoped, config)
+  })
+  try {
+    await fiber
+  } catch (error: unknown) {
+    await fiber.dispose()
+    throw error
+  }
+  return fiber
+}
+
+/**
+ * Fail the load when a mount left its namespace service unpublished.
+ *
+ * Each namespace is a Cordis service named `remote.<namespace>`. A resolved
+ * `$mount` that published none would leave every Thread action as a button that
+ * cannot reach its Host, so the plugin refuses to finish loading instead. The
+ * read is non-strict: it answers whether the service exists, not whether the
+ * dependent fiber has activated yet.
+ * @param ctx - client root context, after both `$mount` calls settled.
+ * @throws {Error} naming every namespace whose service is missing.
+ */
+function assertNamespacesMounted(ctx: ClientContext): void {
+  const mounted = (name: 'threads' | 'projectMemory'): boolean => ctx.get(`remote.${name}`, false) !== undefined
+  const missing = (['threads', 'projectMemory'] as const).filter(name => !mounted(name))
+  if (missing.length > 0) {
+    throw new Error(`ui-threads: mounted Remote namespace ${missing.join(', ')} is not available`)
+  }
 }
 
 /**
@@ -99,7 +155,7 @@ export async function mountThreads(
  * callbacks, the `'shell.overlay'` host receives the source through its
  * reserved `hooks` compartment, so a notice raised by a Thread row that the
  * archive then removes still renders.
- * @param ctx - client root context.
+ * @param ctx - the scoped context that declares `remote.threads` and `remote.projectMemory`.
  * @param config - resolved plugin config; schema defaults apply.
  */
 function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {

@@ -12,6 +12,13 @@
 
 Две равноправные цели папки — обновляемость ядра и простота — описаны в [README.md](README.md). Решения с причинами — в [DECISIONS.md](DECISIONS.md), числа, на которых они стоят, — в [MEASUREMENTS.md](MEASUREMENTS.md).
 
+## Незалитая работа: OpenRouter fallback (worktree, 2026-10-18)
+
+Новая фича Model routing собрана **в worktree** `.worktrees/openrouter-fallback`, ветка `feat/openrouter-fallback`, один коммит `0d0263ef41`. В основной чекаут и master она **не лилась**, чтобы не трогать живой процесс. Это **переключатель OpenRouter fallback на сессию из чипа композера**: `QUOTA`/`KEY_QUOTA` банят подписочный источник сразу на `quotaCooldownMs` (дефолт 10 минут); переключатель решает, уходит ли ход на OpenRouter при израсходованной подписке (по умолчанию `true`) или падает с `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, чтобы следующее сообщение снова пошло на подписку. Выбор — событие `model-routing/openrouter-fallback` в логе сессии, переживает рестарт хоста. Документы обновлены там же: раздел в [ROUTING.md](ROUTING.md) (пункт 7) и строки 10–13 в [DECISIONS.md](DECISIONS.md#model-routing), плюс запись о persistence-изменении `docs/persistence-changes/2026-10-18-openrouter-fallback.md`.
+
+Проверено в worktree: `npx tsc --build` по обоим пакетам чист; `npx vitest run packages/experimental/model-routing packages/experimental/client-ui-model-routing packages/experimental/model-routing-profile packages/experimental/tool-threads` — 29 файлов, **416 тестов зелёные**; lint по новым файлам чист (две ошибки в `model-switch.ts` были до этого и остаются); `persistence-changes --record` сделан, пара документации в `README.i18n.yaml` записана. Проверка готовности к жизни — ключ `OPENROUTER_API_KEY` разрешается из `~/.dsh/.env`, тиры в профиле объявляют `extraSources`. Поднятие на живом хосте — отдельное окно по [adr/0003](adr/0003-merge-in-worktree-with-fast-forward-cutover.md).
+
+
 ## Приоритеты
 
 По порядку. Причина у каждого пункта — почему именно сейчас, а не потом.
