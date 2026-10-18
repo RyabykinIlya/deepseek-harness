@@ -65,6 +65,9 @@ async function provideRouting(
 ): Promise<() => Promise<void>> {
   const control: ModelRoutingControl = {
     tierNames: () => ['pro', 'flash'],
+    setOpenRouterFallback() {
+      throw new Error('tier.spec never records a fallback choice')
+    },
     setThreadTier(project, threadId, tier) {
       if (fail !== undefined) fail(threadId, tier)
       calls.push({ project: project.id, threadId, tier })

@@ -438,6 +438,7 @@ describe('TiersAdapter pinning', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     await run(h.adapter)
@@ -463,6 +464,7 @@ describe('TiersAdapter pinning', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     const chunks = await run(h.adapter, { model: 'auto' })
@@ -486,6 +488,7 @@ describe('TiersAdapter pinning', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     const chunks = await run(h.adapter, { model: 'auto' })
@@ -948,6 +951,7 @@ describe('TiersAdapter snapshot policy', () => {
       compactedSinceDecision: true,
       explicitSelection: false,
       overrides: {},
+      openRouterFallback: null,
     }
   }
 
@@ -1382,6 +1386,7 @@ describe('TiersAdapter direct sources', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     await run(h.adapter)
@@ -1404,6 +1409,7 @@ describe('TiersAdapter direct sources', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     const chunks = await run(h.adapter)
@@ -1490,6 +1496,7 @@ describe('TiersAdapter direct sources', () => {
         },
         decidedAt: 1, lastResponseAt: 999, compactedSinceDecision: false,
         explicitSelection: false, overrides: {},
+        openRouterFallback: null,
       },
     })
     await run(h.adapter)
