@@ -184,7 +184,7 @@ describe('ModelRoutingChip fallback switch', () => {
 
   it('renders the recorded value rather than a local default', () => {
     chip({ ...DECIDED, openRouterFallback: false })
-    expect((screen.getByRole('checkbox', { name: 'OpenRouter fallback' })).checked).toBe(false)
+    expect((screen.getByTestId('model-routing-fallback') as HTMLInputElement | null)?.checked).toBe(false)
   })
 
   it('records the flipped value for this Session', async () => {
