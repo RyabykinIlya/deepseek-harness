@@ -9,9 +9,11 @@
  * The plugin reads the `threads` and `agentPreset` Session projections the Host
  * already publishes, reads Thread liveness from the Session store, and renders
  * Threads through the shared Conversation factory rather than a Thread-specific
- * chat. Mutations go through `ctx.remote.threads` (mounted here, from the
- * generated contribution of the Threads domain package), `ctx.remote.subagents`,
- * and `ctx.remote.agentPresets`.
+ * chat. Mutations go through the `threads` and `projectMemory` namespaces this
+ * plugin mounts from the generated contributions of those domain packages, and
+ * through `ctx.remote.subagents` and `ctx.remote.agentPresets`, which its
+ * `inject` list declares. A mounted namespace is read from the service store
+ * after its mount settles: this plugin provides it, so `inject` cannot name it.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import threadsRemote from '@deepseek-ai/dsh-experimental-threads/remote'
