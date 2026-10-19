@@ -66,6 +66,7 @@ const decisionSchema = z.object({
   unpinnedReason: z.string().optional(),
   blendedUsdPerToken: z.number().optional(),
   relaxedUptime: z.literal(true).optional(),
+  imagesOmitted: z.literal(true).optional(),
   considered: z.number(),
   runnersUp: z.array(z.object({
     model: z.string(),

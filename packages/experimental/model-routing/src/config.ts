@@ -35,6 +35,9 @@ export type FreeMode = 'off' | 'prefer' | 'only'
 /** Input modality a tier advertises to the model catalog. */
 export type ModelInput = 'text' | 'image'
 
+/** Whether an image-carrying request may run on a model that accepts text only. */
+export type ImageInputPolicy = 'require' | 'omit'
+
 /** Prices of one direct source candidate, in USD per token. */
 export interface ExtraSourcePrice {
   /** Flat per-token USD for input, output and cache alike; the subscription-style spelling. */
@@ -124,6 +127,18 @@ export interface TierSettings {
   maxTokens: number
   /** Input modalities this tier advertises (default `['text']`). */
   input: ModelInput[]
+  /**
+   * What a request that carries an image does when the winning model accepts
+   * text only (default `require`).
+   *
+   * `require` keeps the image: candidates the catalog does not show accepting
+   * one are rejected as `modality`, so a subscription that cannot read the
+   * screenshot never serves that turn. `omit` lets such a candidate rank and
+   * replaces the images with deterministic text placeholders before dispatch —
+   * the turn continues on the cheaper model and the decision records
+   * `imagesOmitted`, because the model never saw the picture.
+   */
+  imageInput: ImageInputPolicy
   /** Lowest allowed quantization (default `fp8`). */
   minQuantization: Quantization
   /**
@@ -372,6 +387,7 @@ const tierSettings: z<TierSettings> = z.object({
   contextWindow: z.number(),
   maxTokens: z.number(),
   input: z.array(z.union(['text', 'image'] as const)).default(['text']),
+  imageInput: z.union(['require', 'omit'] as const).default('require'),
   minQuantization: z.union(QUANTIZATIONS).default('fp8'),
   unknownQuantization: z.union(['reject', 'trusted', 'accept'] as const).default('trusted'),
   free: z.union(['off', 'prefer', 'only'] as const).default('off'),

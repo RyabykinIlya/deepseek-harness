@@ -157,6 +157,12 @@ export interface RoutingDecision {
   blendedUsdPerToken?: number
   /** Present ⇔ the uptime filter had to be dropped for anything to pass. */
   relaxedUptime?: true
+  /**
+   * Present ⇔ this request carried images the decided model cannot read, and the
+   * tier's `imageInput: 'omit'` sent it without them. The model saw text
+   * placeholders where the pictures were.
+   */
+  imagesOmitted?: true
   /** Endpoints considered across all candidate models. */
   considered: number
   /** Up to three runners-up behind the pinned endpoint. */

@@ -1386,6 +1386,60 @@ describe('TiersAdapter direct sources', () => {
     })
   })
 
+  it('runs an image turn on a text-only subscription when the tier accepts losing the picture', async () => {
+    // `imageInput: 'omit'` is the deployment saying a text answer is worth more
+    // than no answer: the image becomes the stable placeholder, the turn reaches
+    // the cheaper model, and the decision records that it did.
+    const h = await harness({
+      tiers: [{
+        ...MIMO,
+        models: ['z-ai/glm-5.3'],
+        imageInput: 'omit',
+        extraSources: [{ ...PLAN, modelMap: { 'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":1e-8}' } }],
+      }],
+      endpoints: { 'z-ai/glm-5.3': [endpointOf('streamlake/fp8', 1.2e-7)] },
+      catalog: [{ id: 'z-ai/glm-5.3', canonicalSlug: 'z-ai/glm-5.3-20260920', inputModalities: ['text'] }],
+      settings: { judgeEnabled: false, defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash' },
+    })
+    await run(h.adapter, imageRequest())
+    expect(h.sent).toHaveLength(1)
+    expect(h.sent[0]?.options.provider).toBe('xiaomi-plan')
+    expect(h.sent[0]?.options.model).toBe('glm-5.3')
+    // The dispatch carries no image at all: what reached the provider is the
+    // placeholder the omission produces.
+    const content = h.sent[0]?.options.messages.flatMap(message => message.content) ?? []
+    expect(content.some(block => block.type === 'image')).toBe(false)
+    expect(content.some(block => block.type === 'text' && block.text.includes('image omitted'))).toBe(true)
+    expect(h.events[0]).toMatchObject({ model: 'z-ai/glm-5.3', imagesOmitted: true })
+  })
+
+  it('prefers a model that can read the image even when the tier accepts losing it', async () => {
+    // Omission is the last resort, not the first: an image-capable candidate that
+    // passes every filter still wins, so a tier does not silently stop reading
+    // screenshots the moment one text-only subscription is cheaper.
+    const h = await harness({
+      tiers: [{
+        ...MIMO,
+        models: ['z-ai/glm-5.3', 'z-ai/glm-5.3-vision'],
+        imageInput: 'omit',
+        extraSources: [{ ...PLAN, modelMap: { 'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":1e-8}' } }],
+      }],
+      endpoints: {
+        'z-ai/glm-5.3': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3-vision': [endpointOf('novita/fp8', 5e-7)],
+      },
+      catalog: [
+        { id: 'z-ai/glm-5.3', canonicalSlug: 'z-ai/glm-5.3-20260920', inputModalities: ['text'] },
+        { id: 'z-ai/glm-5.3-vision', canonicalSlug: 'z-ai/glm-5.3-vision-20260920', inputModalities: ['text', 'image'] },
+      ],
+      settings: { judgeEnabled: false, defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash' },
+    })
+    await run(h.adapter, imageRequest())
+    expect(h.sent[0]?.options.model).toBe('z-ai/glm-5.3-vision')
+    expect(h.events[0]?.imagesOmitted).toBeUndefined()
+    expect(h.sent[0]?.options.messages.flatMap(message => message.content).some(block => block.type === 'image')).toBe(true)
+  })
+
   it('never dispatches a subscription whose model the catalog shows as text-only to an image request', async () => {
     // Measured 2026-10-19: z.ai answers an image part with `400 (1210)
     // messages.content.type is invalid, allowed values: ['text']`, while the same

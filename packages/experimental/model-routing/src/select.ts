@@ -39,6 +39,7 @@ import type {
   ExtraSourcePriceSnapshot,
   ExtraSourceSnapshot,
   FreeMode,
+  ImageInputPolicy,
   Quantization,
   RoutingSettings,
   TierSettingsSnapshot,
@@ -146,6 +147,15 @@ export interface SelectionPolicy {
   excludedSources?: ReadonlySet<string>
   /** The modality this request carries, when it carries one beyond text. */
   requiredInput?: RequiredInput
+  /**
+   * What the tier does when the request carries an image and a candidate accepts
+   * text only (default `require`).
+   *
+   * `require` rejects such a candidate as `modality`. `omit` admits it: the
+   * request runs without its images, which the caller projects to text before
+   * dispatch and records on the decision.
+   */
+  imageInput: ImageInputPolicy
   /**
    * The input modalities the catalog declares per model id, keyed by that id.
    *
@@ -362,6 +372,10 @@ function isFree(endpoint: Candidate): boolean {
 export function modelRejectionOf(model: string, policy: SelectionPolicy): EndpointRejection | undefined {
   const required = policy.requiredInput
   if (required === undefined) return undefined
+  // `omit` is the deployment stating that a text answer without the image is
+  // worth more than no answer: the candidate ranks, and the dispatch replaces
+  // the images with placeholders instead of failing the turn.
+  if (policy.imageInput === 'omit') return undefined
   const declared = policy.modalities?.get(model)
   if (declared?.includes(required) !== true) return 'modality'
   return undefined
@@ -537,6 +551,7 @@ export function policyFor(
   options: {
     allowFree: boolean
     excludedTags: ReadonlySet<string>
+    imageInput?: ImageInputPolicy
     ignoreUptime?: boolean
     requiredInput?: RequiredInput
     modalities?: ReadonlyMap<string, readonly string[] | undefined>
@@ -555,6 +570,7 @@ export function policyFor(
     minUptime: settings.minUptime,
     requireNormalStatus: settings.requireNormalStatus,
     excludedTags: options.excludedTags,
+    imageInput: options.imageInput ?? tier.imageInput,
     // §19 №5 / §3.3: the uptime floor is soft, so an unpassable one is dropped
     // rather than turned into a failure, and the relaxation is reported.
     ...options.ignoreUptime === true ? { ignoreUptime: true as const } : {},

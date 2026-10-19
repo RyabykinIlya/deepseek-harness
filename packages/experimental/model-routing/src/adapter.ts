@@ -20,7 +20,7 @@
  * @module dsh-experimental-model-routing/adapter
  */
 
-import { KEY_QUOTA_EXCEEDED_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, contentHasImage } from '@deepseek-ai/dsh-llm'
+import { KEY_QUOTA_EXCEEDED_CODE, LlmAdapter, LlmError, QUOTA_EXCEEDED_CODE, ReasoningEffortId, contentHasImage, projectImagesForTextModel } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
   LlmModelInfo,
@@ -105,6 +105,8 @@ interface Pin {
   endpoint?: OpenRouterEndpoint
   /** The OpenRouter `provider` block, exactly as the OpenRouter route expects it. */
   block: OpenRouterRoutingBlock
+  /** Whether this pin sends the request without the images it carries. */
+  imagesOmitted?: true
   lastActivityAt?: number
 }
 
@@ -455,6 +457,7 @@ export class TiersAdapter extends LlmAdapter {
         model: decision.model,
         source: routingSourceOf(direct),
         block: EMPTY_BLOCK,
+        ...decision.imagesOmitted === true ? { imagesOmitted: true as const } : {},
       }
     }
     if (endpoint === undefined) {
@@ -709,19 +712,25 @@ export class TiersAdapter extends LlmAdapter {
     // A model with no usable direct source keeps its OpenRouter endpoints, since
     // the alternative would be dropping the model rather than choosing a source.
     const subscriptionOnly = openRouterFallback ? undefined : new Set(extraSources.keys())
-    const result = rankWithRelaxation(
-      lists,
-      models,
-      policyFor(tier, settings, {
-        allowFree,
-        excludedTags: excluded.tags,
-        ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
-        ...requirement,
-        ...extraSources.size === 0 ? {} : { extraSources },
-        ...subscriptionOnly === undefined ? {} : { subscriptionOnly },
-      }),
-      mix,
-    )
+    const policy = (imageInput: 'require' | 'omit') => policyFor(tier, settings, {
+      allowFree,
+      excludedTags: excluded.tags,
+      imageInput,
+      ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
+      ...requirement,
+      ...extraSources.size === 0 ? {} : { extraSources },
+      ...subscriptionOnly === undefined ? {} : { subscriptionOnly },
+    })
+    // A tier that accepts a text-only answer still prefers a model that can read
+    // the picture: it ranks the whole requirement first, and only when nothing
+    // satisfies it — and the tier says so — ranks again with the images left out,
+    // which is the case the dispatch projects to placeholders and the decision
+    // records as `imagesOmitted`.
+    const strict = rankWithRelaxation(lists, models, policy('require'), mix)
+    const relaxed = tier.imageInput === 'omit' && requirement !== undefined && strict.ranked.length === 0
+      ? rankWithRelaxation(lists, models, policy('omit'), mix)
+      : undefined
+    const result = relaxed ?? strict
     const best = result.ranked[0]
     let decidedModel: string
     let endpoint: OpenRouterEndpoint | undefined
@@ -788,6 +797,11 @@ export class TiersAdapter extends LlmAdapter {
       )
     }
     const candidates = candidatesOf(result, mix)
+    // A tier that accepted a text-only candidate for an image request has to say
+    // so: the model is about to answer about a picture it never received.
+    const imagesOmitted: true | undefined = requiredInput !== undefined
+      && requirement?.modalities?.get(decidedModel)?.includes(requiredInput) !== true
+      && tier.imageInput === 'omit' ? true : undefined
     const payload: RoutingDecision = {
       boundary,
       requested: options.model,
@@ -801,6 +815,7 @@ export class TiersAdapter extends LlmAdapter {
       ...unpinnedReason === undefined ? {} : { unpinnedReason },
       ...best === undefined ? {} : { blendedUsdPerToken: best.blendedUsdPerToken },
       ...result.relaxedUptime ? { relaxedUptime: true as const } : {},
+      ...imagesOmitted === undefined ? {} : { imagesOmitted },
       considered: result.considered,
       runnersUp: result.ranked.slice(1, 4).map((entry) => {
         const routed = isDirect(entry.endpoint) ? routingDirectOf(entry.endpoint) : routingEndpointOf(entry.endpoint)
@@ -850,6 +865,7 @@ export class TiersAdapter extends LlmAdapter {
       source,
       ...endpoint === undefined ? {} : { endpoint },
       block,
+      ...imagesOmitted === undefined ? {} : { imagesOmitted },
     }
     return { pin: next, payload }
   }
@@ -1195,11 +1211,16 @@ export class TiersAdapter extends LlmAdapter {
       )
       const requestedMax = options.maxTokens ?? tier.maxTokens
       const endpointCap = pin.endpoint?.maxCompletionTokens ?? Number.POSITIVE_INFINITY
+      const history = unwrapHistory(options.messages, this.route.routeName)
       const inner: GenerateOptions = {
         ...options,
         provider: pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
         model: pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
-        messages: unwrapHistory(options.messages, this.route.routeName),
+        // An `omit` tier decided that this model answers a text-only reading of
+        // the request: the images become the stable placeholder the caller's own
+        // projection defines, so the dispatch carries no image the model cannot
+        // read.
+        messages: pin.imagesOmitted === true ? [...projectImagesForTextModel(history)] : history,
         maxTokens: Math.min(requestedMax, endpointCap),
         ...effortOf(mapEffort(options.reasoningEffort, efforts)),
       }

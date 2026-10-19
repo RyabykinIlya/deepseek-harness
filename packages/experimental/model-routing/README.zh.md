@@ -37,7 +37,7 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 因此，在声明了 `image` 的 tier 中放入一个纯文本模型是安全的：它只是不会被用于图片请求。但它无法服务于一个已经读过图片的 Session，因为该图片会留在该 Session 的历史中，并在之后的每一次请求里被重放。
 
-当该 tier 中没有任何候选模型被证明接受图片输入时，决策会以 `MODEL_ROUTING_NO_ENDPOINT` 失败，其消息按原因统计被拒绝的 endpoint，其中包含 `modality=<n>`。目录读不出来会让每一个候选项都得到这一结果，并有一行警告说明原因是目录不可读。文本请求从不为模态读取目录，也不受该过滤器影响。
+当该 tier 中没有任何候选模型被证明接受图片输入时，决策会以 `MODEL_ROUTING_NO_ENDPOINT` 失败，其消息按原因统计被拒绝的 endpoint，其中包含 `modality=<n>`——除非该 tier 设置了 `imageInput: 'omit'`：此时排序会去掉该要求再跑一次，由最便宜的候选完成该轮，发送的请求不含图片（见[排序](#ranking)）。目录读不出来会让每一个候选项都得到失败结果，并有一行警告说明原因是目录不可读。文本请求从不为模态读取目录，也不受该过滤器影响。
 
 `validateSettings` 会拒绝该路由无法据以行动的 settings 值，包括不是路由模型 id 的 tier 名称、缺少 `author/` 的模型 id、落在 effort 列表之外的默认 effort、以及一对次序颠倒的 judge 阈值；它用一条消息指出第一个无法服务的字段。
 
@@ -85,7 +85,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 
 `extraSources` 的候选项按同一公式、由其声明的价格参与排序；直连来源按 `route:id` 而不是仅按其路由 id 被排除：同一条路由可以以同一个 id 服务多个模型的候选，只有这一对才能说明失败的是哪一个。
 
-模态过滤器是唯一按模型而不是按 endpoint 决定的拒绝原因：当请求携带图片时，目录未证明其接受图片的候选模型，其每个 endpoint 都会以 `modality` 被拒绝，而这些 endpoint 仍全部计入 `considered`。放宽不覆盖它——`rankWithRelaxation` 只丢弃在线率下限——因此没有任何可接受图片的候选的 tier 会直接失败，而不会在去掉该要求后重试。
+模态过滤器是唯一按模型而不是按 endpoint 决定的拒绝原因：当请求携带图片时，目录未证明其接受图片的候选模型，其每个 endpoint 都会以 `modality` 被拒绝，而这些 endpoint 仍全部计入 `considered`。放宽不覆盖它——`rankWithRelaxation` 只丢弃在线率下限——因此没有任何可接受图片的候选的 tier 会直接失败，除非该 tier 声明 `imageInput: 'omit'`。该声明先按完整要求排序，只有在没有任何候选满足时才去掉模态过滤器再排一次：该轮由最便宜的候选继续，发送时把每张图片替换为 `projectImagesForTextModel` 定义的稳定占位文本，并在决策中记录 `imagesOmitted: true`，于是日志表明模型是在没有看到图片的情况下作答。tier 默认保持 `require`，因为对一张没看过的截图作答比失败的一轮更糟。
 
 <a id="diagnostics"></a>
 ### 诊断
@@ -152,7 +152,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 - 家族来自目录的 `canonical_slug`，因此只以不带日期的 id 发布的模型——包括所有 OpenRouter 的 `~别名`——没有家族，也永远不会移动。
 - 诊断文件只追加、从不轮转。每一行有界，文件本身无界：启用它的部署自行负责其保留策略。
 - 直连来源自己声明价格与 `tools` 能力；没有任何东西测量它的 status、uptime 或 quantization，因此这些过滤器对它保持中性。若部署需要其中某一项产生约束，应当把它写进来源的配置，而不是期待测量值出现。
-- 直连来源自身不声明输入模态，因此模态过滤器对该模型的每个来源都读取其规范 id 在 OpenRouter 目录中的条目。若订阅提供方在可接受的输入上与 OpenRouter 不同，就会被 OpenRouter 的声明过滤：2026-10-19 实测 `zai` 的 `glm-5.3` 对图片部分返回 `400 (1210) messages.content.type is invalid, allowed values: ['text']`，而同样的请求去掉图片即可成功，与目录一致。会话历史中一旦含有图片，该要求会持续整个会话，因此纯文本来源直到新会话开始前都不会参与。
+- 直连来源自身不声明输入模态，因此模态过滤器对该模型的每个来源都读取其规范 id 在 OpenRouter 目录中的条目。若订阅提供方在可接受的输入上与 OpenRouter 不同，就会被 OpenRouter 的声明过滤：2026-10-19 实测 `zai` 的 `glm-5.3` 对图片部分返回 `400 (1210) messages.content.type is invalid, allowed values: ['text']`，而同样的请求去掉图片即可成功，与目录一致。会话历史中一旦含有图片，该要求会持续整个会话，因此纯文本来源直到新会话开始前都不会参与——除非该 tier 设置 `imageInput: 'omit'`，用它换取更便宜的模型，并在每一次决策中说明这一点。
 - 只要失败发生在第一个内容分片之前，默认就会 reroute；`noRerouteCodes` 列出的是任何候选都无法服务的例外：`CONTEXT_WINDOW_EXCEEDED`（属于模型窗口，补救办法是压缩）、`IMAGE_OFFLOAD_REQUIRED`（所有路由共享的图片预算）与 `ABORTED`（请求已取消）。因此，分类法从未见过的提供方拒绝默认也会 reroute，代价是对一个处处无效的请求最多多花 `maxReroutes` 次切换到其他候选。
 
 <a id="dev-note"></a>
