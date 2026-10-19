@@ -1350,6 +1350,42 @@ describe('TiersAdapter direct sources', () => {
     expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
   })
 
+  it('reports the subscription cooldown as the retry delay, so a policy may hold the turn for it', async () => {
+    // The cooldown is the one fact a retry policy needs to wait out a spent
+    // subscription instead of failing the turn. Without it on the failure, a
+    // deployment that lists the code in `retryableCodes` still could not wait:
+    // the retry would land inside the cooldown and fail identically.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false, quotaCooldownMs: 600000 },
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    const failure = await run(h.adapter).catch(error => error)
+    expect(failure).toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
+    expect(failure.failure.providerRetryAfterMs).toBe(600000)
+  })
+
+  it('answers the registry with the retry policy its configuration resolved', async () => {
+    // The route dispatches its own requests, so its policy cannot come from the
+    // inner pi-ai routes: the registry reads it from the adapter itself.
+    const h = await scenario({
+      settings: {
+        retryPolicy: {
+          mode: 'normal',
+          maxRetries: 100,
+          retryableCodes: [MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE],
+          backoff: { maxDelayMs: 900000 },
+        },
+      },
+    })
+    expect(h.adapter.providerRetryPolicy()).toMatchObject({
+      mode: 'normal',
+      maxRetries: 100,
+      retryableCodes: [MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE],
+      maxDelayMs: 900000,
+    })
+  })
+
   it('names the filters, not the quota, when a live subscription fails one of them', async () => {
     // "Nothing ranked" has two causes worth telling apart: every subscription is
     // benched on its quota, or a subscription is available and fails a filter.

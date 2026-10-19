@@ -17,6 +17,8 @@
  */
 
 import type { Volatile, VolatileSnapshot } from '@deepseek-ai/cordis'
+import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import { RetryPolicySchema, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import z from '@deepseek-ai/schemastery'
 
 /** Weight quantizations OpenRouter names, coarsest last; the rank floor of §3.1 lives in `quantization.ts`. */
@@ -174,6 +176,16 @@ export interface Config {
   baseUrl: string
   decisionsUrl: string
   apiKeyRef: string
+  /**
+   * Provider-owned model-request retry policy for the `tiers` route itself.
+   *
+   * The route answers its own requests, so its policy does not come from the
+   * inner pi-ai routes: this is where a deployment decides whether a turn waits
+   * for a subscription cooldown and tries again (`MODEL_ROUTING_SUBSCRIPTION_LIMIT`
+   * in `retryableCodes`, with `backoff.maxDelayMs` above `quotaCooldownMs`) or
+   * fails the turn at once and leaves the retry to the next message.
+   */
+  retryPolicy?: RetryPolicyConfig
   // Volatile: user-editable settings.
   tiers: Volatile<TierSettings[]>
   efforts: Volatile<string[]>
@@ -273,6 +285,8 @@ export interface Config {
  */
 export interface RoutingSettings {
   readonly tiers: readonly TierSettingsSnapshot[]
+  /** Resolved retry policy the route reports to the request registry. */
+  readonly retryPolicy: ResolvedRetryPolicy
   readonly efforts: readonly string[]
   readonly defaultEffort: string
   readonly autoLabel: string
@@ -405,6 +419,9 @@ export const Config = z.object({
   baseUrl: z.string().default('https://openrouter.ai/api/v1'),
   decisionsUrl: z.string().default('https://openrouter.ai/api/alpha/decisions'),
   apiKeyRef: z.string().default('OPENROUTER_API_KEY').role('credential-ref'),
+  // Non-volatile for the same reason the route identity is: the policy is
+  // captured when the route registers, so a change has to remount the plugin.
+  retryPolicy: RetryPolicySchema,
   tiers: z.array(tierSettings).default([]).volatile(),
   efforts: z.array(z.string()).default(['low', 'medium', 'high']).volatile(),
   defaultEffort: z.string().default('high').volatile(),
@@ -510,6 +527,7 @@ export const Config = z.object({
 export function readSettings(config: Config): RoutingSettings {
   return {
     tiers: config.tiers.get(),
+    retryPolicy: resolveRetryPolicy(config.retryPolicy, 'model-routing: retryPolicy'),
     efforts: config.efforts.get(),
     defaultEffort: config.defaultEffort.get(),
     autoLabel: config.autoLabel.get(),

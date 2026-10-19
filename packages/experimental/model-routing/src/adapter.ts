@@ -28,6 +28,7 @@ import type {
   LlmProviderInfo,
   LlmResolvedModelInfo,
   RequestMessage,
+  ResolvedRetryPolicy,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { OpenRouterEndpoint, OpenRouterRoutingBlock, PiAiDispatch } from '@deepseek-ai/dsh-llm-pi-ai'
@@ -302,6 +303,22 @@ export class TiersAdapter extends LlmAdapter {
 
   override providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: this.route.routeLabel }
+  }
+
+  /**
+   * The retry policy this route answers under.
+   *
+   * The route dispatches its own requests, so the inner pi-ai routes' policies
+   * never see them: whether a turn waits out a subscription cooldown and tries
+   * again is decided here. A policy that lists `MODEL_ROUTING_SUBSCRIPTION_LIMIT`
+   * and allows a delay at least as long as `quotaCooldownMs` turns an exhausted
+   * subscription into a wait-and-retry loop; the default policy names neither,
+   * so an exhausted subscription fails the turn and leaves the retry to the next
+   * message.
+   * @returns the policy resolved from this plugin's configuration.
+   */
+  override providerRetryPolicy(): ResolvedRetryPolicy {
+    return this.deps.settings().retryPolicy
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
@@ -747,16 +764,18 @@ export class TiersAdapter extends LlmAdapter {
       unpinnedReason = reasons
     } else if (subscriptionOnly !== undefined && this.subscriptionsExhausted(key, extraSources)) {
       // Nothing ranked because every subscription that could serve these models
-      // is benched: the Session chose to wait rather than spend, so the failure
-      // names that choice and says when trying again is worth it. The wait is
-      // reported in the message rather than as `providerRetryAfterMs`, because a
-      // retry policy that honored that field would hold the turn for the whole
-      // cooldown instead of failing it now.
+      // is benched: the Session chose to wait rather than spend. The cooldown is
+      // reported both in the message and as `providerRetryAfterMs`, so a retry
+      // policy that lists this code — and allows a delay that long — holds the
+      // turn until the soonest subscription returns and decides again, while the
+      // default policy lets the failure surface and leaves the retry to the next
+      // message.
       const retryAfterMs = this.earliestRetryMs(key, extraSources)
       throw new LlmError(
         `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
         + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
         MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+        retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : undefined,
       )
     } else {
       const counts = Object.entries(result.rejections)
