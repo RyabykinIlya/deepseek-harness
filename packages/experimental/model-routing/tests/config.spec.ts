@@ -154,6 +154,13 @@ describe('model-routing settings validation', () => {
       .toThrow('model-routing: excludeAfterFailures must be a positive integer')
   })
 
+  it('defaults the OpenRouter fallback to off', () => {
+    // Threads and subagents never record a choice, so the deployment default is
+    // the only value they ever act under: it must not spend on OpenRouter on
+    // their behalf.
+    expect(settings({}).fallbackToOpenRouter).toBe(false)
+  })
+
   it('refuses a quota cooldown that is zero or fractional', () => {
     expect(() =>{  validateSettings(settings({ quotaCooldownMs: 0 })) })
       .toThrow('model-routing: quotaCooldownMs must be a positive integer')

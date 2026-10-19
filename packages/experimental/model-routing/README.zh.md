@@ -57,7 +57,7 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 订阅来源通常是最便宜的候选，因此在排序中胜出并服务该轮。当它报告额度已用尽——`QUOTA` 或 `KEY_QUOTA`——该来源立即按 `quotaCooldownMs`（默认 600000）离开排序，而不必等到不稳定路由要攒满的 `excludeAfterFailures` 连续失败：额度用尽是明确答复而非抖动，中间的重试只会以同样方式失败。
 
-接下来发生什么取决于 OpenRouter 回退开关。`fallbackToOpenRouter`（默认 `true`）是部署级取值，每个会话都可以在输入栏的标签处选择自己的值；该选择是该会话日志中的 `model-routing/openrouter-fallback` 事件，因此能跨 Host 重启保留，而从未选择过的会话则持续跟随部署默认值的变化。每次决策都会把生效值记录为 `openRouterFallback`。
+接下来发生什么取决于 OpenRouter 回退开关。`fallbackToOpenRouter`（默认 `false`）是部署级取值，每个会话都可以在输入栏的标签处选择自己的值；该选择是该会话日志中的 `model-routing/openrouter-fallback` 事件，因此能跨 Host 重启保留，而从未选择过的会话则持续跟随部署默认值的变化。Thread 与子代理从不记录选择，因此默认值是它们唯一生效的取值。每次决策都会把生效值记录为 `openRouterFallback`。
 
 - **开启。** OpenRouter 仍是候选。重新决策会对整个 tier 排序，因此该轮继续运行在最便宜的健康候选上——若有其他模型的存活订阅排在前面则用它，否则用 OpenRouter endpoint。
 - **关闭。** 该模型只由订阅服务：对于 tier 的 `extraSources` 服务的每个模型，OpenRouter 候选都以 `subscription-only` 被拒。当所有订阅都被停用，该轮以 `MODEL_ROUTING_SUBSCRIPTION_LIMIT` 失败，剩余冷却时间同时出现在消息和 `providerRetryAfterMs` 中。这个字段让部署可以选择等待而不是失败：在 `retryPolicy.retryableCodes` 中列入该代码、并把 `backoff.maxDelayMs` 设为不小于 `quotaCooldownMs`，就会把该轮保持到最早恢复的订阅返回并重新决策，于是无人值守的会话自己继续。默认策略两者都不含，因此该失败直接上报，由下一条消息重试订阅。只由 OpenRouter 服务的模型在两种状态下都保留其 OpenRouter endpoint——否则这个开关会删掉模型，而不是为它们选择来源。

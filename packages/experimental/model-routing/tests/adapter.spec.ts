@@ -1207,6 +1207,9 @@ describe('TiersAdapter direct sources', () => {
       settings: {
         judgeEnabled: false,
         defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        // These stories describe rerouting among all sources, which is the
+        // opted-in deployment; the default-refused behavior has its own test.
+        fallbackToOpenRouter: true,
         ...over.settings,
       },
       ...over.responses === undefined ? {} : { responses: over.responses },

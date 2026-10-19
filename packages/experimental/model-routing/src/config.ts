@@ -422,10 +422,11 @@ export const DEFAULT_TRUSTED_UNKNOWN_PROVIDERS: readonly string[] = [
 
 /**
  * What a Session that never chose a fallback setting follows, and what a
- * decision that recorded none is read as: OpenRouter may serve an exhausted
- * subscription unless somebody says otherwise.
+ * decision that recorded none is read as: an exhausted subscription fails the
+ * turn rather than spending on OpenRouter, and a Session opts in from the
+ * composer chip when it wants the fallback.
  */
-export const DEFAULT_OPENROUTER_FALLBACK = true
+export const DEFAULT_OPENROUTER_FALLBACK = false
 
 /** Runtime schema for {@link Config}. */
 export const Config = z.object({
@@ -509,9 +510,9 @@ export const Config = z.object({
     .volatile(),
   excludeAfterFailures: z.number().default(5).volatile(),
   excludeAfterFailureMs: z.number().default(600000).volatile(),
-  // On by default: the route's cheapest candidate is usually a subscription
-  // source, and stopping a turn rather than paying for one is a choice the
-  // person should make per Session, not one a deployment default makes for them.
+  // Off by default: OpenRouter costs money while the subscription is already
+  // paid for, so serving an exhausted subscription from it is a choice a Session
+  // makes for itself — never a deployment default made on its behalf.
   fallbackToOpenRouter: z.boolean().default(DEFAULT_OPENROUTER_FALLBACK).volatile(),
   quotaCooldownMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),

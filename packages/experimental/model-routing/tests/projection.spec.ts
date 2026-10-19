@@ -120,7 +120,7 @@ describe('modelRoutingView', () => {
       boundary: 'start',
       decidedAt: 42,
       unpinned: false,
-      openRouterFallback: true,
+      openRouterFallback: false,
     })
   })
 
