@@ -152,6 +152,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 - 家族来自目录的 `canonical_slug`，因此只以不带日期的 id 发布的模型——包括所有 OpenRouter 的 `~别名`——没有家族，也永远不会移动。
 - 诊断文件只追加、从不轮转。每一行有界，文件本身无界：启用它的部署自行负责其保留策略。
 - 直连来源自己声明价格与 `tools` 能力；没有任何东西测量它的 status、uptime 或 quantization，因此这些过滤器对它保持中性。若部署需要其中某一项产生约束，应当把它写进来源的配置，而不是期待测量值出现。
+- 直连来源自身不声明输入模态，因此模态过滤器对该模型的每个来源都读取其规范 id 在 OpenRouter 目录中的条目。若订阅提供方在可接受的输入上与 OpenRouter 不同，就会被 OpenRouter 的声明过滤：2026-10-19 实测 `zai` 的 `glm-5.3` 对图片部分返回 `400 (1210) messages.content.type is invalid, allowed values: ['text']`，而同样的请求去掉图片即可成功，与目录一致。会话历史中一旦含有图片，该要求会持续整个会话，因此纯文本来源直到新会话开始前都不会参与。
 - 只要失败发生在第一个内容分片之前，默认就会 reroute；`noRerouteCodes` 列出的是任何候选都无法服务的例外：`CONTEXT_WINDOW_EXCEEDED`（属于模型窗口，补救办法是压缩）、`IMAGE_OFFLOAD_REQUIRED`（所有路由共享的图片预算）与 `ABORTED`（请求已取消）。因此，分类法从未见过的提供方拒绝默认也会 reroute，代价是对一个处处无效的请求最多多花 `maxReroutes` 次切换到其他候选。
 
 <a id="dev-note"></a>

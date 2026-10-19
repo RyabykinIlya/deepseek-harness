@@ -1386,6 +1386,41 @@ describe('TiersAdapter direct sources', () => {
     })
   })
 
+  it('never dispatches a subscription whose model the catalog shows as text-only to an image request', async () => {
+    // Measured 2026-10-19: z.ai answers an image part with `400 (1210)
+    // messages.content.type is invalid, allowed values: ['text']`, while the same
+    // request without one succeeds. A direct source therefore inherits its
+    // modality from the canonical id's catalog entry, and an image turn must
+    // reach a model that accepts one rather than 400 on the subscription.
+    const h = await harness({
+      tiers: [{
+        ...MIMO,
+        models: ['z-ai/glm-5.3', 'z-ai/glm-5.3-vision'],
+        extraSources: [{ ...PLAN, modelMap: { 'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":1e-8}' } }],
+      }],
+      endpoints: {
+        'z-ai/glm-5.3': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3-vision': [endpointOf('novita/fp8', 1.2e-7)],
+      },
+      catalog: [
+        { id: 'z-ai/glm-5.3', canonicalSlug: 'z-ai/glm-5.3-20260920', inputModalities: ['text'] },
+        { id: 'z-ai/glm-5.3-vision', canonicalSlug: 'z-ai/glm-5.3-vision-20260920', inputModalities: ['text', 'image'] },
+      ],
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: false,
+      },
+    })
+    await run(h.adapter, imageRequest())
+    expect(h.sent).toHaveLength(1)
+    expect(h.sent[0]?.options.provider).toBe('openrouter')
+    expect(h.sent[0]?.options.model).toBe('z-ai/glm-5.3-vision')
+    // The subscription is cheaper and still never ran: the modality filter, not
+    // the price, decided this turn.
+    expect(h.events[0]).toMatchObject({ model: 'z-ai/glm-5.3-vision', source: { kind: 'openrouter' } })
+  })
+
   it('names the filters, not the quota, when a live subscription fails one of them', async () => {
     // "Nothing ranked" has two causes worth telling apart: every subscription is
     // benched on its quota, or a subscription is available and fails a filter.
