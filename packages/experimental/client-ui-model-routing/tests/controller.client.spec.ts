@@ -20,6 +20,7 @@ const TIERS: ModelRoutingSettings['tiers'] = [
     contextWindow: 1_000_000,
     maxTokens: 32_768,
     input: ['text'],
+    imageInput: 'require',
     minQuantization: 'fp8',
     unknownQuantization: 'trusted',
     free: 'prefer',
