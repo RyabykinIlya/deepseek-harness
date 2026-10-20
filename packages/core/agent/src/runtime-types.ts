@@ -121,7 +121,6 @@ export type PreStepDecision =
 /** Action returned by a listener that owns model-request recovery. */
 export type RequestErrorAction =
   | { kind: 'retry' }
-  | { kind: 'fallback'; provider: string; model: string; chainId: string; stepIndex: number }
   | undefined
 
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
