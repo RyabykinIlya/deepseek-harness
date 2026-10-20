@@ -1,0 +1,85 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/llm/llm-fallback/README.md
+/:
+  en: 576945e996412d15
+  zh: d76cee720664839a
+/deepseek-ai-dsh-llm-fallback:
+  en: 531924548dd46162
+  zh: ea1bec79ef16fd01
+/deepseek-ai-dsh-llm-fallback/summary:
+  en: 86a73d8daa3fc3be
+  zh: a212ebd25bc3c370
+/deepseek-ai-dsh-llm-fallback/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-llm-fallback/use-this-package:
+  en: 33b9b45d11e56011
+  zh: 3c8e119a18db2925
+/deepseek-ai-dsh-llm-fallback/use-this-package/when-to-choose-it:
+  en: 8c5f39af13846b59
+  zh: 23532b8e06b6a515
+/deepseek-ai-dsh-llm-fallback/use-this-package/minimal-configuration:
+  en: db87fb2b69decee1
+  zh: 05c329a293c05011
+/deepseek-ai-dsh-llm-fallback/use-this-package/how-a-chain-is-chosen:
+  en: 4fca47ffd381e307
+  zh: 5fc1c922db30f6fa
+/deepseek-ai-dsh-llm-fallback/use-this-package/ordering-with-llm-retry:
+  en: 6ac73120c7cfe60c
+  zh: 732c0ca0e5e9bf7a
+/deepseek-ai-dsh-llm-fallback/use-this-package/what-happens-on-exhaustion:
+  en: 57ef90c30e9690d8
+  zh: 561d85f85f3b7d04
+/deepseek-ai-dsh-llm-fallback/use-this-package/cost-note:
+  en: 2b7e5e7d7153c51d
+  zh: c5f87630e4376c95
+/deepseek-ai-dsh-llm-fallback/use-this-package/what-you-can-observe:
+  en: fb4a3c68675cd5c0
+  zh: e3f11e1153e4243a
+/deepseek-ai-dsh-llm-fallback/use-this-package/failures-and-recovery:
+  en: fcd276c4f33791c6
+  zh: 636dfc68ef3361bb
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation:
+  en: cef3289094f94c25
+  zh: c7f40ff6e4e56de6
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation/design-philosophy:
+  en: 349c1b1c6e0a0f56
+  zh: b45028e2336a4fa4
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation/source-map:
+  en: 28db70196762472b
+  zh: 82cff15bb06b2cc4
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation/recovery-flow:
+  en: b0f93cb513e8cae2
+  zh: 16980a07a3324d2c
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation/progress-state:
+  en: 964554e183547270
+  zh: 882d88c00055618c
+/deepseek-ai-dsh-llm-fallback/understand-the-implementation/waterfall-composition:
+  en: dfcd870bbedd30e8
+  zh: b494d026c501cb3a
+/deepseek-ai-dsh-llm-fallback/further-exploration:
+  en: 2459d04112e344af
+  zh: fd1788f1d30bb193
+/deepseek-ai-dsh-llm-fallback/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-llm-fallback/model-experience/model-request-recovery:
+  en: 8496b7aefbe6fa20
+  zh: ed7b60ef09380ec4
+/deepseek-ai-dsh-llm-fallback/model-experience/model-request-recovery/what-the-model-sees:
+  en: aff3411627541548
+  zh: b26d4f5b83bb2689
+/deepseek-ai-dsh-llm-fallback/model-experience/model-request-recovery/token-effect:
+  en: ffe5f97a9eeb947b
+  zh: 57246d9f94f02e2d
+/deepseek-ai-dsh-llm-fallback/model-experience/model-request-recovery/kv-cache-effect:
+  en: 42aa739fd9ae1cce
+  zh: 47b9b6a8afb5bac5
+/deepseek-ai-dsh-llm-fallback/known-limitations-and-deferred-work:
+  en: fb9d6e32d6c645ff
+  zh: 91fa3e05588bc48f
+/deepseek-ai-dsh-llm-fallback/known-limitations-and-deferred-work/dev-note:
+  en: d2d5cf76eb637b57
+  zh: c3c0956ab176b4cf

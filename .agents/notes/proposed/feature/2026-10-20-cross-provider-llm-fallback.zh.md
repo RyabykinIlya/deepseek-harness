@@ -39,7 +39,7 @@ Status: proposed
 
 ### 进度状态
 
-进度状态是以 `(turn, step)` 为键的内存 `Map`，在 `step/start` 和 `turn/end` 时重置。Durable 部分只有已有的 `llm/fallback` 事件（非表面的尝试日志）。待处理记录由 `agent/request` 恰好消费一次；同一步骤上重复的 `agent/request` 不会复用该过渡。
+进度状态是按 agent 分槽的 `WeakMap` 中的一个槽位 — `lastProposed`（插件 `agent/request` 监听器为此 `(turn, step)` 最后返回的 `(provider, model)` 对）与 `pending`（计划的过渡）。待处理由 `agent/request` 恰好消费一次；无需重置监听器，因为 `(turn, step)` 在会话内永不重复，`lastProposed` 在每次请求时覆写，而未被消费的 `pending` 仅阻止对同一 `(turn, step)` 的重复前进 — 即循环卫士。Durable 部分只有已有的 `llm/fallback` 会话事件（非表面的尝试日志），带 `ignorable: true` 追加：它是信息性的，读取方可以跳过。
 
 ### 配置
 

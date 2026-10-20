@@ -10671,6 +10671,168 @@
       }
     },
     {
+      "key": "event:llm/fallback",
+      "kind": "event",
+      "event": "llm/fallback",
+      "surface": false,
+      "digest": "55933918f0652f7c9d8f1e67fea8e3434cc7ed07cf79c9bced52c502064cf9ed",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "attempt",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "chainId",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "chainIntent",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "failure",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "from",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "model",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "step",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "turn",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "code",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "message",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "offloadImages",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "providerRetryAfterMs",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "requestId",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "status",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "model",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 3,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "literal",
+            "value": "llm/fallback"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:llm/retry",
       "kind": "event",
       "event": "llm/retry",
@@ -23758,6 +23920,7 @@
         "packages/subagent/tool-subagent/src/model-selection.ts#AllowedModelRoute"
       ],
       "sources": [
+        "packages/llm/llm-fallback/src/types.ts:27",
         "packages/session/session-title/src/types.ts:20",
         "packages/subagent/tool-subagent/src/model-selection.ts:9"
       ]
@@ -24972,6 +25135,7 @@
         "packages/interaction/commands/src/brand.ts#CommandId",
         "packages/interaction/user-approval/src/types.ts#ApprovalRequestId",
         "packages/jobs/jobs/src/brand.ts#JobId",
+        "packages/llm/llm-fallback/src/brand.ts#FallbackChainId",
         "packages/llm/llm-retry/src/brand.ts#RetryId",
         "packages/llm/llm/src/brand.ts#MessageId",
         "packages/llm/llm/src/brand.ts#ProviderRequestId",
@@ -24999,6 +25163,7 @@
         "packages/interaction/commands/src/brand.ts:31",
         "packages/interaction/user-approval/src/types.ts:17",
         "packages/jobs/jobs/src/brand.ts:19",
+        "packages/llm/llm-fallback/src/brand.ts:10",
         "packages/llm/llm-retry/src/brand.ts:4",
         "packages/llm/llm/src/brand.ts:16",
         "packages/llm/llm/src/brand.ts:31",
@@ -25171,6 +25336,11 @@
     },
     {
       "digest": "557e148d30b79ee48645850832b30c717d7c3b64641deb5d6133b8b4e91ee0b8",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "55933918f0652f7c9d8f1e67fea8e3434cc7ed07cf79c9bced52c502064cf9ed",
       "names": [],
       "sources": []
     },
@@ -25588,6 +25758,15 @@
       "digest": "6cf082d0fb6034dea61636787ff0ddf43b6e59aad71e644435a479bc9b83ad65",
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "6d46e4ea8b5133ce78a9243a695c69a766d966cfd60b3432a3a2590c650c2c42",
+      "names": [
+        "packages/llm/llm-fallback/src/types.ts#LlmFallbackEventData"
+      ],
+      "sources": [
+        "packages/llm/llm-fallback/src/types.ts:11"
+      ]
     },
     {
       "digest": "6dacb1584f2bfbe209dc6b6f578d51da6d55595f64d0e63c727c98f359278def",
@@ -27242,6 +27421,11 @@
     },
     {
       "digest": "d85590a5675c6e2fd8164e5792a6cceac714605b8ac228adae5ee668facb1490",
+      "names": [],
+      "sources": []
+    },
+    {
+      "digest": "d8f1711d3fe4a5b7912bd9fbccc679427b852e6244f0338e8cd7c07df28ecb9b",
       "names": [],
       "sources": []
     },
