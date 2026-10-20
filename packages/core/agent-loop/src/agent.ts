@@ -25,6 +25,7 @@ import {
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
 import { assertNever, deepFreeze } from '@deepseek-ai/dsh-util-values'
+import type { FallbackChainId } from '@deepseek-ai/dsh-llm-fallback'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
@@ -520,6 +521,22 @@ export class ReactLoopAgent implements Agent {
             () => Promise.resolve<RequestErrorAction>(undefined),
           )
           signal.throwIfAborted()
+          if (action?.kind === 'fallback') {
+            // Cross-provider fallback: update agent options and retry the step
+            this.options.provider = action.provider
+            this.options.model = action.model
+            // Log the fallback in the session
+            this.session.append('llm/fallback', {
+              chainId: action.chainId as FallbackChainId,
+              attempt: action.stepIndex,
+              provider: action.provider,
+              model: action.model,
+              intent: 'agent-loop',
+              previousFailure: finish.failure,
+              success: false,
+            })
+            continue
+          }
           if (action?.kind !== 'retry') {
             throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
           }

@@ -21,6 +21,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../llm/llm-fallback"
+    },
+    {
       "path": "../../core/session"
     },
     {
