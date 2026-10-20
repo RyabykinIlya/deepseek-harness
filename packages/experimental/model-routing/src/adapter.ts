@@ -1403,7 +1403,13 @@ export class TiersAdapter extends LlmAdapter {
     /** The dispatch failure this re-decision answers; recorded on the decision. */
     failure: { tag: string | undefined; code: string }
   }): Promise<Pin> {
-    return this.decide({ ...input, boundary: 'failure' }).then(decision => decision.pin)
+    // Re-read the session's openRouterFallback in case the user toggled it
+    // while this request was in a retry loop.
+    const currentFallback = input.session
+      ? this.deps.routingState(input.session)?.openRouterFallback
+      : input.openRouterFallback
+    const effectiveFallback = currentFallback ?? input.openRouterFallback
+    return this.decide({ ...input, boundary: 'failure', openRouterFallback: effectiveFallback }).then(decision => decision.pin)
   }
 
   /**
