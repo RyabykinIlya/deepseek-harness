@@ -22,4 +22,4 @@ export type {
 export { FallbackChainId } from './brand.ts'
 
 // Re-export config
-export { Config as ConfigSchema, resolveFallbackConfig } from './config.ts'
+export { resolveFallbackConfig } from './config.ts'

@@ -5,28 +5,41 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
-import type { LlmCallConfig, LlmFailure } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { FallbackConfig, LlmFallbackEventData } from './types.ts'
 import { FallbackChainId } from './brand.ts'
 import { resolveFallbackConfig } from './config.ts'
 
-// The 'agentPreset' projection is registered by the agent-preset package.
-// Declare it here so stateOf('agentPreset') is typed correctly.
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** The active agent preset name for this session. */
-    agentPreset: string
-  }
-}
+// Type-only import to merge the canonical agentPreset declaration (string | null).
+// The runtime schema lives in agent-preset-registry; we only need the declaration merge.
+import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 
 export const name = 'llm-fallback'
-export const inject = ['agents', 'sessionProjections'] as const
+export const inject = ['agents', 'sessionProjections']
 
 /** Plugin configuration: fallback chains keyed by intent. */
 export type Config = FallbackConfig
+
+/** Runtime schema for {@link Config}. */
+export const Config = z.object({
+  chains: z.dict(
+    z.object({
+      id: z.string().required(false),
+      name: z.string().required(false),
+      steps: z.array(
+        z.object({
+          provider: z.string().required(),
+          model: z.string().required(),
+          label: z.string().required(false),
+        }),
+      ).min(1),
+    }),
+  ),
+}) as unknown as z<Config>
 
 /**
  * Per-agent slot for fallback progress tracking.
@@ -57,6 +70,7 @@ interface Slot {
 function presetOf(registry: SessionProjectionRegistry, session: Session): string | undefined {
   try {
     // stateOf throws if the projection is not registered; treat as absent.
+    // agentPreset is string | null; normalize null to undefined.
     return registry.stateOf(session, 'agentPreset') ?? undefined
   } catch {
     return undefined
@@ -79,11 +93,14 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     { agent, turn, step, signal },
     next: () => Promise<LlmCallConfig>,
   ): Promise<LlmCallConfig> => {
-    if (signal.aborted) {
-      return next()
-    }
-
     const proposed = await next()
+
+    // If the turn was aborted after next() returned, don't consume the pending
+    // record — the loop throws right after the waterfall; a dead (turn,step)
+    // pending is harmless, a consumed-but-unused one is not.
+    if (signal.aborted) {
+      return proposed
+    }
 
     let slot = slots.get(agent)
     if (!slot) {
@@ -93,7 +110,7 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
 
     // If there's a pending transition for this exact (turn, step), consume it.
     if (slot.pending && slot.pending.turn === turn && slot.pending.step === step) {
-      const { to, chainId, chainIntent, attempt, from } = slot.pending
+      const { to } = slot.pending
       delete slot.pending // consume exactly once
 
       const overridden: LlmCallConfig = {
@@ -105,22 +122,6 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
       // Record the pair we actually returned so request-error can match it.
       slot.lastProposed = { turn, step, provider: to.provider, model: to.model }
 
-      // Append durable session event for the fallback transition.
-      agent.session.append('llm/fallback', {
-        turn,
-        step,
-        provider: to.provider,
-        model: to.model,
-        chainId,
-        chainIntent,
-        attempt,
-        from,
-        // The failure that triggered this is not directly available here;
-        // it was recorded by the request-error listener that created the pending.
-        // We pass a minimal failure placeholder — the real failure is logged by llm-retry.
-        failure: { code: 'fallback', message: 'provider fallback', retryable: false } as LlmFailure,
-      } satisfies LlmFallbackEventData)
-
       return overridden
     }
 
@@ -131,15 +132,16 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
 
   // --- agent/request-error listener ---
   const disposeErrorListener = ctx.on('agent/request-error', async (
-    { agent, turn, step, provider, failure: _failure, signal },
+    { agent, turn, step, provider, failure, signal },
     next: () => Promise<RequestErrorAction>,
   ): Promise<RequestErrorAction> => {
-    if (signal.aborted) {
-      return next()
-    }
-
     // 1. Let downstream (llm-retry, etc.) decide first.
     const downstream = await next()
+
+    // If the turn was aborted after downstream settled, don't mutate state.
+    if (signal.aborted) {
+      return downstream
+    }
 
     // 2. If downstream owns recovery (retry on same provider), don't interfere.
     if (downstream?.kind === 'retry') {
@@ -164,10 +166,8 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     }
 
     // 5. Resolve chain for this agent's session.
-    const registry = ctx.get('sessionProjections')
-    if (!registry) {
-      return downstream
-    }
+    // ctx.sessionProjections is injected and guaranteed available at apply time.
+    const registry = ctx.sessionProjections
 
     const intent = presetOf(registry, agent.session)
     if (!intent) {
@@ -190,7 +190,6 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
 
     // 7. Advance to next step.
     // We already checked currentIndex >= chain.steps.length - 1 above, so this is safe.
-    // Use array indexing with explicit undefined check to satisfy strict null checks.
     const nextStep = chain.steps[currentIndex + 1]
     if (!nextStep) return downstream // Should never happen due to guard above
     const attempt = currentIndex + 2 // 1-based: primary=1, first fallback=2, etc.
@@ -204,6 +203,22 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
       chainIntent: intent,
       attempt,
     }
+
+    // Append durable session event for the fallback transition.
+    // We do this HERE (not in agent/request) so the real failure from the
+    // payload is recorded, matching llm-retry's precedent of appending before
+    // the cancellable gap.
+    agent.session.append('llm/fallback', {
+      turn,
+      step,
+      provider: nextStep.provider,
+      model: nextStep.model,
+      chainId: chain.id,
+      chainIntent: intent,
+      attempt,
+      from: { provider: last.provider, model: last.model },
+      failure,
+    } satisfies LlmFallbackEventData)
 
     // Return retry so the loop restarts the step; agent/request will consume pending.
     return { kind: 'retry' }

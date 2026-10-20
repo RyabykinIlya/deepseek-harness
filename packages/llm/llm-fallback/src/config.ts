@@ -41,6 +41,8 @@ export const Config = z.object({
 /**
  * Validate and resolve a fallback configuration into a Map of validated chains.
  * Validation is performed ONCE at mount time; errors name the chain key.
+ * The schemastery schema alone cannot name the chain, so this function
+ * provides chain-keyed error messages for direct callers.
  *
  * @param config - raw plugin configuration
  * @returns Map from intent to resolved, frozen FallbackChain
@@ -52,7 +54,8 @@ export function resolveFallbackConfig(config: FallbackConfig): Map<string, Fallb
   for (const [intent, chainInput] of Object.entries(config.chains)) {
     const steps = chainInput.steps
 
-    // Validate: empty steps array (caught by schema min(1), but guard anyway)
+    // Validate: empty steps array (schema min(1) catches this, but we re-check
+    // to name the chain in the error message)
     if (steps.length === 0) {
       throw new Error(`llm-fallback: chain "${intent}" has no steps`)
     }
@@ -79,8 +82,8 @@ export function resolveFallbackConfig(config: FallbackConfig): Map<string, Fallb
     const chainId = chainInput.id ? FallbackChainId(chainInput.id) : FallbackChainId(randomUUID())
 
     // Build resolved chain with frozen steps
-    // steps may be readonly from schemastery validation; create mutable copy
-    const mutableSteps: FallbackStep[] = [...steps] as FallbackStep[]
+    // FallbackStepInput and FallbackStep are structurally identical; spread creates mutable copy
+    const mutableSteps: FallbackStep[] = [...steps]
     const chain: FallbackChain = {
       id: chainId,
       name: chainInput.name ?? intent,
