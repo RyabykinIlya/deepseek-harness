@@ -1296,7 +1296,7 @@ export class TiersAdapter extends LlmAdapter {
         if (!reroutable) throw error
         const failed = tagOfPin(pin)
         const spentCode = this.quotaSpent(pin, error.code)
-        this.excludeEndpoint(key, pin, error.code, settings)
+        this.excludeEndpoint(key, settings, pin, error.code)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: error.code } })
         reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
         continue
@@ -1309,14 +1309,14 @@ export class TiersAdapter extends LlmAdapter {
         await iterator.return?.(undefined)
         const failed = tagOfPin(pin)
         const spentCode = this.quotaSpent(pin, failure)
-        this.excludeEndpoint(key, pin, failure, settings)
+        this.excludeEndpoint(key, settings, pin, failure)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: failure } })
         reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
         continue
       }
       if (failure !== undefined) {
         this.failures.add(key)
-        this.excludeEndpoint(key, pin, failure, settings)
+        this.excludeEndpoint(key, settings, pin, failure)
       } else if (chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)) {
         this.failures.delete(key)
         this.clearFailureStreak(key, pin)
@@ -1337,7 +1337,7 @@ export class TiersAdapter extends LlmAdapter {
             // endpoint. Excluding the failed one is still required: without it
             // the next turn's failure boundary re-decides onto the same one.
             this.failures.add(key)
-            this.excludeEndpoint(key, pin, error instanceof LlmError ? error.code : 'PI_AI_ERROR', settings)
+            this.excludeEndpoint(key, settings, pin, error instanceof LlmError ? error.code : 'PI_AI_ERROR')
             throw error
           }
           if (next.done === true) {
@@ -1353,7 +1353,7 @@ export class TiersAdapter extends LlmAdapter {
               // replayed on another endpoint. Excluding the failed one is still
               // required: without it the failure boundary re-decides to the same
               // endpoint and the next turn fails on it again.
-              this.excludeEndpoint(key, pin, code, settings)
+              this.excludeEndpoint(key, settings, pin, code)
             }
             yield SUCCESSFUL_FINISH.has(item.reason.kind)
               ? { ...item, replayState: wrapReplay(item.replayState, pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind, pin.model) }
@@ -1502,8 +1502,19 @@ export class TiersAdapter extends LlmAdapter {
    * A subscription that reports an exhausted quota is benched on the first
    * failure for `quotaCooldownMs`, not after the configured streak: the source is
    * not flaky, it is spent, and every attempt in between would fail the same way.
+   * The whole route is benched rather than the one candidate that reported it: an
+   * exhausted quota belongs to the account or key pool behind the route, so every
+   * model it serves answers the same `QUOTA`, and walking them one by one spends
+   * the turn on answers already known. The bench covers every tier's candidates
+   * of that route, not only the deciding tier's: the account is spent for all of
+   * them, and a session that changes tier would otherwise pay the same 429 again.
    */
-  private excludeEndpoint(key: string, pin: Pin, code: string, settings: RoutingSettings): void {
+  private excludeEndpoint(
+    key: string,
+    settings: RoutingSettings,
+    pin: Pin,
+    code: string,
+  ): void {
     const tag = tagOfPin(pin)
     if (tag !== undefined) {
       const streaks = this.failureStreaks.get(key) ?? new Map<string, number>()
@@ -1513,7 +1524,17 @@ export class TiersAdapter extends LlmAdapter {
       const exhausted = this.quotaSpent(pin, code)
       if (exhausted || streak >= settings.excludeAfterFailures) {
         const recorded = this.excluded.get(key) ?? new Map<string, number>()
-        recorded.set(tag, this.deps.now() + (exhausted ? settings.quotaCooldownMs : settings.excludeAfterFailureMs))
+        const expiry = this.deps.now() + (exhausted ? settings.quotaCooldownMs : settings.excludeAfterFailureMs)
+        recorded.set(tag, expiry)
+        if (exhausted) {
+          for (const tier of settings.tiers) {
+            for (const candidates of this.directCandidates(tier).values()) {
+              for (const candidate of candidates) {
+                if (candidate.route === pin.source.kind) recorded.set(`${candidate.route}:${candidate.id}`, expiry)
+              }
+            }
+          }
+        }
         this.excluded.set(key, recorded)
       }
     }

@@ -283,13 +283,17 @@ export interface Config {
    */
   fallbackToOpenRouter: Volatile<boolean>
   /**
-   * How long a subscription source that reported an exhausted quota stays out of
-   * the ranking, in milliseconds (default 600000).
+   * How long the route of a subscription source that reported an exhausted quota
+   * stays out of the ranking, in milliseconds (default 600000).
    *
-   * Separate from {@link excludeAfterFailureMs} because quota codes bench on the
-   * first failure rather than after a streak: every request in between would
-   * otherwise fail on the same exhausted source, and the wait is what makes the
-   * next turn try the subscription again.
+   * The whole route is benched, not the one model that reported the failure: an
+   * exhausted quota belongs to the account or key pool behind the route, so its
+   * sibling models answer the same code. Every tier that serves the route pays
+   * the same bench, because the account is spent for all of them. Separate from
+   * {@link excludeAfterFailureMs} because quota codes bench on the first failure
+   * rather than after a streak: every request in between would otherwise fail on
+   * the same exhausted source, and the wait is what makes the next turn try the
+   * subscription again.
    */
   quotaCooldownMs: Volatile<number>
   freeForSubagents: Volatile<boolean>
