@@ -1,26 +1,25 @@
 /**
  * Cross-provider LLM fallback router for the DeepSeek Harness.
  *
- * This package provides the `llmFallback` service that enables automatic
- * fallback to alternative LLM providers when the primary provider fails.
+ * This package enables automatic fallback to alternative LLM providers
+ * when the primary provider fails, using the agent loop's request waterfalls.
  *
  * @module @deepseek-ai/dsh-llm-fallback
  */
 
 export { name, inject, Config, apply } from './index-plugin.ts'
 
-// Re-export types
+// Re-export live types
 export type {
+  LlmFallbackEventData,
   FallbackStep,
   FallbackChain,
+  FallbackChainInput,
+  FallbackStepInput,
   FallbackConfig,
-  ResolvedFallbackChain,
-  ResolvedFallbackResult,
-  FallbackExecutionState,
-  LlmFallbackRouter,
 } from './types.ts'
 
-export { FallbackChainId, FallbackAttemptId } from './brand.ts'
+export { FallbackChainId } from './brand.ts'
 
 // Re-export config
-export { FallbackConfigSchema, resolveFallbackConfig, DEFAULT_FALLBACK_CONFIG } from './config.ts'
+export { resolveFallbackConfig } from './config.ts'
