@@ -279,7 +279,18 @@ export class TiersAdapter extends LlmAdapter {
   private readonly reported = new Set<string>()
   /** Whether the inner route dispatches one id, remembered for this adapter's life. */
   private readonly dispatchable = new Map<string, boolean>()
-  private freeBlockedUntil = 0
+  /**
+   * Free endpoints benched until the next UTC midnight, keyed by endpoint tag.
+   *
+   * A free model that answers `RATE_LIMIT` has spent its own daily cap, which
+   * resets at midnight, so the bench lasts until that reset rather than for
+   * `excludeAfterFailureMs`. It is account-wide rather than per Session for the
+   * same reason the cap is: one Session meeting the refusal takes the model out
+   * of every other Session's ranking instead of letting each one rediscover it.
+   * The account-wide daily free budget is enforced separately in
+   * {@link freeAdmission}, which reads it before a free endpoint is ranked.
+   */
+  private readonly freeModelsBlockedUntil = new Map<string, number>()
 
   constructor(
     private readonly deps: TiersAdapterDeps,
@@ -1134,7 +1145,16 @@ export class TiersAdapter extends LlmAdapter {
     this.deps.warn(message)
   }
 
-  /** Whether this caller may spend a turn on a free endpoint right now. */
+  /**
+   * Whether this caller may spend a turn on a free endpoint right now.
+   *
+   * The account-wide daily budget is the one shared free limit: a caller that
+   * may not use free endpoints at all, and a budget whose remainder is below
+   * `freeMinRemaining`, both answer false for every free endpoint of every tier.
+   * A single model's own cap is not decided here — that is what the per-model
+   * bench in `excludeEndpoint` records — so a model that spent its cap leaves
+   * the ranking while the tier's other free models stay in it.
+   */
   private async freeAdmission(input: {
     settings: RoutingSettings
     tier: TierSettingsSnapshot
@@ -1142,7 +1162,7 @@ export class TiersAdapter extends LlmAdapter {
   }): Promise<boolean> {
     const { settings, tier, session } = input
     const subagent = session?.header.origin === 'subagent'
-    let allowFree = (!subagent || settings.freeForSubagents) && this.deps.now() >= this.freeBlockedUntil
+    let allowFree = !subagent || settings.freeForSubagents
     if (allowFree && tier.free !== 'off') {
       const usage = await this.deps.keyInfo.freeUsage(settings.keyInfoTtlMs, new AbortController().signal)
       // An unreadable counter does not block free endpoints: refusing them on a
@@ -1152,7 +1172,10 @@ export class TiersAdapter extends LlmAdapter {
     return allowFree
   }
 
-  /** The candidates this session's recent failures excluded, still live, split by kind. */
+  /**
+   * The candidates this Session's recent failures excluded, still live, split by
+   * kind, plus every free model benched account-wide until the daily reset.
+   */
   private excludedTagsOf(key: string): { tags: ReadonlySet<string>; sources: ReadonlySet<string> } {
     const now = this.deps.now()
     const recorded = this.excluded.get(key)
@@ -1175,6 +1198,12 @@ export class TiersAdapter extends LlmAdapter {
       else sources.add(tag)
     }
     if (recorded?.size === 0) this.excluded.delete(key)
+    // A free model that spent its own daily cap is out for every Session, not
+    // only the one that met the refusal: the cap belongs to the account.
+    for (const [tag, until] of this.freeModelsBlockedUntil) {
+      if (until <= now) this.freeModelsBlockedUntil.delete(tag)
+      else tags.add(tag)
+    }
     return { tags, sources }
   }
 
@@ -1508,6 +1537,13 @@ export class TiersAdapter extends LlmAdapter {
    * the turn on answers already known. The bench covers every tier's candidates
    * of that route, not only the deciding tier's: the account is spent for all of
    * them, and a session that changes tier would otherwise pay the same 429 again.
+   *
+   * A free candidate that reports a rate limit is the per-model case of the same
+   * reasoning: the model's own daily cap is spent, so it is benched on the first
+   * failure until the reset at the next UTC midnight, account-wide, and the
+   * re-decision rotates to the tier's next free model. The account-wide free
+   * budget is not decided here — {@link freeAdmission} reads it before ranking,
+   * which is what stops every free endpoint when the shared limit is spent.
    */
   private excludeEndpoint(
     key: string,
@@ -1539,8 +1575,15 @@ export class TiersAdapter extends LlmAdapter {
       }
     }
     const endpoint = pin.endpoint
-    const free = endpoint !== undefined && endpoint.promptPrice === 0 && endpoint.completionPrice === 0
-    if (free && code === 'RATE_LIMIT') this.freeBlockedUntil = nextUtcMidnight(this.deps.now())
+    // A free model answering `RATE_LIMIT` has spent its own daily cap, which
+    // resets at midnight. Benching that model alone — on its first failure,
+    // because a spent cap is an answer rather than a blip — leaves the tier's
+    // other free models ranked, so the re-decision rotates to the next one
+    // instead of stopping every free endpoint until tomorrow.
+    if (endpoint !== undefined && endpoint.promptPrice === 0 && endpoint.completionPrice === 0
+      && code === 'RATE_LIMIT') {
+      this.freeModelsBlockedUntil.set(endpoint.slug, nextUtcMidnight(this.deps.now()))
+    }
   }
 
   /**

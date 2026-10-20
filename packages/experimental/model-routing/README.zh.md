@@ -39,6 +39,8 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 当该 tier 中没有任何候选模型被证明接受图片输入时，决策会以 `MODEL_ROUTING_NO_ENDPOINT` 失败，其消息按原因统计被拒绝的 endpoint，其中包含 `modality=<n>`——除非该 tier 设置了 `imageInput: 'omit'`：此时排序会去掉该要求再跑一次，由最便宜的候选完成该轮，发送的请求不含图片（见[排序](#ranking)）。目录读不出来会让每一个候选项都得到失败结果，并有一行警告说明原因是目录不可读。文本请求从不为模态读取目录，也不受该过滤器影响。
 
+`free` 决定一个 tier 如何对待不花任何费用的 endpoint：`off`（默认）拒绝它们，`prefer` 接纳它们并让零价格赢得排序，`only` 则不再接纳其他任何 endpoint——这样一个 tier 无法花钱，因为每一个付费 endpoint 都会以 `paid` 被拒绝。free endpoint 同时受两条限额约束。账户的共享每日预算在排序之前从 `GET /key`（`free_model_daily_requests`）读取，剩余请求数低于 `freeMinRemaining`（默认 20）时该路由就不再选取任何 free endpoint（`freeForSubagents` 默认为 false，让 subagent 完全不使用它们）。每个 free 模型还各自有一条上限，因此回答 `RATE_LIMIT` 的模型会在账户范围内被 bench 到下一个 UTC 午夜——两条限额共用的重置时刻——而失败后的重决策会轮换到该 tier 的下一个 free 模型。
+
 `validateSettings` 会拒绝该路由无法据以行动的 settings 值，包括不是路由模型 id 的 tier 名称、缺少 `author/` 的模型 id、落在 effort 列表之外的默认 effort、以及一对次序颠倒的 judge 阈值；它用一条消息指出第一个无法服务的字段。
 
 <a id="extra-sources"></a>

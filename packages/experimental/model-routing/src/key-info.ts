@@ -2,12 +2,13 @@
  * The account's free-model daily budget, read from `GET /key`.
  *
  * OpenRouter counts every `:free` request against one account-wide daily quota,
- * so a free tier that silently hits the ceiling mid-conversation turns into a
- * cascade of `RATE_LIMIT`s. The route reads this counter *before* picking a free
- * endpoint and keeps a paid one when the remaining budget is low; once a free
- * endpoint actually fails, the adapter blocks free endpoints until the next UTC
- * midnight. Both thresholds are configurable, and an unreadable counter blocks
- * nothing — the failure mode it protects against is worse than the one it causes.
+ * on top of each free model's own cap. This counter is the shared limit: the
+ * route reads it *before* picking a free endpoint and keeps a paid one when the
+ * remaining budget is low. A model's own cap is the adapter's per-model bench
+ * (`freeModelsBlockedUntil`), which takes just that model out of the ranking so
+ * the re-decision rotates to the next free one. Both thresholds are
+ * configurable, and an unreadable counter blocks nothing — the failure mode it
+ * protects against is worse than the one it causes.
  *
  * @module dsh-experimental-model-routing/key-info
  */
