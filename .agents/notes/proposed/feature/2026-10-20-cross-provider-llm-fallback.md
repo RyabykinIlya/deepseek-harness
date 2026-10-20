@@ -39,7 +39,7 @@ The chain step index grows monotonically and never re-matches a failed provider.
 
 ### Progress state
 
-Progress state is an in-memory `Map` keyed by `(turn, step)`, reset on `step/start` and `turn/end`. The durable part is only the existing `llm/fallback` session event (non-surface attempt log). A pending record is consumed exactly once by `agent/request`; a repeated `agent/request` on the same step does not reuse the transition.
+Progress state is one slot per agent in a `WeakMap` — `lastProposed` (the `(provider, model)` pair the plugin's `agent/request` listener last returned for that `(turn, step)`) and `pending` (the scheduled transition). A pending is consumed exactly once by `agent/request`; no reset listeners are needed because `(turn, step)` never repeats within a session, `lastProposed` is overwritten on every request, and an unconsumed `pending` only blocks re-advancing the same `(turn, step)` — the loop guard. The durable part is only the existing `llm/fallback` session event (non-surface attempt log), appended with `ignorable: true`: it is informational, and readers may skip it.
 
 ### Configuration
 
