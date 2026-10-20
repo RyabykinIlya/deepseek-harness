@@ -15,7 +15,7 @@ import { FallbackChainId } from './brand.ts'
 import { resolveFallbackConfig } from './config.ts'
 
 // Type-only import to merge the canonical agentPreset declaration (string | null).
-// The runtime schema lives in agent-preset-registry; we only need the declaration merge.
+// The canonical agentPreset declaration lives in agent-preset-registry; this import merges it for typing.
 import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 
 export const name = 'llm-fallback'
@@ -207,7 +207,8 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     // Append durable session event for the fallback transition.
     // We do this HERE (not in agent/request) so the real failure from the
     // payload is recorded, matching llm-retry's precedent of appending before
-    // the cancellable gap.
+    // the cancellable gap. The event is informational (no state reconstruction),
+    // so it carries ignorable: true — readers may skip it without data loss.
     agent.session.append('llm/fallback', {
       turn,
       step,
@@ -218,7 +219,7 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
       attempt,
       from: { provider: last.provider, model: last.model },
       failure,
-    } satisfies LlmFallbackEventData)
+    } satisfies LlmFallbackEventData, { ignorable: true })
 
     // Return retry so the loop restarts the step; agent/request will consume pending.
     return { kind: 'retry' }
@@ -230,3 +231,4 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     disposeErrorListener()
   }, 'llm-fallback: dispose waterfall listeners')
 }
+

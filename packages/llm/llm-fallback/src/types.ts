@@ -32,7 +32,10 @@ export interface LlmFallbackEventData {
 /** Declare the session event for durable logging via SessionEventMap. */
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
-    /** A fallback transition to the next chain step after a provider failure. */
+    /**
+     * A fallback transition to the next chain step after a provider failure.
+     * Appended with `ignorable: true` — readers may skip this informational attempt log.
+     */
     'llm/fallback': LlmFallbackEventData
   }
 }
@@ -92,3 +95,4 @@ export interface FallbackConfig {
   /** Fallback chains per intent. */
   chains: Record<string, FallbackChainInput>
 }
+
