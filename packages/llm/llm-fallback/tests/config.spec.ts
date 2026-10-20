@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { resolveFallbackConfig } from '../src/config.ts'
 import { FallbackChainId } from '../src/brand.ts'
+import { Config } from '../src/index.ts'
 
 describe('llm-fallback config', () => {
   it('resolves explicit config with multiple chains', () => {
@@ -192,5 +193,50 @@ describe('llm-fallback config', () => {
     const config = { chains: {} }
     const resolved = resolveFallbackConfig(config)
     expect(resolved.size).toBe(0)
+  })
+
+  it('resolves the config the mount path validates through the exported schema', () => {
+    // The Loader validates plugin config with the exported schemastery schema
+    // before apply() sees it; this resolves that validated value, so the
+    // mount-time path is what the semantics are asserted against.
+    const loaded = Config({
+      chains: {
+        coding: {
+          name: 'Coding',
+          steps: [
+            { provider: 'primary', model: 'model-a', label: 'Primary' },
+            { provider: 'fallback', model: 'model-b' },
+          ],
+        },
+      },
+    })
+
+    const resolved = resolveFallbackConfig(loaded)
+
+    expect([...resolved.keys()]).toEqual(['coding'])
+    expect(resolved.get('coding')).toMatchObject({
+      name: 'Coding',
+      steps: [
+        { provider: 'primary', model: 'model-a', label: 'Primary' },
+        { provider: 'fallback', model: 'model-b' },
+      ],
+    })
+  })
+
+  it('names the chain key when the schema-validated config carries a duplicate pair', () => {
+    const loaded = Config({
+      chains: {
+        duplicated: {
+          steps: [
+            { provider: 'p', model: 'm' },
+            { provider: 'p', model: 'm' },
+          ],
+        },
+      },
+    })
+
+    expect(() => resolveFallbackConfig(loaded)).toThrow(
+      'llm-fallback: chain "duplicated" has duplicate (provider, model) pair: p|m',
+    )
   })
 })
