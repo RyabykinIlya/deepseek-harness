@@ -29,7 +29,7 @@ Mount this plugin when agent runs should recover from terminal provider failures
 
 ### When to choose it
 
-Choose it when a composition runs the agent loop and wants cross-provider recovery at durable step boundaries. The plugin is a function plugin with a `chains` config; provider adapters such as `dsh-llm-deepseek` and `dsh-llm-pi-ai` own the `retryPolicy` for their routes. Skip it when the composition does not mount `dsh-llm-retry` — without it, every failure is terminal and the chain cannot advance.
+Choose it when a composition runs the agent loop and wants cross-provider recovery at durable step boundaries. The plugin is a function plugin with a `chains` config; provider adapters such as `dsh-llm-deepseek` and `dsh-llm-pi-ai` own the `retryPolicy` for their routes. Without `dsh-llm-retry` the chain still advances — on the first failure of each provider; mount `dsh-llm-retry` when each provider should first exhaust its own retry budget before the chain moves on.
 
 ### Minimal configuration
 
@@ -169,6 +169,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 
 - The `(provider, model)` strict match for chain indexing means a chain with duplicate pairs is rejected at mount time; the chain ID is generated if not provided.
 - The `ignorable: true` envelope on `llm/fallback` means a reader that does not know the type skips it per the marker instead of refusing the log — this is the same compatibility pattern as `llm/retry`.
-- Chain intent is the preset name; changing the preset mid-session does not re-resolve the chain — the chain is resolved once per `agent/request-error` from the current projection state.
+- Chain intent is the preset name; the chain is re-resolved from the current projection state at each `agent/request-error`, so a mid-session preset change affects the next transition, not any in-flight one.
 
 </details>

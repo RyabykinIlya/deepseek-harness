@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当组合运行 agent loop（智能体循环）并需要在持久步骤边界上进行跨提供方恢复时选择它。本插件是带 `chains` 配置的函数插件；`dsh-llm-deepseek` 与 `dsh-llm-pi-ai` 等提供方适配器拥有各自路由的 `retryPolicy`。当组合未挂载 `dsh-llm-retry` 时跳过它 — 没有它，每次失败都是终态，链无法前进。
+当组合运行 agent loop（智能体循环）并需要在持久步骤边界上进行跨提供方恢复时选择它。本插件是带 `chains` 配置的函数插件；`dsh-llm-deepseek` 与 `dsh-llm-pi-ai` 等提供方适配器拥有各自路由的 `retryPolicy`。未挂载 `dsh-llm-retry` 时链仍会前进 — 在每个提供方的首次失败时立即移动；若希望每个提供方先耗尽自身重试预算再前进链，请挂载 `dsh-llm-retry`。
 
 ### 最小配置
 
@@ -169,6 +169,6 @@ kind: "package-reference"
 
 - 对链索引的严格 `(provider, model)` 匹配意味着重复对的链在挂载时被拒绝；未提供时链 ID 自动生成。
 - `llm/fallback` 上的 `ignorable: true` 信封意味着不知该类型的读取方按标记跳过而非拒绝日志 — 这与 `llm/retry` 相同的兼容性模式。
-- Chain intent 即 preset 名称；会话中途改变 preset 不会重新解析链 — 链在每次 `agent/request-error` 中从当前投影状态一次性解析。
+- Chain intent 即 preset 名称；链在每次 `agent/request-error` 时从当前投影状态重新解析，因此会话中途改变 preset 影响的是下一次过渡，而非进行中的过渡。
 
 </details>
