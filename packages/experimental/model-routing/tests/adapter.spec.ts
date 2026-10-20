@@ -1291,6 +1291,15 @@ describe('TiersAdapter direct sources', () => {
     }
   }
 
+  /** One subscription source serving the canonical id at a distinct price. */
+  const priced = (route: string, usdPerToken: number): ExtraSource => ({
+    route,
+    models: [],
+    modelMap: { 'xiaomi/mimo-v2.6-pro': `mimo-v2.6-pro@{"usdPerToken":${usdPerToken}}` },
+    price: {},
+    tools: true,
+  })
+
   /** The scenario: the tier's two direct sources plus one OpenRouter endpoint of the same model. */
   async function scenario(over: {
     responses?: StreamChunk[][]
@@ -1464,6 +1473,42 @@ describe('TiersAdapter direct sources', () => {
     const failure = await run(h.adapter).catch(error => error)
     expect(failure).toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
     expect(failure.failure.providerRetryAfterMs).toBe(600000)
+  })
+
+  it('walks every spent subscription past `maxReroutes` to report the cooldown', async () => {
+    // The budget bounds transient failures, whose next candidate is a guess. A
+    // spent subscription is not a guess: it leaves the ranking for the whole
+    // cooldown, so the chain of them is finite and ends at the decision that has
+    // no live candidate. Charging those moves against a budget smaller than the
+    // pool ends the request on a raw `QUOTA` instead — a code no retry policy
+    // lists, so nothing can wait out the cooldown it reports.
+    const h = await scenario({
+      sources: [priced('claude-proxy', 1e-8), priced('xiaomi-plan', 2e-8), priced('zai', 3e-8)],
+      settings: { fallbackToOpenRouter: false, maxReroutes: 1, quotaCooldownMs: 600000 },
+      responses: [failureChunks('QUOTA'), failureChunks('QUOTA'), failureChunks('QUOTA')],
+    })
+    const failure = await run(h.adapter).then((): unknown => undefined, (error: unknown) => error)
+    // Every source was tried, not two: the budget of one would have stopped the
+    // walk at the second candidate.
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'xiaomi-plan', 'zai'])
+    expect(failure).toBeInstanceOf(LlmError)
+    expect((failure as LlmError).failure).toMatchObject({
+      code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+      providerRetryAfterMs: 600000,
+    })
+  })
+
+  it('serves a spent pool from a live subscription the budget would have stopped short of', async () => {
+    // The same chain, with one source that still answers: the request reaches it
+    // instead of failing on the spent one the budget ended at.
+    const h = await scenario({
+      sources: [priced('claude-proxy', 1e-8), priced('xiaomi-plan', 2e-8), priced('zai', 3e-8)],
+      settings: { fallbackToOpenRouter: false, maxReroutes: 1 },
+      responses: [failureChunks('QUOTA'), failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'xiaomi-plan', 'zai'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
   it('answers the registry with the retry policy its configuration resolved', async () => {
@@ -1709,14 +1754,16 @@ describe('TiersAdapter direct sources', () => {
   it('gives up after the reroute budget and reports the failure on a direct source', async () => {
     // The plan is the cheapest candidate here, so the budget is spent entirely
     // on direct sources and the turn still ends in the reported failure rather
-    // than in an unhandled one.
+    // than in an unhandled one. A transient code is what spends the budget: a
+    // spent subscription does not, so a quota walk ends at the cooldown report
+    // instead (covered by the cases above).
     const plan: ExtraSource = {
       ...PLAN,
       modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' },
     }
     const h = await scenario({
       sources: [CLAUDE, plan],
-      responses: [failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA'), failureChunks('KEY_QUOTA')],
+      responses: [failureChunks('TRANSPORT'), failureChunks('TRANSPORT'), failureChunks('TRANSPORT')],
     })
     const chunks = await run(h.adapter)
     expect(h.sent).toHaveLength(3)

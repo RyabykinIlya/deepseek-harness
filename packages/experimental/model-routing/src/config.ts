@@ -239,6 +239,17 @@ export interface Config {
   mixFresh: Volatile<number>
   mixOutput: Volatile<number>
   mixMinTokens: Volatile<number>
+  /**
+   * How many moves to a different candidate one request may make after a
+   * transient failure (default 2).
+   *
+   * Only a transient failure spends this budget. A spent subscription does not:
+   * its bench is deterministic, so the chain it produces ends at the first
+   * decision that has no live candidate left — the one that reports
+   * `MODEL_ROUTING_SUBSCRIPTION_LIMIT` together with the cooldown a retry policy
+   * waits out. A budget below the tier's subscription count would otherwise end
+   * a turn on a raw `QUOTA`, which no retry policy lists.
+   */
   maxReroutes: Volatile<number>
   noRerouteCodes: Volatile<string[]>
   /**

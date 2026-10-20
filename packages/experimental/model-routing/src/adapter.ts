@@ -1244,8 +1244,12 @@ export class TiersAdapter extends LlmAdapter {
     // `excludeAfterFailures` asks for — so it must not spend the budget: charging
     // it would exhaust the budget before the failure count reached its threshold,
     // and the request would fail on a route the ranking replaces one attempt
-    // later.
+    // later. A move away from a spent subscription is not charged either; see
+    // `mayReroute`.
     let reroutes = 0
+    // The candidates this request already left because their quota was spent, so
+    // a second departure from one is charged; `moveCost` states why.
+    const spent = new Set<string>()
     for (;;) {
       const efforts = await this.deps.innerEfforts(
         pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
@@ -1288,30 +1292,26 @@ export class TiersAdapter extends LlmAdapter {
           leadingUsage.push(next.value)
         }
       } catch (error: unknown) {
-        const reroutable = error instanceof LlmError
-          && !settings.noRerouteCodes.includes(error.code)
-          && reroutes < settings.maxReroutes
-          && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
+        const reroutable = error instanceof LlmError && this.mayReroute(settings, pin, error.code, reroutes)
         if (!reroutable) throw error
         const failed = tagOfPin(pin)
+        const spentCode = this.quotaSpent(pin, error.code)
         this.excludeEndpoint(key, pin, error.code, settings)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: error.code } })
-        if (tagOfPin(pin) !== failed) reroutes += 1
+        reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
         continue
       }
       if (committed.done === true) return
       const chunk = committed.value
       const failure = failureOf(chunk)
-      const reroutable = failure !== undefined
-        && !settings.noRerouteCodes.includes(failure)
-        && reroutes < settings.maxReroutes
-        && (pin.endpoint !== undefined || pin.source.kind !== 'openrouter')
+      const reroutable = failure !== undefined && this.mayReroute(settings, pin, failure, reroutes)
       if (reroutable) {
         await iterator.return?.(undefined)
         const failed = tagOfPin(pin)
+        const spentCode = this.quotaSpent(pin, failure)
         this.excludeEndpoint(key, pin, failure, settings)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: failure } })
-        if (tagOfPin(pin) !== failed) reroutes += 1
+        reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
         continue
       }
       if (failure !== undefined) {
@@ -1407,6 +1407,78 @@ export class TiersAdapter extends LlmAdapter {
   }
 
   /**
+   * Whether one failure says the candidate's quota is spent rather than flaky.
+   *
+   * An OpenRouter endpoint is never a spent subscription: its account is the
+   * deployment's own, and a failure there is not a source to bench until a
+   * cooldown.
+   * @param pin - the candidate the failure came from.
+   * @param code - the provider failure code.
+   * @returns whether the pin answers from a spent subscription.
+   */
+  private quotaSpent(pin: Pin, code: string): boolean {
+    return pin.source.kind !== 'openrouter' && QUOTA_CODES.includes(code)
+  }
+
+  /**
+   * Whether one dispatch failure may be answered by a re-decision.
+   *
+   * `noRerouteCodes` comes first: those failures name the request, not the
+   * candidate, so no other candidate serves them. A pin with no OpenRouter
+   * endpoint names no upstream to move away from, so it is not rerouted either.
+   *
+   * A spent subscription is rerouted regardless of `maxReroutes`. Charging those
+   * moves ends the request on a raw provider `QUOTA` whenever the tier holds more
+   * subscriptions than the budget, and a code no retry policy lists is a turn
+   * nothing can wait out — the deployment that set the budget meant to bound
+   * guesses, and a spent source is not a guess. The walk stays finite without the
+   * budget: `moveCost` charges any candidate a quota already took out of this
+   * request, so the free moves are bounded by the tier's candidates and
+   * `maxReroutes` still bounds the rest. A transient code always spends the
+   * budget: nothing proves the next candidate differs, so an unbounded chain of
+   * them could repeat.
+   * @param settings - the deployment's routing settings.
+   * @param pin - the candidate the failure came from.
+   * @param code - the provider failure code.
+   * @param reroutes - moves this request has already paid for.
+   * @returns whether this failure should re-decide the request.
+   */
+  private mayReroute(settings: RoutingSettings, pin: Pin, code: string, reroutes: number): boolean {
+    if (settings.noRerouteCodes.includes(code)) return false
+    if (pin.endpoint === undefined && pin.source.kind === 'openrouter') return false
+    return this.quotaSpent(pin, code) || reroutes < settings.maxReroutes
+  }
+
+  /**
+   * What one move away from a failed candidate costs the reroute budget.
+   *
+   * A move away from a spent subscription is free the first time: its bench holds
+   * the source out of the ranking for the whole cooldown, so the next decision
+   * cannot land on it again within this request. The first failure of a candidate
+   * this request has not left yet is therefore the one that reaches the rest of
+   * the pool, and the pool is finite.
+   *
+   * The first move is free only while the bench holds. A `quotaCooldownMs` that
+   * lapsed mid-request returns the source to the ranking, and a provider that
+   * keeps answering `QUOTA` would then walk the same pool forever. Charging every
+   * later departure from a candidate this request already left bounds that at one
+   * move per candidate plus `maxReroutes`.
+   * @param spent - the candidates this request already left because their quota was spent.
+   * @param failed - the tag of the candidate that failed, `undefined` when it named none.
+   * @param spentCode - whether the failure was a spent quota.
+   * @param moved - whether the re-decision landed on a different candidate.
+   * @returns the number of moves to add to the budget.
+   */
+  private moveCost(spent: Set<string>, failed: string | undefined, spentCode: boolean, moved: boolean): number {
+    if (!spentCode) return moved ? 1 : 0
+    if (failed !== undefined && !spent.has(failed)) {
+      spent.add(failed)
+      return 0
+    }
+    return 1
+  }
+
+  /**
    * Count one failure against the candidate that produced it, and bench it for
    * `excludeAfterFailureMs` once the count reaches `excludeAfterFailures`.
    *
@@ -1432,7 +1504,7 @@ export class TiersAdapter extends LlmAdapter {
       const streak = (streaks.get(tag) ?? 0) + 1
       streaks.set(tag, streak)
       this.failureStreaks.set(key, streaks)
-      const exhausted = pin.source.kind !== 'openrouter' && QUOTA_CODES.includes(code)
+      const exhausted = this.quotaSpent(pin, code)
       if (exhausted || streak >= settings.excludeAfterFailures) {
         const recorded = this.excluded.get(key) ?? new Map<string, number>()
         recorded.set(tag, this.deps.now() + (exhausted ? settings.quotaCooldownMs : settings.excludeAfterFailureMs))
