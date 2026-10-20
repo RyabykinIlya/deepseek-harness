@@ -50,7 +50,7 @@
 | `event:job/settled` | event | `edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf` | [`{ type: "job/settled" }`](#persistence-type-sha256-edd37b1e4974af648633014435572089b1e8fb71910468a0767a7e28fdd22abf) |
 | `event:llm/retry` | event | `525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336` | [`{ type: "llm/retry" }`](#persistence-type-sha256-525254db03b1d1e6b74cf55aced52817568331ac1f96c0818728910b6692e336) |
 | `event:llm/retry-started` | event | `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3` | [`{ type: "llm/retry-started" }`](#persistence-type-sha256-48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3) |
-| `event:model-routing/decision` | event | `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3) |
+| `event:model-routing/decision` | event | `721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a` | [`{ type: "model-routing/decision" }`](#persistence-type-sha256-721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a) |
 | `event:model-routing/openrouter-fallback` | event | `ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136` | [`{ type: "model-routing/openrouter-fallback" }`](#persistence-type-sha256-ab604067b9a99516a7d23eb6578528e82925046b6a7f758ff01f3c43d2e69136) |
 | `event:model-routing/tier-override` | event | `54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86` | [`{ type: "model-routing/tier-override" }`](#persistence-type-sha256-54ac409b8c99304d18d596b8c587b46a0ce778630b8739bf45e1f06729b26c86) |
 | `event:model/selection` | event | `35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc` | [`{ type: "model/selection" }`](#persistence-type-sha256-35203ba7ad5ef6f97d556b85df20ae98f04f09c65748cecdf8eefdb8b6405ffc) |
@@ -721,7 +721,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model-routing/decision': RoutingDecision
 ```
 
-来源：[`packages/experimental/model-routing/src/types.ts:199`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:219`](../packages/experimental/model-routing/src/types.ts)
 
 <a id="model-routingopenrouter-fallback--log-only"></a>
 
@@ -736,7 +736,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model-routing/openrouter-fallback': { enabled: boolean }
 ```
 
-来源：[`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:227`](../packages/experimental/model-routing/src/types.ts)
 
 <a id="model-routingtier-override--log-only"></a>
 
@@ -747,7 +747,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'model-routing/tier-override': { threadId: string; tier: string }
 ```
 
-来源：[`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:221`](../packages/experimental/model-routing/src/types.ts)
 
 ### `permission/*`
 
@@ -2166,7 +2166,7 @@ SHA-256: `5d1232755d5e7e30429c37dda734e551289913b36bc9193a528887e2fdc2727e`
 
 SHA-256: `fb8b6a2e53cb9cf44c551176de0fb77d1ddc60037b99a891ff8a860b6d5c29a0`
 
-来源：[`packages/experimental/model-routing/lib/types/select.d.ts:92`](../packages/experimental/model-routing/lib/types/select.d.ts) · [`packages/experimental/model-routing/src/select.ts:110`](../packages/experimental/model-routing/src/select.ts)
+来源：[`packages/experimental/model-routing/lib/types/select.d.ts:91`](../packages/experimental/model-routing/lib/types/select.d.ts) · [`packages/experimental/model-routing/src/select.ts:110`](../packages/experimental/model-routing/src/select.ts)
 
 `"image"`
 
@@ -4027,7 +4027,7 @@ SHA-256: `5808e36c95355f0e745201b5db1b6bcec4ebf5adb75d3e82d7d59cc89635ab80`
 
 SHA-256: `9c90ec832cc1c0c03c4a31eea68835e00e617d593c8a8a3c17ca97ce1bafc3d6`
 
-来源：[`packages/experimental/model-routing/src/config.ts:31`](../packages/experimental/model-routing/src/config.ts)
+来源：[`packages/experimental/model-routing/src/config.ts:33`](../packages/experimental/model-routing/src/config.ts)
 
 以下类型之一：
 
@@ -5118,7 +5118,7 @@ SHA-256: `2fe5026daf14bd4ff2b7bfb7cf9791c302d9cbba06802178b6dfec00b892698f`
 
 SHA-256: `2a845226538bfd7553397b67c0e168d60620067521d9004d52e2424fc3be0db4`
 
-来源：[`packages/experimental/model-routing/lib/types/config.d.ts:23`](../packages/experimental/model-routing/lib/types/config.d.ts) · [`packages/experimental/model-routing/src/config.ts:28`](../packages/experimental/model-routing/src/config.ts)
+来源：[`packages/experimental/model-routing/lib/types/config.d.ts:24`](../packages/experimental/model-routing/lib/types/config.d.ts) · [`packages/experimental/model-routing/src/config.ts:30`](../packages/experimental/model-routing/src/config.ts)
 
 以下类型之一：
 
@@ -5265,7 +5265,7 @@ SHA-256: `51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59`
 
 [`RoutingCandidate`](#persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc) 的数组。
 
-<a id="persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504"></a>
+<a id="persistence-type-sha256-b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84"></a>
 
 <a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingdecision"></a>
 
@@ -5273,7 +5273,7 @@ SHA-256: `51ca7d72f70ea206a90f552864b051b0b3fce1af9ee156a6a694e912bb7a4f59`
 
 ### `RoutingDecision`
 
-SHA-256: `384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504`
+SHA-256: `b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84`
 
 来源：[`packages/experimental/model-routing/src/types.ts:143`](../packages/experimental/model-routing/src/types.ts)
 
@@ -5285,7 +5285,10 @@ SHA-256: `384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504`
 | `considered` | 必需 | `number` |
 | `endpoint` | 可选 | [`RoutingEndpoint`](#persistence-type-sha256-d28a3d487881b5a03f6662a90a3bc44f416cb204409f4bc96a8b7be85df6646f) |
 | `excludedTags` | 必需 | [`string[]`](#persistence-type-sha256-93c33d9687613293f8c95d46c4d922fe9ceae83b84c384beff5c3315abe005f2) |
+| `failedTag` | 可选 | `string` |
+| `failureCode` | 可选 | `string` |
 | `filters` | 可选 | [`RoutingFilters`](#persistence-type-sha256-af8a21ffeb42b4986cb41127d286b302c6574928a08e86e11484ccb71b4aae4e) |
+| `imagesOmitted` | 可选 | `true` |
 | `judge` | 可选 | [`JudgeVerdict`](#persistence-type-sha256-36f87503cdfb7487bcdcc1b66878db854420f68c230d914e0c21948e7d6c4642) |
 | `mix` | 可选 | [`MeasuredMix`](#persistence-type-sha256-e0d39b7fb4c2ef8d91fb1a6439a9fcc9957c01c70880fe50d6adb732e4b8e9e8) |
 | `model` | 必需 | `string` |
@@ -7125,7 +7128,7 @@ SHA-256: `119abe2b9c0b2f46ecb31d82b9acba4d4b30e049f655e2475e8b4ae12d5a9e25`
 
 SHA-256: `c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434`
 
-来源：[`packages/experimental/model-routing/src/types.ts:207`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:227`](../packages/experimental/model-routing/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -8872,7 +8875,7 @@ SHA-256: `e38364aa4dde0b49773ecb42fd1761d2797ac2d993ecaccf3d8fcff7854dc3f1`
 
 SHA-256: `c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce`
 
-来源：[`packages/experimental/model-routing/src/types.ts:201`](../packages/experimental/model-routing/src/types.ts)
+来源：[`packages/experimental/model-routing/src/types.ts:221`](../packages/experimental/model-routing/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -9390,17 +9393,17 @@ SHA-256: `48e5c9861f16ac07e78cb7b5ae9dabdf7bb85c58baed5a51b4ad275050ea58e3`
 | `time` | 必需 | `number` |
 | `type` | 必需 | `"llm/retry-started"` |
 
-<a id="persistence-type-sha256-4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3"></a>
+<a id="persistence-type-sha256-721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a"></a>
 
 <a id="persistence-type-eventmodel-routingdecision"></a>
 
 ### `{ type: "model-routing/decision" }`
 
-SHA-256: `4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3`
+SHA-256: `721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `data` | 必需 | [`RoutingDecision`](#persistence-type-sha256-384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504) |
+| `data` | 必需 | [`RoutingDecision`](#persistence-type-sha256-b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84) |
 | `ignorable` | 可选 | `true` |
 | `seq` | 必需 | `number` |
 | `time` | 必需 | `number` |

@@ -163,6 +163,20 @@ export interface RoutingDecision {
    * placeholders where the pictures were.
    */
   imagesOmitted?: true
+  /**
+   * Present on `failure` re-decisions: the candidate tag whose dispatch failure
+   * triggered this decision.
+   *
+   * Absent when the failed pin named no concrete endpoint. `dispatchWithReroute`
+   * never reroutes such a pin, so a recorded `failure` decision carries this
+   * field in practice; optionality keeps older readers accepting the record.
+   */
+  failedTag?: string
+  /**
+   * Present on `failure` re-decisions: the provider failure code of the dispatch
+   * that triggered this decision, for example `MODEL_NOT_FOUND`.
+   */
+  failureCode?: string
   /** Endpoints considered across all candidate models. */
   considered: number
   /** Up to three runners-up behind the pinned endpoint. */

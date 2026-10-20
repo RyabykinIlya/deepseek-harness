@@ -83,6 +83,10 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 
 `rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。无论在失败边界还是其他任何地方，都没有规则可以凌驾于这个价格之上：失败的提供方将其候选停用，由 tier 中最便宜的健康候选完成本轮的剩余部分——无论它运行的是哪个模型，因此一个耗尽的订阅会先被另一个模型的存活订阅替代，然后才轮到任何按 token 计费的 endpoint。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
 
+会话标题、compaction 等辅助 purpose 调用只搭乘 Session 的 pin 而不拥有它：它们的派发失败只在各自的 purpose 作用域内停用候选，绝不会为会话自己的轮次停用；它们留下的待处理失败也不会把下一个真正的轮次推到 `failure` 边界。因此，在已钉住的 endpoint 上失败的标题请求，不会为它正在命名的那个轮次停用该 endpoint。
+
+指名了单个模型的请求在无候选通过时会明确说明：`MODEL_ROUTING_NO_ENDPOINT` 消息会指名被请求的模型；若其 endpoint 是被全部停用，则消息会说明该模型因近期失败被停用，而不是读起来像一个没有 endpoint 的 tier。
+
 `extraSources` 的候选项按同一公式、由其声明的价格参与排序；直连来源按 `route:id` 而不是仅按其路由 id 被排除：同一条路由可以以同一个 id 服务多个模型的候选，只有这一对才能说明失败的是哪一个。
 
 模态过滤器是唯一按模型而不是按 endpoint 决定的拒绝原因：当请求携带图片时，目录未证明其接受图片的候选模型，其每个 endpoint 都会以 `modality` 被拒绝，而这些 endpoint 仍全部计入 `considered`。放宽不覆盖它——`rankWithRelaxation` 只丢弃在线率下限——因此没有任何可接受图片的候选的 tier 会直接失败，除非该 tier 声明 `imageInput: 'omit'`。该声明先按完整要求排序，只有在没有任何候选满足时才去掉模态过滤器再排一次：该轮由最便宜的候选继续，发送时把每张图片替换为 `projectImagesForTextModel` 定义的稳定占位文本，并在决策中记录 `imagesOmitted: true`，于是日志表明模型是在没有看到图片的情况下作答。tier 默认保持 `require`，因为对一张没看过的截图作答比失败的一轮更糟。
@@ -90,7 +94,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 <a id="diagnostics"></a>
 ### 诊断
 
-每次决策会被记录两次。Session 日志中的 `model-routing/decision` 事件携带读者一眼所需的小型形态：模型与 endpoint、混合价格、据以计算该价格的 token 配比以及该配比是测量自会话还是取自配置、生效中的过滤器、每个拒绝原因淘汰了多少 endpoint，以及每个原因淘汰掉的最便宜的 endpoint。最后这个字段正是仅凭日志就能回答「排在首位的并非最便宜的——更便宜那个去了哪里」的东西。
+每次决策会被记录两次。Session 日志中的 `model-routing/decision` 事件携带读者一眼所需的小型形态：模型与 endpoint、混合价格、据以计算该价格的 token 配比以及该配比是测量自会话还是取自配置、生效中的过滤器、每个拒绝原因淘汰了多少 endpoint，以及每个原因淘汰掉的最便宜的 endpoint。最后这个字段正是仅凭日志就能回答「排在首位的并非最便宜的——更便宜那个去了哪里」的东西。一次 `failure` 重决策还会指名它所回答的那次派发失败——`failedTag` 与 `failureCode`——因此事后阅读能区分提供方故障与过滤器拒绝。
 
 完整的候选表写入 `diagnosticsPath` 指名的文件：每次决策一行 JSON，包含排序走过的每一个 endpoint 的价格、它的 OpenRouter 折扣、它的各项测量值，以及它的名次或它的拒绝原因。数周前做出的价格决策因此可以对着当时的数据复核，而不是对着一份已经变动的目录。`diagnosticsPath` 为空——即默认值——则完全不写文件。
 

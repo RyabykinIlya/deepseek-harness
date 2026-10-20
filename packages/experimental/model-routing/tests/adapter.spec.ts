@@ -554,6 +554,24 @@ describe('TiersAdapter rerouting', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it('records the dispatch failure a failure re-decision answers', async () => {
+    // A `failure` decision that names only the new pin cannot tell a provider
+    // outage from a filter that rejects: the next reading needs the failed tag
+    // and the provider code that caused the reroute.
+    const h = await harness({ responses: [failureChunks('INVALID_REQUEST'), normalChunks()] })
+    await run(h.adapter)
+    expect(h.events).toHaveLength(2)
+    expect(h.events[0]).not.toHaveProperty('failureCode')
+    expect(h.events[0]).not.toHaveProperty('failedTag')
+    expect(h.events[1]).toMatchObject({
+      boundary: 'failure',
+      failedTag: 'streamlake/fp8',
+      failureCode: 'INVALID_REQUEST',
+    })
+    // The diagnostics file carries the same failure tag and code as the Session event.
+    expect(h.records[1]).toMatchObject({ failedTag: 'streamlake/fp8', failureCode: 'INVALID_REQUEST' })
+  })
+
   it('surfaces a context-window overflow instead of spending the reroute budget on it', async () => {
     // Every candidate of the tier serves the same model window, so another
     // provider cannot serve this request: the remedy is compaction, and the
@@ -741,6 +759,51 @@ describe('TiersAdapter rerouting', () => {
   })
 })
 
+describe('TiersAdapter auxiliary purpose requests', () => {
+  it('keeps an auxiliary purpose failure from benching the session turn', async () => {
+    // Titles and compactions ride the Session's pin without owning it: their
+    // dispatch failures bench only their own scope, so the next real turn
+    // still meets the endpoint that failed someone else's call.
+    const h = await harness({ responses: [failureChunks('PROVIDER_ERROR'), normalChunks(), normalChunks()] })
+    await run(h.adapter, { purpose: 'session-title' })
+    expect(h.events).toHaveLength(0)
+    await run(h.adapter)
+    expect(h.events[0]).toMatchObject({ boundary: 'start', excludedTags: [] })
+    expect(h.events[0]?.endpoint?.tag).toBe('streamlake/fp8')
+  })
+
+  it('does not let an auxiliary failure push the next session turn onto a failure boundary', async () => {
+    // The pending-failure flag is scoped the same way: a title that fails must
+    // not force the Session's own next turn to re-decide.
+    const h = await harness({
+      responses: [normalChunks(), failureChunks('PROVIDER_ERROR'), normalChunks(), normalChunks()],
+    })
+    await run(h.adapter)
+    expect(h.events).toHaveLength(1)
+    await run(h.adapter, { purpose: 'session-title' })
+    expect(h.events).toHaveLength(1)
+    await run(h.adapter)
+    expect(h.events).toHaveLength(1)
+    expect(h.sent).toHaveLength(4)
+  })
+
+  it('forgets auxiliary scopes when the session is disposed', async () => {
+    const h = await harness({
+      responses: [failureChunks('PROVIDER_ERROR'), normalChunks(), failureChunks('PROVIDER_ERROR'), normalChunks()],
+    })
+    await run(h.adapter, { purpose: 'session-title' })
+    expect(h.records[1]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+    await run(h.adapter, { sessionId: SessionId('s2'), purpose: 'session-title' })
+    expect(h.records[3]).toMatchObject({ boundary: 'failure', excludedTags: ['streamlake/fp8'] })
+    h.adapter.forget(SessionId('s1'))
+    // The s1 scope is gone while the s2 scope survives the disposal.
+    await run(h.adapter, { purpose: 'session-title' })
+    expect(h.records.at(-1)).toMatchObject({ boundary: 'start', excludedTags: [] })
+    await run(h.adapter, { sessionId: SessionId('s2'), purpose: 'session-title' })
+    expect(h.records.at(-1)).toMatchObject({ excludedTags: ['streamlake/fp8'] })
+  })
+})
+
 describe('TiersAdapter free endpoints', () => {
   it('prefers a free endpoint for a top-level session', async () => {
     const h = await harness({
@@ -857,6 +920,41 @@ describe('TiersAdapter when nothing works', () => {
       (error: unknown) => {
         expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
         expect((error as LlmError).message).toContain('quantization=')
+      },
+    )
+  })
+
+  it('names the requested model when a fixed request has no usable endpoint', async () => {
+    // A fixed request ranks one model only, so bare tier counts read as a tier
+    // with no endpoints. Naming the model says which favorite failed.
+    const h = await harness({ tiers: [{ ...PRO, minQuantization: 'fp32' }] })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' }).then(
+      () => { throw new Error('expected the model to fail') },
+      (error: unknown) => {
+        expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
+        expect((error as LlmError).message).toContain('for model "deepseek/deepseek-v4-pro"')
+        expect((error as LlmError).message).not.toContain('benched')
+      },
+    )
+  })
+
+  it('says the requested model is benched when its only endpoint is excluded', async () => {
+    // One dispatch failure benches the model's sole endpoint (the harness pins
+    // benching to the first failure), and the reroute serves the tier instead.
+    // A later fixed request for the model then meets the bench, not an empty
+    // tier, and the message must say so.
+    const h = await harness({
+      tiers: [{ ...FLASH, free: 'prefer' }],
+      responses: [failureChunks('PROVIDER_ERROR'), normalChunks()],
+      state: { ...priorDecision(), decision: null, compactedSinceDecision: true },
+    })
+    await run(h.adapter, { model: 'stealth/space-bunny-alpha' })
+    await run(h.adapter, { model: 'stealth/space-bunny-alpha' }).then(
+      () => { throw new Error('expected the benched model to fail') },
+      (error: unknown) => {
+        expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
+        expect((error as LlmError).message).toContain('for model "stealth/space-bunny-alpha": excluded=1')
+        expect((error as LlmError).message).toContain('benched after recent failures')
       },
     )
   })

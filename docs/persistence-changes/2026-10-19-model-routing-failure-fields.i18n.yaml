@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for 2026-10-19-model-routing-failure-fields.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-10-19-model-routing-failure-fields.md
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-10-19-model-routing-failure-fields:
+  en: 3396d2051cec38b9
+  zh: 7b5dfa48b5425e43
+/2026-10-19-model-routing-failure-fields/summary:
+  en: c1db8582bf5b5ed1
+  zh: 34e30090f02e0ce9
+/2026-10-19-model-routing-failure-fields/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-10-19-model-routing-failure-fields/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-10-19-model-routing-failure-fields/compatibility:
+  en: 544fac27101ee949
+  zh: 9a6a7feed4f1667a
+/2026-10-19-model-routing-failure-fields/verification:
+  en: 0219b33d3627b767
+  zh: 76646075faabaa0b
+/2026-10-19-model-routing-failure-fields/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

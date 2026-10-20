@@ -10977,7 +10977,7 @@
       "kind": "event",
       "event": "model-routing/decision",
       "surface": false,
-      "digest": "4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3",
+      "digest": "721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a",
       "schema": {
         "root": 0,
         "nodes": [
@@ -10991,7 +10991,7 @@
               },
               {
                 "name": "ignorable",
-                "type": 66,
+                "type": 50,
                 "optional": true
               },
               {
@@ -11046,18 +11046,33 @@
                 "optional": false
               },
               {
+                "name": "failedTag",
+                "type": 11,
+                "optional": true
+              },
+              {
+                "name": "failureCode",
+                "type": 11,
+                "optional": true
+              },
+              {
                 "name": "filters",
                 "type": 27,
                 "optional": true
               },
               {
-                "name": "judge",
+                "name": "imagesOmitted",
                 "type": 50,
                 "optional": true
               },
               {
+                "name": "judge",
+                "type": 51,
+                "optional": true
+              },
+              {
                 "name": "mix",
-                "type": 61,
+                "type": 62,
                 "optional": true
               },
               {
@@ -11072,12 +11087,12 @@
               },
               {
                 "name": "rejections",
-                "type": 65,
+                "type": 66,
                 "optional": true
               },
               {
                 "name": "relaxedUptime",
-                "type": 66,
+                "type": 50,
                 "optional": true
               },
               {
@@ -11516,6 +11531,10 @@
             "value": "trusted"
           },
           {
+            "kind": "literal",
+            "value": true
+          },
+          {
             "kind": "object",
             "properties": [
               {
@@ -11565,7 +11584,7 @@
               },
               {
                 "name": "rule",
-                "type": 51,
+                "type": 52,
                 "optional": false
               }
             ],
@@ -11574,7 +11593,6 @@
           {
             "kind": "union",
             "types": [
-              52,
               53,
               54,
               55,
@@ -11582,7 +11600,8 @@
               57,
               58,
               59,
-              60
+              60,
+              61
             ]
           },
           {
@@ -11641,7 +11660,7 @@
               },
               {
                 "name": "source",
-                "type": 62,
+                "type": 63,
                 "optional": false
               }
             ],
@@ -11650,8 +11669,8 @@
           {
             "kind": "union",
             "types": [
-              63,
-              64
+              64,
+              65
             ]
           },
           {
@@ -11727,10 +11746,6 @@
               }
             ],
             "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
           },
           {
             "kind": "array",
@@ -24370,8 +24385,8 @@
         "packages/experimental/model-routing/src/config.ts#Quantization"
       ],
       "sources": [
-        "packages/experimental/model-routing/lib/types/config.d.ts:23",
-        "packages/experimental/model-routing/src/config.ts:28"
+        "packages/experimental/model-routing/lib/types/config.d.ts:24",
+        "packages/experimental/model-routing/src/config.ts:30"
       ]
     },
     {
@@ -24605,15 +24620,6 @@
       "digest": "383cf73ae4748e5beb281ae74857ba1ffb92ae01075b9fbf51af78b666007a8f",
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "384227a74d27e3d3af1d1961a4b512d4155a634b0c4228ad6618bb1e9e287504",
-      "names": [
-        "packages/experimental/model-routing/src/types.ts#RoutingDecision"
-      ],
-      "sources": [
-        "packages/experimental/model-routing/src/types.ts:143"
-      ]
     },
     {
       "digest": "3860b4757d512a2869be833acb0faf834335b1b056bf3f83df5474dce95f8fa6",
@@ -24867,11 +24873,6 @@
       "sources": [
         "packages/llm/llm/src/assistant-stream.ts:44"
       ]
-    },
-    {
-      "digest": "4881e34a99b95c4c750b1a7c7baaf21ffadf8077e63dd614d58f9309fe8aa4e3",
-      "names": [],
-      "sources": []
     },
     {
       "digest": "48afb9ebc9ec5fe87592a70caa35fb7da4adb05cada0eb9dabeb3a7dce35e421",
@@ -25687,6 +25688,11 @@
       ]
     },
     {
+      "digest": "721843be2eb73a9896a6bd8126f70d98d28fb8b2a6123b983cfe31676c2a359a",
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "72ec79127a9c0d0241b1106a74cc2b24c81ce467170f1c3c93f7b71a9496d227",
       "names": [],
       "sources": []
@@ -26342,7 +26348,7 @@
         "packages/experimental/model-routing/src/config.ts#FreeMode"
       ],
       "sources": [
-        "packages/experimental/model-routing/src/config.ts:31"
+        "packages/experimental/model-routing/src/config.ts:33"
       ]
     },
     {
@@ -26905,6 +26911,15 @@
       "sources": []
     },
     {
+      "digest": "b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84",
+      "names": [
+        "packages/experimental/model-routing/src/types.ts#RoutingDecision"
+      ],
+      "sources": [
+        "packages/experimental/model-routing/src/types.ts:143"
+      ]
+    },
+    {
       "digest": "ba4c40b4381e0dcdfab8fc9fc75b5c9b3e8f09ef56deeb1bec8e703b0ef8cd6d",
       "names": [],
       "sources": []
@@ -26965,7 +26980,7 @@
       "digest": "c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce",
       "names": [],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:201"
+        "packages/experimental/model-routing/src/types.ts:221"
       ]
     },
     {
@@ -27014,7 +27029,7 @@
       "digest": "c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434",
       "names": [],
       "sources": [
-        "packages/experimental/model-routing/src/types.ts:207"
+        "packages/experimental/model-routing/src/types.ts:227"
       ]
     },
     {
@@ -27831,7 +27846,7 @@
         "packages/experimental/model-routing/src/select.ts#RequiredInput"
       ],
       "sources": [
-        "packages/experimental/model-routing/lib/types/select.d.ts:92",
+        "packages/experimental/model-routing/lib/types/select.d.ts:91",
         "packages/experimental/model-routing/src/select.ts:110"
       ]
     },

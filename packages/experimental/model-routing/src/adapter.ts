@@ -298,9 +298,22 @@ export class TiersAdapter extends LlmAdapter {
    */
   forget(sessionId: SessionId): void {
     this.pins.delete(sessionId)
-    this.excluded.delete(sessionId)
-    this.failures.delete(sessionId)
-    this.failureStreaks.delete(sessionId)
+    this.forgetScoped(this.excluded, sessionId)
+    this.forgetScoped(this.failures, sessionId)
+    this.forgetScoped(this.failureStreaks, sessionId)
+  }
+
+  /**
+   * Drop one Session's failure memory, including the scoped keys its auxiliary
+   * purpose calls kept apart from the Session's own turns.
+   * @param table - one of the per-key failure tables.
+   * @param sessionId - the disposed Session's identity.
+   */
+  private forgetScoped(table: { delete(key: string): unknown; keys(): Iterable<string> }, sessionId: SessionId): void {
+    table.delete(sessionId)
+    for (const key of table.keys()) {
+      if (key.startsWith(`${sessionId}:`)) table.delete(key)
+    }
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -567,6 +580,13 @@ export class TiersAdapter extends LlmAdapter {
     // that never chose keeps following that default as it changes. Read here,
     // once, so every decision and reroute in this request acts on one value.
     const openRouterFallback = state?.openRouterFallback ?? settings.fallbackToOpenRouter
+    // Auxiliary purpose calls (session titles, compaction) ride the Session's
+    // pin without owning it, so their failures must not bench candidates for
+    // the Session's own turns either: a title request that fails on the pinned
+    // endpoint would otherwise bench it, and the next real turn would meet
+    // `excluded` for an endpoint that never failed it. Each purpose keeps its
+    // own failure memory under a scoped key; the pin itself stays shared.
+    const scope = main ? key : `${key}:${options.purpose ?? 'aux'}`
     let pin = this.pins.get(key)
     // A restart is not a boundary: the log already recorded what this Session
     // decided, and re-deciding would pin a different provider than the one whose
@@ -596,7 +616,7 @@ export class TiersAdapter extends LlmAdapter {
       ? boundaryOf({
         pinned: pin,
         requested: options.model,
-        failurePending: this.failures.has(key),
+        failurePending: this.failures.has(scope),
         compactedSinceDecision: state?.compactedSinceDecision ?? false,
         lastActivityAt: Math.max(state?.lastResponseAt ?? Number.NEGATIVE_INFINITY, pin?.lastActivityAt ?? Number.NEGATIVE_INFINITY),
         now: this.deps.now(),
@@ -617,14 +637,14 @@ export class TiersAdapter extends LlmAdapter {
         : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
           : target
       const decided = await this.decide({
-        settings, target: decisionTarget, pin, session, options, signal, persist: main, key, requiredInput,
+        settings, target: decisionTarget, pin, session, options, signal, persist: main, key: scope, requiredInput,
         openRouterFallback,
         ...boundary === undefined ? {} : { boundary },
       })
       pin = decided.pin
       if (main) this.pins.set(key, pin)
     }
-    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key, signal, main, requiredInput, openRouterFallback })
+    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key: scope, signal, main, requiredInput, openRouterFallback })
   }
 
   /**
@@ -655,6 +675,12 @@ export class TiersAdapter extends LlmAdapter {
     /** Whether an exhausted subscription may be replaced by an OpenRouter candidate. */
     openRouterFallback: boolean
     boundary?: RoutingBoundary
+    /**
+     * The dispatch failure this re-decision answers, when one. `reroute` is the
+     * only caller that sets it: a `failure` boundary reached from a pending
+     * failure of an earlier request has no dispatch of its own to report.
+     */
+    failure?: { tag: string | undefined; code: string }
   }): Promise<Decision> {
     const { settings, target, pin, session, options, signal, persist, key, requiredInput, openRouterFallback } = input
     const boundary = input.boundary ?? 'start'
@@ -791,6 +817,18 @@ export class TiersAdapter extends LlmAdapter {
         .filter(([, count]) => count > 0)
         .map(([reason, count]) => `${reason}=${count}`)
         .join(', ')
+      if (target.kind === 'fixed') {
+        // A fixed request names one model, so the counts above describe that
+        // model alone: name it, or a benched favorite reads as a tier with no
+        // endpoints rather than as the bench it is.
+        const benched = result.rejections.excluded > 0
+          ? ' The requested model is benched after recent failures and returns to the ranking when the bench lapses.'
+          : ''
+        throw new LlmError(
+          `model-routing: no endpoint of tier "${tier.name}" passes the filters for model "${target.model}": ${counts}.${benched}`,
+          MODEL_ROUTING_NO_ENDPOINT_CODE,
+        )
+      }
       throw new LlmError(
         `model-routing: no endpoint of tier "${tier.name}" passes the filters: ${counts}`,
         MODEL_ROUTING_NO_ENDPOINT_CODE,
@@ -807,6 +845,11 @@ export class TiersAdapter extends LlmAdapter {
       requested: options.model,
       tier: tier.name,
       ...judge === undefined ? {} : { judge },
+      // A `failure` re-decision names the dispatch failure that caused it, so a
+      // later reading can tell a provider outage from a filter that rejects.
+      ...input.failure === undefined ? {} : { failureCode: input.failure.code },
+      /* v8 ignore next -- a reroute only runs for a pin naming a concrete endpoint. */
+      ...input.failure?.tag === undefined ? {} : { failedTag: input.failure.tag },
       model: decidedModel,
       source,
       ...endpoint === undefined
@@ -1252,7 +1295,7 @@ export class TiersAdapter extends LlmAdapter {
         if (!reroutable) throw error
         const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, error.code, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: error.code } })
         if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
@@ -1267,7 +1310,7 @@ export class TiersAdapter extends LlmAdapter {
         await iterator.return?.(undefined)
         const failed = tagOfPin(pin)
         this.excludeEndpoint(key, pin, failure, settings)
-        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback })
+        pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: failure } })
         if (tagOfPin(pin) !== failed) reroutes += 1
         continue
       }
@@ -1357,6 +1400,8 @@ export class TiersAdapter extends LlmAdapter {
     key: string
     requiredInput: RequiredInput | undefined
     openRouterFallback: boolean
+    /** The dispatch failure this re-decision answers; recorded on the decision. */
+    failure: { tag: string | undefined; code: string }
   }): Promise<Pin> {
     return this.decide({ ...input, boundary: 'failure' }).then(decision => decision.pin)
   }
