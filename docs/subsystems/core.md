@@ -331,7 +331,9 @@ type PreStepDecision =
 
 ```ts type-equiv
 /** Action returned by a listener that owns model-request recovery. */
-type RequestErrorAction = { kind: 'retry' } | undefined
+type RequestErrorAction =
+  | { kind: 'retry' }
+  | undefined
 ```
 
 `agent/pre-step` is the only waterfall listener chain before request derivation. `agent/turn-stopping` runs when a turn has no tool or steering continuation, before one final steering drain.

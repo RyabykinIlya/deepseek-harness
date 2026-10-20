@@ -3,35 +3,35 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-20-cross-provider-llm-fallback.md
 /agent-note-cross-provider-llm-fallback:
-  en: a3f2e8b1c9d4e7f0
-  zh: b4e1d9c2f8a3e6f1
+  en: 809fa4bf12877655
+  zh: 463af17b61ef2e22
 /agent-note-cross-provider-llm-fallback/problem:
-  en: c1d4e7f0a3b6e9f2
-  zh: d2e5f8a1b4c7f0a3
+  en: f4b4cd6558b401cc
+  zh: 3fb4df4387a30628
 /agent-note-cross-provider-llm-fallback/proposal:
-  en: e3f6a9b2c5d8e1f4
-  zh: f4a7b0c3d6e9f2a5
-/agent-note-cross-provider-llm-fallback/listener-order-and-retry-coordination:
-  en: a5b8c1d4e7f0a3b6
-  zh: b6c9d2e5f8a1b4c7
-/agent-note-cross-provider-llm-fallback/chain-resolution-and-termination:
-  en: c7d0e3f6a9b2c5d8
-  zh: d8e1f4a7b0c3d6e9
-/agent-note-cross-provider-llm-fallback/progress-state:
-  en: e9f2a5b8c1d4e7f0
-  zh: f0a3b6c9d2e5f8a1
-/agent-note-cross-provider-llm-fallback/configuration:
-  en: a1b4c7d0e3f6a9b2
-  zh: b2c5d8e1f4a7b0c3
-/agent-note-cross-provider-llm-fallback/settled-decisions-record-explicitly:
-  en: c3d6e9f2a5b8c1d4
-  zh: d4e7f0a3b6c9d2e5
+  en: e91cef08f002616a
+  zh: f2a756a4eb5b4f86
+/agent-note-cross-provider-llm-fallback/proposal/listener-order-and-retry-coordination:
+  en: 9d8b3e7e42bdc8ba
+  zh: eb5df82c3fd018ee
+/agent-note-cross-provider-llm-fallback/proposal/chain-resolution-and-termination:
+  en: 4b5cabc1c64fa454
+  zh: 4de7726eaac0404b
+/agent-note-cross-provider-llm-fallback/proposal/progress-state:
+  en: 99918ced6ee4d17e
+  zh: dea0d1388ab300a1
+/agent-note-cross-provider-llm-fallback/proposal/configuration:
+  en: 0c42afe1b78de051
+  zh: 1e3115860bd3abe5
+/agent-note-cross-provider-llm-fallback/proposal/settled-decisions-record-explicitly:
+  en: 5a83ac25fd2e25fa
+  zh: b5da1d70315e38bf
 /agent-note-cross-provider-llm-fallback/alternatives-considered:
-  en: e5f8a1b4c7d0e3f6
-  zh: f6a9b2c5d8e1f4a7
+  en: 0a20b03baaac7b8b
+  zh: 3c2436d4b246c9cd
 /agent-note-cross-provider-llm-fallback/acceptance-criteria:
-  en: a7b0c3d6e9f2a5b8
-  zh: b8c1d4e7f0a3b6c9
+  en: 03518092e422f9bc
+  zh: 378d44171001a3bb
 /agent-note-cross-provider-llm-fallback/risks:
-  en: c9d2e5f8a1b4c7d0
-  zh: d0e3f6a9b2c5d8e1
+  en: eb21a0ac1d6d7cc0
+  zh: f4c9427f255e2907
