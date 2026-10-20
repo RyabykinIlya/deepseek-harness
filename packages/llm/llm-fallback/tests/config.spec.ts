@@ -41,8 +41,8 @@ describe('llm-fallback config', () => {
 
     expect(chain.name).toBe('Coding')
     expect(chain.steps.length).toBe(2)
-    expect(chain.steps[0].provider).toBe('claude-proxy')
-    expect(chain.steps[1].provider).toBe('deepseek')
+    expect(chain.steps[0]?.provider).toBe('claude-proxy')
+    expect(chain.steps[1]?.provider).toBe('deepseek')
   })
 
   it('generates chain ID when not provided', () => {

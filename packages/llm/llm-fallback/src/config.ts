@@ -5,7 +5,7 @@
  */
 
 import z from '@deepseek-ai/schemastery'
-import type { ResolvedFallbackChain, FallbackChain, FallbackStep } from './types.ts'
+import type { ResolvedFallbackChain, FallbackConfig, FallbackStep } from './types.ts'
 import { FallbackChainId } from './brand.ts'
 import { randomUUID } from 'node:crypto'
 
@@ -26,32 +26,25 @@ export const FallbackConfigSchema = z.object({
   chains: z.dict(chainSchema),
 })
 
-/** Fallback configuration type. */
-export interface FallbackConfig {
-  chains: Record<string, FallbackChain>
-}
-
 /** Volatile options for runtime config updates. */
 export type FallbackOptions = FallbackConfig
 
 /**
  * Validate and resolve a fallback configuration.
+ *
+ * Chains without an `id` receive a generated {@link FallbackChainId}.
+ * @param config - fallback chains keyed by intent.
+ * @returns resolved chains keyed by the same intent.
  */
 export function resolveFallbackConfig(config: FallbackOptions): Map<string, ResolvedFallbackChain> {
   const resolved = new Map<string, ResolvedFallbackChain>()
 
-  for (const [intent, chain] of Object.entries(config.chains ?? {})) {
-    // Generate ID if not provided
-    const chainId = chain.id ?? FallbackChainId(randomUUID())
-
-    // Validate steps reference existing providers (will be checked at execution time)
-    const steps = chain.steps.map((step: FallbackStep) => ({ ...step }))
-
+  for (const [intent, { id, name, steps }] of Object.entries(config.chains ?? {})) {
     resolved.set(intent, {
-      ...chain,
-      id: chainId,
-      steps: Object.freeze(steps),
-    } as ResolvedFallbackChain)
+      id: id === undefined ? FallbackChainId(randomUUID()) : FallbackChainId(id),
+      name,
+      steps: Object.freeze(steps.map((step: FallbackStep) => ({ ...step }))),
+    })
   }
 
   return resolved

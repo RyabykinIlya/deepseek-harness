@@ -80,8 +80,8 @@ export interface FallbackStep {
  * A complete fallback chain for one intent.
  */
 export interface FallbackChain {
-  /** Unique chain identifier. */
-  id: string
+  /** Chain identifier; generated at resolution when omitted. */
+  id?: string
   /** Human-readable name for selectors. */
   name: string
   /** Ordered steps to try. First step is the primary. */
@@ -100,9 +100,11 @@ export interface FallbackConfig {
 /**
  * Resolved fallback chain with validated steps.
  */
-export interface ResolvedFallbackChain extends FallbackChain {
-  /** Steps with resolved model info for request derivation. */
-  steps: (FallbackStep & { resolvedModel?: LlmResolvedModelInfo })[]
+export interface ResolvedFallbackChain extends Omit<FallbackChain, 'id' | 'steps'> {
+  /** Chain identifier, always assigned once resolved. */
+  id: FallbackChainId
+  /** Frozen steps, in attempt order, with resolved model info for request derivation. */
+  steps: readonly (FallbackStep & { resolvedModel?: LlmResolvedModelInfo })[]
 }
 
 /**
