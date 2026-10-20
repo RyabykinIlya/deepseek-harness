@@ -1498,6 +1498,114 @@ describe('TiersAdapter direct sources', () => {
     })
   })
 
+  it('benches the whole route on one spent quota instead of walking its models', async () => {
+    // A quota belongs to the account or key pool behind a route, not to one
+    // model: every model the route serves answers the same `QUOTA`. Recording
+    // only the candidate that reported it makes the request try each sibling in
+    // turn, one 429 and one reroute at a time, which is how a tier holding more
+    // subscriptions than `maxReroutes` dies on a raw provider code.
+    const go: ExtraSource = {
+      route: 'opencode-go',
+      models: [],
+      modelMap: {
+        'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}',
+        'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":1.1e-8}',
+        'qwen/qwen3.8-max-0902': 'qwen3.8-max@{"usdPerToken":1.2e-8}',
+      },
+      price: {},
+      tools: true,
+    }
+    const zai: ExtraSource = {
+      route: 'zai',
+      models: [],
+      modelMap: { 'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":2e-8}' },
+      price: {},
+      tools: true,
+    }
+    const models = ['xiaomi/mimo-v2.6-pro', 'z-ai/glm-5.3', 'qwen/qwen3.8-max-0902']
+    const h = await harness({
+      tiers: [{ ...MIMO, models, extraSources: [go, zai] }],
+      endpoints: {
+        'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.2e-7)],
+        'qwen/qwen3.8-max-0902': [endpointOf('deepinfra/fp8', 1.2e-7)],
+      },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: true,
+      },
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    // One attempt on the spent route, then the live source: the two sibling
+    // models of `opencode-go` are not tried at all.
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['opencode-go', 'zai'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    // The re-decision names every candidate the spent route served, so a reader
+    // sees the account leave the ranking rather than one model of it.
+    expect(h.events.at(-1)).toMatchObject({
+      boundary: 'failure',
+      model: 'z-ai/glm-5.3',
+      source: { kind: 'zai', tag: 'glm-5.3' },
+      excludedTags: ['opencode-go:glm-5.3', 'opencode-go:mimo-v2.6-pro', 'opencode-go:qwen3.8-max'],
+    })
+  })
+
+  it('reaches OpenRouter when every subscription is spent, whatever the budget', async () => {
+    // The live incident, in miniature: three subscription routes serving five
+    // models between them, every one answering `QUOTA`, a budget of five moves
+    // and the fallback enabled. Walking one candidate per move would spend the
+    // whole budget inside the subscriptions and end the turn on the provider's
+    // own `QUOTA` — a code no retry policy lists, so nothing can wait it out.
+    // Benching per route leaves the budget to the move that reaches OpenRouter.
+    const go: ExtraSource = {
+      route: 'opencode-go',
+      models: [],
+      modelMap: {
+        'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}',
+        'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":1.1e-8}',
+        'qwen/qwen3.8-max-0902': 'qwen3.8-max@{"usdPerToken":1.2e-8}',
+      },
+      price: {},
+      tools: true,
+    }
+    const plan: ExtraSource = {
+      route: 'xiaomi-plan',
+      models: [],
+      modelMap: {
+        'qwen/qwen3.8-max-0902': 'qwen3.8-max@{"usdPerToken":2e-8}',
+        'z-ai/glm-5.3': 'glm-5.3@{"usdPerToken":2.1e-8}',
+      },
+      price: {},
+      tools: true,
+    }
+    const models = ['xiaomi/mimo-v2.6-pro', 'z-ai/glm-5.3', 'qwen/qwen3.8-max-0902']
+    const h = await harness({
+      tiers: [{ ...MIMO, models, extraSources: [go, plan] }],
+      endpoints: {
+        'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.1e-7)],
+        'qwen/qwen3.8-max-0902': [endpointOf('deepinfra/fp8', 1.3e-7)],
+      },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: true,
+        maxReroutes: 5,
+      },
+      responses: [failureChunks('QUOTA'), failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    // The first route's first candidate, the second route's first candidate, then
+    // the cheapest OpenRouter endpoint: the sibling models cost nothing.
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['opencode-go', 'xiaomi-plan', 'openrouter'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    // The turn never surfaced the provider's own code, which is what a spent
+    // budget inside the subscriptions would have done.
+    expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
+  })
+
   it('serves a spent pool from a live subscription the budget would have stopped short of', async () => {
     // The same chain, with one source that still answers: the request reaches it
     // instead of failing on the spent one the budget ended at.
@@ -1509,6 +1617,47 @@ describe('TiersAdapter direct sources', () => {
     const chunks = await run(h.adapter)
     expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'xiaomi-plan', 'zai'])
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('benches a spent route for every tier that serves it, not only the deciding one', async () => {
+    // The spent quota belongs to the account behind the route, so tier `pro`'s
+    // candidates of it are as unusable as tier `flash`'s. A bench scoped to the
+    // deciding tier would pay the same 429 again on the session's first request
+    // after a tier change.
+    const spent = (canonical: string, id: string): ExtraSource => ({
+      route: 'opencode-go',
+      models: [],
+      modelMap: { [canonical]: `${id}@{"usdPerToken":1e-8}` },
+      price: {},
+      tools: true,
+    })
+    const h = await harness({
+      tiers: [
+        { ...PRO, models: ['z-ai/glm-5.3'], unknownQuantization: 'accept', extraSources: [spent('z-ai/glm-5.3', 'glm-5.3')] },
+        { ...FLASH, models: ['z-ai/glm-5.3-flash'], unknownQuantization: 'accept', extraSources: [spent('z-ai/glm-5.3-flash', 'glm-5.3-flash')] },
+      ],
+      endpoints: {
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.2e-7)],
+        'z-ai/glm-5.3-flash': [endpointOf('novita/fp8', 1.2e-7)],
+      },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'pro', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: true,
+      },
+      responses: [failureChunks('QUOTA'), normalChunks(), normalChunks()],
+    })
+    // The spent route answers once on `flash`, and the turn continues on the
+    // model's OpenRouter endpoint.
+    const first = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['opencode-go', 'openrouter'])
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    // `pro` decides the same route: the bench it finds there was recorded by the
+    // `flash` failure, so the subscription is not tried a second time.
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['opencode-go', 'openrouter', 'openrouter'])
+    expect(h.events.at(-1)).toMatchObject({ tier: 'pro' })
+    expect(h.events.at(-1)?.excludedTags).toContain('opencode-go:glm-5.3')
   })
 
   it('answers the registry with the retry policy its configuration resolved', async () => {
