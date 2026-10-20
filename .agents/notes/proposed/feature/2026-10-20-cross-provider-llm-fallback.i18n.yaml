@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-10-20-cross-provider-llm-fallback.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-10-20-cross-provider-llm-fallback.md
+/agent-note-cross-provider-llm-fallback:
+  en: a3f2e8b1c9d4e7f0
+  zh: b4e1d9c2f8a3e6f1
+/agent-note-cross-provider-llm-fallback/problem:
+  en: c1d4e7f0a3b6e9f2
+  zh: d2e5f8a1b4c7f0a3
+/agent-note-cross-provider-llm-fallback/proposal:
+  en: e3f6a9b2c5d8e1f4
+  zh: f4a7b0c3d6e9f2a5
+/agent-note-cross-provider-llm-fallback/listener-order-and-retry-coordination:
+  en: a5b8c1d4e7f0a3b6
+  zh: b6c9d2e5f8a1b4c7
+/agent-note-cross-provider-llm-fallback/chain-resolution-and-termination:
+  en: c7d0e3f6a9b2c5d8
+  zh: d8e1f4a7b0c3d6e9
+/agent-note-cross-provider-llm-fallback/progress-state:
+  en: e9f2a5b8c1d4e7f0
+  zh: f0a3b6c9d2e5f8a1
+/agent-note-cross-provider-llm-fallback/configuration:
+  en: a1b4c7d0e3f6a9b2
+  zh: b2c5d8e1f4a7b0c3
+/agent-note-cross-provider-llm-fallback/settled-decisions-record-explicitly:
+  en: c3d6e9f2a5b8c1d4
+  zh: d4e7f0a3b6c9d2e5
+/agent-note-cross-provider-llm-fallback/alternatives-considered:
+  en: e5f8a1b4c7d0e3f6
+  zh: f6a9b2c5d8e1f4a7
+/agent-note-cross-provider-llm-fallback/acceptance-criteria:
+  en: a7b0c3d6e9f2a5b8
+  zh: b8c1d4e7f0a3b6c9
+/agent-note-cross-provider-llm-fallback/risks:
+  en: c9d2e5f8a1b4c7d0
+  zh: d0e3f6a9b2c5d8e1
