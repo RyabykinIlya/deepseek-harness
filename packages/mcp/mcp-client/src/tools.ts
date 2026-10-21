@@ -14,7 +14,7 @@
 
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { specTypeSchemas, type Client, type ImageContent } from '@modelcontextprotocol/client'
+import { SdkHttpError, specTypeSchemas, type Client, type ImageContent } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
@@ -30,6 +30,34 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /**
+   * Recovery hook for a streamable-HTTP session the server no longer knows.
+   *
+   * The SDK keeps sending its stored `mcp-session-id` after the server drops
+   * that session (a restart, or an evicting proxy), so every later call fails
+   * `404 Session not found`. Reconnect only fires on transport closure, which
+   * this failure does not produce. The supervisor passes this hook so one
+   * expired session costs one retry instead of the rest of the session.
+   *
+   * @param failed - The client whose call was rejected.
+   * @returns A client with an established session, or `undefined` when none
+   *   became available before the recovery timeout. Omission disables retry.
+   */
+  recoverSession?: (failed: Client) => Promise<Client | undefined>
+}
+
+/**
+ * Whether an error is the server rejecting a session id it no longer tracks.
+ *
+ * Narrow on purpose: the SDK's typed HTTP error, status `404`, and the
+ * session-expiry message. A `404` for any other reason is a routing fault that
+ * a reconnect cannot fix, so it must surface unchanged.
+ *
+ * @param error - Value thrown by an MCP client call.
+ * @returns True when re-initializing the session is the correct response.
+ */
+export function isExpiredSessionError(error: unknown): boolean {
+  return error instanceof SdkHttpError && error.status === 404 && /session not found/i.test(error.message)
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -135,10 +163,20 @@ export async function syncTools(
       inputSchema: tool.inputSchema,
       outputSchema: tool.outputSchema,
       taskRequired: tool.execution?.taskSupport === 'required',
-      call: (args, execution) => client.callTool(
-        { name: tool.name, arguments: args },
-        { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
-      ),
+      call: async (args, execution) => {
+        const options = { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool }
+        const message = { name: tool.name, arguments: args }
+        try {
+          return await client.callTool(message, options)
+        } catch (error) {
+          if (opts.recoverSession === undefined || !isExpiredSessionError(error)) throw error
+          // One retry: the replacement client owns a freshly negotiated session,
+          // so a second 404 is a different fault and must reach the caller.
+          const recovered = await opts.recoverSession(client)
+          if (recovered === undefined) throw error
+          return await recovered.callTool(message, options)
+        }
+      },
     }))
   }
 
