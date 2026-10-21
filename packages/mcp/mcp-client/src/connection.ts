@@ -53,6 +53,14 @@ export const DEFAULT_MAX_INSTRUCTION_BYTES = 32_768
 // generation is gone; timing out fails closed instead of overlapping children.
 const GENERATION_CLOSE_TIMEOUT_MS = 5_000
 
+/**
+ * How long a tool call waits for the generation that replaces an expired
+ * session. Recovery is one reconnect attempt on a live server — the backoff
+ * starts at 500ms — so a bound this generous still fails inside one call
+ * rather than stalling it for the whole tool-call timeout.
+ */
+const SESSION_RECOVERY_TIMEOUT_MS = 10_000
+
 /** Fully resolved reconnect policy captured at plugin load. */
 export type ResolvedReconnectPolicy = Readonly<Required<ReconnectConfig>>
 
@@ -131,6 +139,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     registrationFailure: 'contain',
     serverName: config.serverName,
     toolCallTimeoutMs: config.toolCallTimeoutMs,
+    recoverSession,
   }
   // The initial sync uses 'throw' when failOnStartupError is configured, so
   // a registration conflict propagates to the startup-await path. Re-syncs
@@ -206,6 +215,67 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
         resolve(true)
       })
     })
+  }
+
+  /**
+   * Callers parked until the next generation finishes its initial sync, keyed
+   * by their own resolver so each can settle independently. Settled by
+   * {@link resolveNextClientWaiters} and never left dangling: every waiter also
+   * owns a timeout and disposal resolves them all.
+   */
+  const nextClientWaiters = new Set<(next: Client | undefined) => void>()
+
+  /** Settle every parked caller with the generation that just came up, or `undefined` on teardown. */
+  function resolveNextClientWaiters(next: Client | undefined): void {
+    for (const settle of [...nextClientWaiters]) settle(next)
+    nextClientWaiters.clear()
+  }
+
+  /**
+   * Park until a generation other than `failed` completes its initial sync.
+   *
+   * @param timeoutMs - Upper bound on the wait; expiry resolves `undefined`.
+   * @returns The replacement client, or `undefined` when none arrived in time.
+   */
+  function waitForNextClient(timeoutMs: number): Promise<Client | undefined> {
+    return new Promise((resolve) => {
+      const settle = (next: Client | undefined): void => {
+        clearTimeout(timer)
+        nextClientWaiters.delete(settle)
+        resolve(next)
+      }
+      const timer = setTimeout(() => { settle(undefined) }, timeoutMs)
+      timer.unref()
+      nextClientWaiters.add(settle)
+    })
+  }
+
+  /**
+   * Replace a generation whose streamable-HTTP session the server rejected.
+   *
+   * Closing the generation makes the SDK's close event drive
+   * {@link generationDown}, which arms the normal reconnect path; the awaiting
+   * tool call then retries against the replacement generation. Recovery is a
+   * normal reconnect, so it obeys the configured backoff and attempt budget —
+   * a server that keeps rejecting sessions gives up exactly as it would for
+   * lost connections.
+   *
+   * @param failed - The client whose call reported the expired session.
+   * @returns A client with an established session, or `undefined` when the
+   *   supervisor is down, disposed, or did not recover within the timeout.
+   */
+  async function recoverSession(failed: Client): Promise<Client | undefined> {
+    // A generation that already lost ownership has a successor in flight or in
+    // place; retrying against it is correct and needs no second reconnect.
+    if (!isCurrent(failed)) return client
+    ctx.logger.warn(`${label}: server rejected the MCP session — reconnecting to establish a new one`)
+    const next = waitForNextClient(SESSION_RECOVERY_TIMEOUT_MS)
+    const close = closeClient
+    const quiesced = close === undefined ? false : await close()
+    // The close path usually already demoted the generation; settling again is
+    // idempotent (isCurrent) and covers a transport that closed silently.
+    if (isCurrent(failed)) settleFailedGeneration(failed, quiesced)
+    return await next
   }
 
   function scheduleReconnect(): void {
@@ -340,6 +410,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     serverInstructions = instructions
     connectedAt = Date.now()
     if (failedAttempts > 0) ctx.logger.info(`${label}: reconnected and re-synced tools (attempt ${failedAttempts}/${policy.maxAttempts})`)
+    resolveNextClientWaiters(generation)
   }
 
   /** The in-flight (or last settled) connection attempt; dispose awaits it for quiescence. */
@@ -388,6 +459,7 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
     async dispose(): Promise<void> {
       disposed = true
       serverInstructions = ''
+      resolveNextClientWaiters(undefined)
       if (reconnectTimer !== undefined) {
         clearTimeout(reconnectTimer)
         reconnectTimer = undefined
