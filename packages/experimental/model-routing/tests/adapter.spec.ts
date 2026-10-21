@@ -47,6 +47,25 @@ const FLASH = {
   free: 'off',
 }
 
+/**
+ * The `free` tier: the configuration's free models, and only their free endpoints.
+ *
+ * `int4` and `accept` are what admit every free endpoint of the fixtures: the
+ * Nemotron Super declares `unknown` quantization and the Lightning one `nvfp4`,
+ * both below the flash tier's `fp8` floor.
+ */
+const FREE = {
+  name: 'free',
+  label: 'Free',
+  models: ['nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3.5-lightning:free'],
+  contextWindow: 262_144,
+  maxTokens: 32_768,
+  input: ['text'],
+  minQuantization: 'int4',
+  unknownQuantization: 'accept',
+  free: 'only',
+}
+
 /** One dispatch the fake pi-ai route observed. */
 interface Dispatched {
   options: GenerateOptions
@@ -827,6 +846,59 @@ describe('TiersAdapter free endpoints', () => {
     h.freeRemaining = 5
     await run(h.adapter)
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
+  })
+})
+
+describe('TiersAdapter free limits', () => {
+  it('rotates to the next free model when one spends its own daily cap', async () => {
+    const h = await harness({
+      tiers: [FREE],
+      responses: [failureChunks('RATE_LIMIT'), normalChunks()],
+    })
+    const chunks = await run(h.adapter, { model: 'free' })
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent[0]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+    expect(h.sent[1]?.options.model).toBe('nvidia/nemotron-3.5-lightning:free')
+    // The spent model alone is benched, so the failure re-decision still has the
+    // tier's other free endpoint to rank rather than a tier emptied by a filter.
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: ['nvidia'] })
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('keeps a model that spent its cap out of another Session\'s ranking', async () => {
+    const h = await harness({
+      tiers: [FREE],
+      responses: [failureChunks('RATE_LIMIT'), normalChunks(), normalChunks()],
+    })
+    await run(h.adapter, { model: 'free' })
+    await run(h.adapter, { sessionId: SessionId('s2'), model: 'free' })
+    expect(h.sent[2]?.options.model).toBe('nvidia/nemotron-3.5-lightning:free')
+  })
+
+  it('returns a spent model to the ranking after the daily reset', async () => {
+    const h = await harness({
+      tiers: [FREE],
+      responses: [failureChunks('RATE_LIMIT'), normalChunks(), normalChunks()],
+    })
+    await run(h.adapter, { model: 'free' })
+    // The bench expires at the next UTC midnight, which is when the model's own
+    // daily cap resets: the day after, the cheapest free endpoint is eligible again.
+    h.clock.now = 172_800_000
+    await run(h.adapter, { sessionId: SessionId('s2'), model: 'free' })
+    expect(h.sent[2]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+  })
+
+  it('admits no free endpoint once the shared daily budget is nearly spent', async () => {
+    const h = await harness({ tiers: [FREE] })
+    h.freeRemaining = 5
+    await run(h.adapter, { model: 'free' }).then(
+      () => { throw new Error('expected the free tier to have no endpoint') },
+      (error: unknown) => {
+        // One shared account-wide budget is what stops every free model at once.
+        expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
+        expect((error as LlmError).message).toContain('free=2')
+      },
+    )
   })
 })
 
