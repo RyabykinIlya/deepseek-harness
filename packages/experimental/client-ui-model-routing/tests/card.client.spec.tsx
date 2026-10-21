@@ -72,6 +72,7 @@ function cardState(over: Partial<ModelRoutingCardState> = {}): ModelRoutingCardS
     cacheIdleMinutes: 10,
     cacheIdleMinutesText: '10',
     freeForSubagents: false,
+    freeForSoloSessions: false,
     trustedProvidersText: 'stealth',
     ...over,
   }
@@ -102,6 +103,7 @@ function cardActions(store: SnapshotStore<ModelRoutingCardState>): Omit<ModelRou
       store.set({ ...store.getSnapshot(), cacheIdleMinutesText: value })
     }),
     setFreeForSubagents: vi.fn(),
+    setFreeForSoloSessions: vi.fn(),
     retryCatalog: vi.fn(),
     save: vi.fn(),
     discard: vi.fn(),
@@ -181,6 +183,17 @@ describe('ModelRoutingCard', () => {
     fireEvent.change(input, { target: { value: '-5' } })
     expect(face.setCacheIdleMinutes).toHaveBeenCalledWith('-5')
     expect(screen.getByLabelText<HTMLInputElement>(en.cacheIdleMinutes).value).toBe('-5')
+  })
+
+  it('renders the two free-admission toggles and stages each through its own setter', () => {
+    const face = renderCard({ freeForSubagents: true })
+    expect(screen.getByLabelText<HTMLInputElement>(en.freeForSubagents).checked).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>(en.freeForSoloSessions).checked).toBe(false)
+
+    fireEvent.click(screen.getByLabelText(en.freeForSoloSessions))
+    expect(face.setFreeForSoloSessions).toHaveBeenCalledWith(true)
+    fireEvent.click(screen.getByLabelText(en.freeForSubagents))
+    expect(face.setFreeForSubagents).toHaveBeenCalledWith(false)
   })
 
   it('renders one tab per tier and switches the panel on click', () => {

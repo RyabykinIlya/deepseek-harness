@@ -60,6 +60,7 @@ function controller(over: {
     defaultTier: 'flash',
     cacheIdleMs: 600_000,
     freeForSubagents: false,
+    freeForSoloSessions: false,
     trustedUnknownProviders: ['stealth'],
     ...over.value,
   })
@@ -112,11 +113,14 @@ describe('staging a tier', () => {
     const face = card.inject()
     face.setJudgeEnabled(false)
     face.setCacheIdleMinutes('15')
+    face.setFreeForSoloSessions(true)
     face.save()
     await Promise.resolve()
     await vi.waitFor(() => { expect(host.mutate).toHaveBeenCalledTimes(1) })
     const ops = host.mutate.mock.calls[0]![0]
-    expect(ops.map(op => op.path.join('.')).sort()).toEqual(['cacheIdleMs', 'judgeEnabled'])
+    expect(ops.map(op => op.path.join('.')).sort()).toEqual(['cacheIdleMs', 'freeForSoloSessions', 'judgeEnabled'])
+    const written = ops.find(op => op.path.join('.') === 'freeForSoloSessions') as { value: unknown }
+    expect(written.value).toBe(true)
   })
 
   it('refuses to write a draft the Host changed underneath', async () => {
@@ -240,7 +244,7 @@ describe('staging a tier', () => {
     const { card } = controller({
       value: {
         tiers: TIERS, judgeEnabled: false, defaultTier: 'flash', cacheIdleMs: 300_000,
-        freeForSubagents: true, trustedUnknownProviders: ['stealth', 'streamlake'],
+        freeForSubagents: true, freeForSoloSessions: true, trustedUnknownProviders: ['stealth', 'streamlake'],
       },
     })
     const state = card.inject().hooks.modelRoutingCard.getSnapshot()
@@ -248,6 +252,7 @@ describe('staging a tier', () => {
     expect(state.defaultTier).toBe('flash')
     expect(state.cacheIdleMinutes).toBe(5)
     expect(state.freeForSubagents).toBe(true)
+    expect(state.freeForSoloSessions).toBe(true)
     expect(state.trustedProvidersText).toBe('stealth streamlake')
   })
 
@@ -315,7 +320,7 @@ describe('the formatting helpers', () => {
   it('reports a failed catalog rather than an empty one', async () => {
     const host = ready({
       tiers: TIERS, judgeEnabled: true, defaultTier: 'flash', cacheIdleMs: 600_000,
-      freeForSubagents: false, trustedUnknownProviders: [],
+      freeForSubagents: false, freeForSoloSessions: false, trustedUnknownProviders: [],
     })
     const ctx = {
       remote: {

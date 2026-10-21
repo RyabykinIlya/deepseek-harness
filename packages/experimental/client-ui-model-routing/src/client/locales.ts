@@ -47,6 +47,7 @@ export type ModelRoutingLocaleKey =
   | 'defaultTier'
   | 'cacheIdleMinutes'
   | 'freeForSubagents'
+  | 'freeForSoloSessions'
   | 'freeUsage'
   | 'free.unknown'
   | 'quote.perMillion'
@@ -105,6 +106,7 @@ export const en: LocaleDictOf<typeof NS> = {
   defaultTier: 'Default tier',
   cacheIdleMinutes: 'Re-decide after idle (minutes)',
   freeForSubagents: 'Allow free endpoints in subagents',
+  freeForSoloSessions: 'Allow free endpoints in solo sessions',
   freeUsage: 'Free requests today: {used} of {limit}',
   'free.unknown': 'Free requests today: unknown',
   'quote.perMillion': '{tag} · {quantization} · ${price}/M',
@@ -157,6 +159,7 @@ export const zh: LocaleDictOf<typeof NS> = {
   defaultTier: '默认层级',
   cacheIdleMinutes: '空闲后重新决策（分钟）',
   freeForSubagents: '允许子代理使用免费端点',
+  freeForSoloSessions: '允许独立会话使用免费端点',
   freeUsage: '今日免费请求：{used} / {limit}',
   'free.unknown': '今日免费请求：未知',
   'quote.perMillion': '{tag} · {quantization} · ${price}/M',

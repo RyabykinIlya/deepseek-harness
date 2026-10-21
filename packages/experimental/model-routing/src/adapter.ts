@@ -1148,12 +1148,20 @@ export class TiersAdapter extends LlmAdapter {
   /**
    * Whether this caller may spend a turn on a free endpoint right now.
    *
-   * The account-wide daily budget is the one shared free limit: a caller that
-   * may not use free endpoints at all, and a budget whose remainder is below
-   * `freeMinRemaining`, both answer false for every free endpoint of every tier.
-   * A single model's own cap is not decided here — that is what the per-model
-   * bench in `excludeEndpoint` records — so a model that spent its cap leaves
-   * the ranking while the tier's other free models stay in it.
+   * Free quality is for delegated work: a subagent or a Thread answers to an
+   * orchestrator that reviews what it returns, so `freeForSubagents` decides
+   * its admission, while a solo Session answers to the user directly and
+   * takes a free endpoint only when the deployment opted in with
+   * `freeForSoloSessions`. A tier whose `free` mode is `only` answers to
+   * neither key: naming that tier is the explicit request for free models,
+   * and refusing them would leave the tier with no endpoint at all.
+   *
+   * The account-wide daily budget is the one shared free limit: a budget
+   * whose remainder is below `freeMinRemaining` answers false for every free
+   * endpoint of every tier. A single model's own cap is not decided here —
+   * that is what the per-model bench in `excludeEndpoint` records — so a
+   * model that spent its cap leaves the ranking while the tier's other free
+   * models stay in it.
    */
   private async freeAdmission(input: {
     settings: RoutingSettings
@@ -1161,8 +1169,9 @@ export class TiersAdapter extends LlmAdapter {
     session: Session | undefined
   }): Promise<boolean> {
     const { settings, tier, session } = input
-    const subagent = session?.header.origin === 'subagent'
-    let allowFree = !subagent || settings.freeForSubagents
+    const delegated = session?.header.origin === 'subagent'
+    let allowFree = tier.free === 'only'
+      || (delegated ? settings.freeForSubagents : settings.freeForSoloSessions)
     if (allowFree && tier.free !== 'off') {
       const usage = await this.deps.keyInfo.freeUsage(settings.keyInfoTtlMs, new AbortController().signal)
       // An unreadable counter does not block free endpoints: refusing them on a

@@ -296,7 +296,20 @@ export interface Config {
    * subscription again.
    */
   quotaCooldownMs: Volatile<number>
+  /**
+   * Whether a delegated child — a subagent or a Thread — may use free
+   * endpoints (default false). Delegated work answers to an orchestrator
+   * that reviews what it returns, which is what makes free quality
+   * acceptable there.
+   */
   freeForSubagents: Volatile<boolean>
+  /**
+   * Whether a solo Session — one with no orchestrator above it — may use the
+   * free endpoints a `prefer` tier would otherwise rank (default false).
+   * A tier whose `free` mode is `only` stays admitted either way: naming
+   * that tier is the explicit request for free models.
+   */
+  freeForSoloSessions: Volatile<boolean>
   freeMinRemaining: Volatile<number>
   keyInfoTtlMs: Volatile<number>
   snapshotPolicy: Volatile<SnapshotPolicy>
@@ -360,6 +373,7 @@ export interface RoutingSettings {
   readonly fallbackToOpenRouter: boolean
   readonly quotaCooldownMs: number
   readonly freeForSubagents: boolean
+  readonly freeForSoloSessions: boolean
   readonly freeMinRemaining: number
   readonly keyInfoTtlMs: number
   readonly snapshotPolicy: SnapshotPolicy
@@ -531,6 +545,7 @@ export const Config = z.object({
   fallbackToOpenRouter: z.boolean().default(DEFAULT_OPENROUTER_FALLBACK).volatile(),
   quotaCooldownMs: z.number().default(600000).volatile(),
   freeForSubagents: z.boolean().default(false).volatile(),
+  freeForSoloSessions: z.boolean().default(false).volatile(),
   freeMinRemaining: z.number().default(20).volatile(),
   keyInfoTtlMs: z.number().default(60000).volatile(),
   snapshotPolicy: z.union(['pinned', 'latest'] as const).default('pinned').volatile(),
@@ -603,6 +618,7 @@ export function readSettings(config: Config): RoutingSettings {
     fallbackToOpenRouter: config.fallbackToOpenRouter.get(),
     quotaCooldownMs: config.quotaCooldownMs.get(),
     freeForSubagents: config.freeForSubagents.get(),
+    freeForSoloSessions: config.freeForSoloSessions.get(),
     freeMinRemaining: config.freeMinRemaining.get(),
     keyInfoTtlMs: config.keyInfoTtlMs.get(),
     snapshotPolicy: config.snapshotPolicy.get(),

@@ -31,6 +31,7 @@ export interface ModelRoutingSettings {
   /** Idle interval in milliseconds; the page edits it in minutes. */
   cacheIdleMs: number
   freeForSubagents: boolean
+  freeForSoloSessions: boolean
   trustedUnknownProviders: readonly string[]
 }
 
@@ -92,6 +93,8 @@ export interface ModelRoutingCardState extends SettingsFormShell {
   cacheIdleMinutesText: string
   /** Whether subagents may use free endpoints. */
   freeForSubagents: boolean
+  /** Whether a solo Session may use the free endpoints a `prefer` tier ranks. */
+  freeForSoloSessions: boolean
   /** The trusted unknown-quantization provider slugs, space-separated for the text control. */
   trustedProvidersText: string
 }
@@ -114,6 +117,7 @@ export interface ModelRoutingCardFace {
   setDefaultTier: (value: string) => void
   setCacheIdleMinutes: (value: string) => void
   setFreeForSubagents: (value: boolean) => void
+  setFreeForSoloSessions: (value: boolean) => void
   retryCatalog: () => void
   save: () => void
   discard: () => void
@@ -284,6 +288,11 @@ export class ModelRoutingCardController {
         this.draftExtra = { ...this.draftExtra, freeForSubagents: value }
         this.publish()
       },
+      setFreeForSoloSessions: (value) => {
+        this.beginDraft()
+        this.draftExtra = { ...this.draftExtra, freeForSoloSessions: value }
+        this.publish()
+      },
       retryCatalog: () => { void this.loadCatalog() },
       save: () => { void this.save() },
       discard: () => { this.discard() },
@@ -298,6 +307,7 @@ export class ModelRoutingCardController {
       defaultTier: value?.defaultTier ?? 'flash',
       cacheIdleMs: value?.cacheIdleMs ?? 600_000,
       freeForSubagents: value?.freeForSubagents ?? false,
+      freeForSoloSessions: value?.freeForSoloSessions ?? false,
       trustedUnknownProviders: value?.trustedUnknownProviders ?? [],
     }
   }
@@ -328,6 +338,7 @@ export class ModelRoutingCardController {
       && current.defaultTier === desired.defaultTier
       && current.cacheIdleMs === desired.cacheIdleMs
       && current.freeForSubagents === desired.freeForSubagents
+      && current.freeForSoloSessions === desired.freeForSoloSessions
       && sameJson(current.trustedUnknownProviders, desired.trustedUnknownProviders)
   }
 
@@ -438,6 +449,9 @@ export class ModelRoutingCardController {
     }
     if (this.draftExtra?.freeForSubagents !== undefined) {
       ops.push({ op: 'set', path: ['freeForSubagents'], value: desired.freeForSubagents })
+    }
+    if (this.draftExtra?.freeForSoloSessions !== undefined) {
+      ops.push({ op: 'set', path: ['freeForSoloSessions'], value: desired.freeForSoloSessions })
     }
     if (this.trustedProvidersDraft !== undefined) {
       ops.push({ op: 'set', path: ['trustedUnknownProviders'], value: [...desired.trustedUnknownProviders] })
@@ -550,6 +564,7 @@ export class ModelRoutingCardController {
       cacheIdleMinutes: Math.round(desired.cacheIdleMs / 60_000),
       cacheIdleMinutesText: this.cacheIdleText ?? String(Math.round(current.cacheIdleMs / 60_000)),
       freeForSubagents: desired.freeForSubagents,
+      freeForSoloSessions: desired.freeForSoloSessions,
       // The raw staged text, not the parsed-and-rejoined list: rejoining would
       // normalize separators out from under whatever the person is still typing.
       trustedProvidersText: this.trustedProvidersDraft ?? current.trustedUnknownProviders.join(' '),

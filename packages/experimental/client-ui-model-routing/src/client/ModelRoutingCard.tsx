@@ -120,6 +120,15 @@ export function ModelRoutingCard(props: ModelRoutingCardProps) {
           />
         </label>
         <label className={css.field}>
+          <span>{t('freeForSoloSessions')}</span>
+          <input
+            type="checkbox"
+            checked={state.freeForSoloSessions}
+            disabled={!editable}
+            onChange={(event) => { props.setFreeForSoloSessions(event.target.checked) }}
+          />
+        </label>
+        <label className={css.field}>
           <span>{t('trustedUnknownProviders')}</span>
           <input
             value={state.trustedProvidersText}

@@ -336,7 +336,8 @@ describe('TiersAdapter pinning', () => {
       minQuantization: 'fp8',
       unknownQuantization: 'reject',
       free: 'off',
-      allowFree: true,
+      // The default harness Session is solo, and a solo Session admits no free endpoint.
+      allowFree: false,
       minUptime: 95,
       requireNormalStatus: true,
       trustedUnknownProviders: ['stealth'],
@@ -824,14 +825,32 @@ describe('TiersAdapter auxiliary purpose requests', () => {
 })
 
 describe('TiersAdapter free endpoints', () => {
-  it('prefers a free endpoint for a top-level session', async () => {
+  it('keeps a solo session off the free endpoints a tier prefers', async () => {
+    // A solo Session answers to the user directly, so a `prefer` tier ranks
+    // its paid endpoints only: free quality is for work an orchestrator reviews.
     const h = await harness({
       tiers: [{ ...FLASH, free: 'prefer' }],
       responses: [normalChunks()],
     })
     await run(h.adapter)
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
+  })
+
+  it('prefers a free endpoint for a solo session that opted in', async () => {
+    const h = await harness({
+      tiers: [{ ...FLASH, free: 'prefer' }],
+      settings: { freeForSoloSessions: true },
+    })
+    await run(h.adapter)
     expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
     expect(blockOf(h.sent[0]!)).toEqual({ only: ['stealth'], allow_fallbacks: false })
+  })
+
+  it('prefers a free endpoint for a delegated session', async () => {
+    const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }], settings: { freeForSubagents: true } })
+    h.origin = 'subagent'
+    await run(h.adapter)
+    expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
   })
 
   it('never spends a subagent on a free endpoint', async () => {
@@ -841,8 +860,20 @@ describe('TiersAdapter free endpoints', () => {
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
   })
 
-  it('keeps to a paid endpoint when the daily budget is nearly spent', async () => {
-    const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }] })
+  it('serves a solo session the free tier it named', async () => {
+    // A tier that admits nothing but free endpoints is the explicit request
+    // for free models, so the solo gate does not empty it.
+    const h = await harness({ tiers: [FREE], responses: [normalChunks()] })
+    await run(h.adapter, { model: 'free' })
+    expect(h.sent[0]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+  })
+
+  it('keeps a delegated session on a paid endpoint when the daily budget is nearly spent', async () => {
+    const h = await harness({
+      tiers: [{ ...FLASH, free: 'prefer' }],
+      settings: { freeForSubagents: true },
+    })
+    h.origin = 'subagent'
     h.freeRemaining = 5
     await run(h.adapter)
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-flash')
@@ -1017,6 +1048,9 @@ describe('TiersAdapter when nothing works', () => {
     // tier, and the message must say so.
     const h = await harness({
       tiers: [{ ...FLASH, free: 'prefer' }],
+      // The pinned model's only endpoint is free, so the case opts the solo
+      // session in: what it exercises is the bench message, not free admission.
+      settings: { freeForSoloSessions: true },
       responses: [failureChunks('PROVIDER_ERROR'), normalChunks()],
       state: { ...priorDecision(), decision: null, compactedSinceDecision: true },
     })
