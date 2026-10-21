@@ -28,7 +28,12 @@ async function mount(): Promise<Context> {
 }
 
 function opts(recoverSession?: ToolBridgeOptions['recoverSession']): ToolBridgeOptions {
-  return { registrationFailure: 'contain', serverName: 'srv', toolCallTimeoutMs: 5_000, recoverSession }
+  return {
+    registrationFailure: 'contain',
+    serverName: 'srv',
+    toolCallTimeoutMs: 5_000,
+    ...(recoverSession === undefined ? {} : { recoverSession }),
+  }
 }
 
 function clientWith(callTool: (params: unknown, options: unknown) => Promise<unknown>) {
@@ -100,7 +105,7 @@ describe('syncTools session recovery', () => {
       arguments: {},
     })
     expect(result.isError).toBe(true)
-    expect(String(result.content[0]?.text)).toMatch(/Session not found/)
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toMatch(/Session not found/)
   })
 
   it('does not retry an expired session when no recovery hook is configured', async () => {
@@ -131,7 +136,7 @@ describe('syncTools session recovery', () => {
       arguments: {},
     })
     expect(result.isError).toBe(true)
-    expect(String(result.content[0]?.text)).toMatch(/boom/)
+    expect(result.content[0]?.type === 'text' ? result.content[0].text : '').toMatch(/boom/)
     expect(recoverSession).not.toHaveBeenCalled()
   })
 })
