@@ -11,6 +11,7 @@ import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type { LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { RetryId } from './brand.ts'
 import type { LlmRetryEventData } from './types.ts'
@@ -40,6 +41,32 @@ function validateConfig(config: Config): void {
 export interface RetryInternals {
   /** Random sample in the inclusive zero-to-one range used for jitter. */
   random?: () => number
+}
+
+/**
+ * `ctx.llmRetryControl`: end a pending retry wait early.
+ *
+ * A policy that lists a provider-reported delay — a subscription cooldown, for
+ * instance — holds the turn for as long as that long. Something the person
+ * changed while the turn waited, such as the route's fallback switch, has no
+ * effect until the wait ends and the next attempt reads the new choice, so the
+ * surface that recorded the change ends the wait instead: the next attempt
+ * starts at once and decides under the value the person just set.
+ */
+export interface LlmRetryControl {
+  /**
+   * End every retry wait pending for one Session, so its attempts resume now.
+   *
+   * The waits belong to attempts that were already scheduled; ending one is not
+   * a retry decision of its own — it only brings the next attempt forward.
+   * @param sessionId - the Session whose pending retry waits to resume.
+   * @returns whether this Session had a wait to end.
+   */
+  wake(sessionId: SessionId): boolean
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { llmRetryControl: LlmRetryControl }
 }
 
 type DownstreamOutcome =
@@ -80,18 +107,28 @@ function retryStateKey(provider: string, policyKey: string): string {
   return JSON.stringify([provider, policyKey])
 }
 
-function cancellableDelay(delayMs: number, signal: AbortSignal): Promise<boolean> {
+/**
+ * Wait out one scheduled retry, ending early on an abort or on a wake.
+ * @param delayMs - the scheduled backoff delay.
+ * @param signal - the turn's and this plugin's lifetime, fused.
+ * @param woken - aborted by a surface that changed what the next attempt reads.
+ * @returns whether the attempt should resume: false on abort, true otherwise.
+ */
+function cancellableWait(delayMs: number, signal: AbortSignal, woken: AbortSignal): Promise<boolean> {
   if (signal.aborted) return Promise.resolve(false)
+  if (woken.aborted) return Promise.resolve(true)
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve(true)
-    }, delayMs)
-    function onAbort(): void {
+    function done(resumed: boolean): void {
       clearTimeout(timer)
-      resolve(false)
+      signal.removeEventListener('abort', onAbort)
+      woken.removeEventListener('abort', onWoken)
+      resolve(resumed)
     }
+    const timer = setTimeout(() => { done(true) }, delayMs)
+    function onAbort(): void { done(false) }
+    function onWoken(): void { done(true) }
     signal.addEventListener('abort', onAbort, { once: true })
+    woken.addEventListener('abort', onWoken, { once: true })
   })
 }
 
@@ -139,12 +176,41 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
   const random = internals.random ?? Math.random
   const lifetime = new AbortController()
   const active = new Set<Promise<RequestErrorAction>>()
+  // One set of wake callbacks per Session: a surface that changed something the
+  // next attempt reads (the route's fallback switch) ends the wait instead of
+  // waiting out a delay the person already overruled.
+  const waiters = new Map<SessionId, Set<() => void>>()
 
   function track(operation: Promise<RequestErrorAction>): Promise<RequestErrorAction> {
     const tracked = operation.finally(() => active.delete(tracked))
     active.add(tracked)
     return tracked
   }
+
+  function addWaiter(sessionId: SessionId, wake: () => void): () => void {
+    const remove = (): void => {
+      const pending = waiters.get(sessionId)
+      if (pending === undefined) return
+      pending.delete(wake)
+      if (pending.size === 0) waiters.delete(sessionId)
+    }
+    const pending = waiters.get(sessionId)
+    if (pending === undefined) waiters.set(sessionId, new Set([wake]))
+    else pending.add(wake)
+    return remove
+  }
+
+  function wakeSession(sessionId: SessionId): boolean {
+    const pending = waiters.get(sessionId)
+    if (pending === undefined || pending.size === 0) return false
+    for (const wake of [...pending]) wake()
+    return true
+  }
+
+  ctx.effect(
+    () => ctx.reflect.provide('llmRetryControl', { wake: wakeSession } satisfies LlmRetryControl),
+    'llm-retry: llmRetryControl',
+  )
 
   async function backoff(
     agent: Agent,
@@ -186,7 +252,17 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
         failure,
       }
     agent.session.append('llm/retry', eventData)
-    if (!await cancellableDelay(delayMs, fusedSignal)) return
+    // The wait ends on the turn's abort, on this plugin's lifetime, or because a
+    // surface changed what the next attempt would read and asked for it now.
+    // Only an abort stops the attempt; the loop's own `throwIfAborted()` after
+    // this listener settles is what makes an aborted turn end regardless.
+    const woken = new AbortController()
+    const removeWaiter = addWaiter(agent.session.id, () => { woken.abort() })
+    try {
+      if (!await cancellableWait(delayMs, fusedSignal, woken.signal)) return
+    } finally {
+      removeWaiter()
+    }
     agent.session.append('llm/retry-started', { retryId, turn, step, retry })
     return { kind: 'retry' }
   }

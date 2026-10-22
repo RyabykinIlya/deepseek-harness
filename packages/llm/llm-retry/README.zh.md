@@ -51,7 +51,7 @@ kind: "package-reference"
 
 ### 你可以观察到什么
 
-每次计划的重试在等待前就是持久的：插件会先追加携带重试 id、提供方、模式、策略键、失败与计划延迟的非表层 `llm/retry` 事件，然后在重试开始前立即追加 `llm/retry-started` 事件。提供方给出且符合策略边界的有效 `Retry-After` 会替换本地退避。等待完成后，loop 会在同一个打开的轮次内重跑失败步骤，仍基于同一份持久历史，因此重试请求与原始请求一样可以从会话日志重建。取消或插件释放会中止进行中的退避、等待活跃的委派恢复结算，并使释放前捕获的回调只能以失败结束。
+每次计划的重试在等待前就是持久的：插件会先追加携带重试 id、提供方、模式、策略键、失败与计划延迟的非表层 `llm/retry` 事件，然后在重试开始前立即追加 `llm/retry-started` 事件。提供方给出且符合策略边界的有效 `Retry-After` 会替换本地退避。等待完成后，loop 会在同一个打开的轮次内重跑失败步骤，仍基于同一份持久历史，因此重试请求与原始请求一样可以从会话日志重建。取消或插件释放会中止进行中的退避、等待活跃的委派恢复结算，并使释放前捕获的回调只能以失败结束。挂起的等待也可以由它所属的 Session 通过 `ctx.llmRetryControl.wake(sessionId)` 提前结束：当某个界面改动了下一次尝试会读取的内容（例如路由的 fallback 开关）时，它会立刻恢复该尝试，而不是让人等完一个自己已经推翻的延迟。被唤醒的是一次新的尝试，而不是一次新的重试决策：它不消耗预算，并追加同样的 `llm/retry-started` 事件。
 
 ### 失败与恢复
 
@@ -75,13 +75,13 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 函数插件：waterfall 监听器、策略查找、退避、持久事件追加 |
+| [`src/index.ts`](src/index.ts) | 函数插件：waterfall 监听器、策略查找、退避、持久事件追加，以及 `llmRetryControl` 服务 |
 | [`src/types.ts`](src/types.ts) | 浏览器安全的 `llm/retry` 与 `llm/retry-started` 事件载荷类型 |
 | [`src/brand.ts`](src/brand.ts) | 事件载荷共享的 `RetryId` 品牌 |
 
 ### 恢复流程
 
-失败步骤连同其提供方与解析后的策略一起到达 waterfall。always mode 先结算下游恢复，并遵循下游的 `retry` 决定；normal mode 先检查失败 code 是否合格、预算是否未耗尽。插件计算延迟——有效且在边界内的提供方 `Retry-After`，否则带对称抖动的本地有界指数退避——追加 `llm/retry` 事件，在可取消定时器上等待，追加 `llm/retry-started`，然后返回 `{ kind: 'retry' }`。loop 随后在同一个打开的轮次内重跑失败步骤（仍基于同一份持久历史）。
+失败步骤连同其提供方与解析后的策略一起到达 waterfall。always mode 先结算下游恢复，并遵循下游的 `retry` 决定；normal mode 先检查失败 code 是否合格、预算是否未耗尽。插件计算延迟——有效且在边界内的提供方 `Retry-After`，否则带对称抖动的本地有界指数退避——追加 `llm/retry` 事件，在可取消定时器上等待（该等待也可由 `ctx.llmRetryControl` 提前结束），追加 `llm/retry-started`，然后返回 `{ kind: 'retry' }`。loop 随后在同一个打开的轮次内重跑失败步骤（仍基于同一份持久历史）。
 
 ### Waterfall 组合
 

@@ -51,7 +51,7 @@ Omission of `retryPolicy` uses normal mode: five retries for `EMPTY_RESPONSE`, `
 
 ### What you can observe
 
-Each scheduled retry is durable before its wait: the plugin appends a non-surface `llm/retry` event carrying the retry id, provider, mode, policy key, failure, and scheduled delay, then a `llm/retry-started` event immediately before the retry begins. A valid `Retry-After` from the provider replaces local backoff when it fits the policy bounds. When the wait completes, the loop re-runs the failed step inside the same open turn over the same durable history, so the retried request is reconstructable from the session log exactly like the original. Cancellation or plugin disposal aborts active backoff, drains active delegated recovery, and makes a callback captured before disposal fail closed.
+Each scheduled retry is durable before its wait: the plugin appends a non-surface `llm/retry` event carrying the retry id, provider, mode, policy key, failure, and scheduled delay, then a `llm/retry-started` event immediately before the retry begins. A valid `Retry-After` from the provider replaces local backoff when it fits the policy bounds. When the wait completes, the loop re-runs the failed step inside the same open turn over the same durable history, so the retried request is reconstructable from the session log exactly like the original. Cancellation or plugin disposal aborts active backoff, drains active delegated recovery, and makes a callback captured before disposal fail closed. A pending wait can also be ended by its own Session through `ctx.llmRetryControl.wake(sessionId)`: a surface that changed what the next attempt would read — a route's fallback switch, say — resumes the attempt at once instead of leaving the person to wait out a delay they already overruled. The woken attempt is a new attempt, not a new retry decision: it does not consume budget and appends the same `llm/retry-started` event.
 
 ### Failures and recovery
 
@@ -75,7 +75,7 @@ The executor is built on one rule: **durable before wait, open-step boundaries.*
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | The function plugin: waterfall listener, policy lookup, backoff, durable event appends |
+| [`src/index.ts`](src/index.ts) | The function plugin: waterfall listener, policy lookup, backoff, durable event appends, and the `llmRetryControl` service |
 | [`src/types.ts`](src/types.ts) | Browser-safe `llm/retry` and `llm/retry-started` event payload types |
 | [`src/brand.ts`](src/brand.ts) | The `RetryId` brand shared by the event payloads |
 

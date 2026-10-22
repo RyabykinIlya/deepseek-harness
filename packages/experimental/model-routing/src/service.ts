@@ -22,6 +22,9 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
 import type {} from '@deepseek-ai/dsh-token-meter'
 // The `agent/request` seam this service rewrites.
 import type {} from '@deepseek-ai/dsh-agent'
+// `ctx.llmRetryControl`: the asks that end a pending retry wait, so a switch the
+// person just flipped applies to an attempt already scheduled.
+import type {} from '@deepseek-ai/dsh-llm-retry'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { fetchOpenRouterEndpoints, fetchOpenRouterModelCatalog } from '@deepseek-ai/dsh-llm-pi-ai'
 import { TiersAdapter } from './adapter.ts'
@@ -187,6 +190,12 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
    */
   setOpenRouterFallback(session: Session, enabled: boolean): void {
     session.append('model-routing/openrouter-fallback', { enabled }, { ignorable: true })
+    // A turn already waiting on a subscription cooldown scheduled that wait under
+    // the previous choice, and nothing else would end it before the cooldown does:
+    // the person who just overruled the choice would watch a spent subscription
+    // hold the Session for the rest of the cooldown. Ending the wait resumes the
+    // next attempt at once, and that attempt reads this value.
+    this.ctx.get('llmRetryControl')?.wake(session.id)
   }
 
   /**

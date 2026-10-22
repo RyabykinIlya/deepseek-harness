@@ -64,6 +64,8 @@ What happens next depends on the OpenRouter fallback switch. `fallbackToOpenRout
 - **On.** OpenRouter stays a candidate. The re-decision ranks the whole tier, so the turn continues on the cheapest healthy candidate — another model's live subscription when one ranks, otherwise an OpenRouter endpoint.
 - **Off.** The model is served only by its subscription: for every model the tier's `extraSources` serve, OpenRouter candidates are rejected as `subscription-only`. With every subscription benched the turn fails with `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, which names the remaining cooldown both in its message and as `providerRetryAfterMs`. That field is what lets a deployment wait instead of failing: `retryPolicy.retryableCodes` naming this code, with `backoff.maxDelayMs` at least as long as `quotaCooldownMs`, holds the turn until the soonest subscription returns and decides again, so an unattended session resumes on its own. The default policy names neither, so the failure surfaces and the next message retries the subscription. A model the tier serves only from OpenRouter keeps its OpenRouter endpoint in both states — otherwise the switch would delete models rather than choose their source.
 
+Changing the switch ends a wait that is already pending, so the next attempt decides at once under the value just chosen instead of serving out the rest of the cooldown: the service asks `ctx.llmRetryControl` to wake the Session, and the retry executor resumes it. Without `dsh-llm-retry` there is no pending wait to end, and the choice applies from the next request.
+
 <a id="snapshots"></a>
 ### Snapshots
 
