@@ -1,0 +1,22 @@
+# TG-нотификатор: короткие уведомления в Telegram о ходе работы харнесса.
+#
+# Слой только монтирует плагин. Токен и chat id читаются на хосте из launch-окружения
+# (порядок dsh-credentials-local: managed store -> process env -> <cwd>/.env -> $DSH_HOME/.env)
+# по ключам TG_NOTIFY_BOT_TOKEN / TG_NOTIFY_CHAT_ID, поэтому в конфиге их держать не нужно.
+#
+# Переопределения (все поля опциональны, значения по умолчанию — в resolveConfig index.js):
+#   - id: tg-notify
+#     name: '@local/tg-notify'
+#     config:
+#       level: all                # all | approval-only
+#       minRunSeconds: 30         # короче — «задача завершена» не шлём
+#       idleDebounceMs: 8000      # склейка последовательных ходов (goal-раунды не спамят)
+#       minJobMs: 60000           # фоновой джобе нужно столько, чтобы о ней пинговать
+#       notifySubagents: false    # конец сабагента обычно шум: главный агент всё ещё работает
+#       notifyStartup: true       # «нотификатор подключён» при старте — проверка связки
+#
+# ВАЖНО: config в patch-слое заменяет объект целиком, а не мержится — переопределяя,
+# перечисляйте все поля, которые вам важны; остальное возьмётся из дефолтов схемы.
+- insert:
+    - id: tg-notify
+      name: '@local/tg-notify'

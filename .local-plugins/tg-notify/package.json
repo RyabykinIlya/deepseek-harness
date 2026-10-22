@@ -1,0 +1,17 @@
+{
+  "name": "@local/tg-notify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram notifications for DeepSeek Harness: task finished, approval or question waiting, background job settled, goal completed or blocked, startup check. Env-configured, host-side only.",
+  "exports": {
+    ".": "./index.js",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "cordis.patch.yml", "icon.svg", "README.md"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
