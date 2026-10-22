@@ -13,11 +13,20 @@
 
 Две равноправные цели папки — обновляемость ядра и простота — описаны в [README.md](README.md). Решения с причинами — в [DECISIONS.md](DECISIONS.md), числа, на которых они стоят, — в [MEASUREMENTS.md](MEASUREMENTS.md).
 
-## Незалитая работа: OpenRouter fallback (worktree, 2026-10-18)
+## OpenRouter fallback (влито в master)
 
-Новая фича Model routing собрана **в worktree** `.worktrees/openrouter-fallback`, ветка `feat/openrouter-fallback`, один коммит `0d0263ef41`. В основной чекаут и master она **не лилась**, чтобы не трогать живой процесс. Это **переключатель OpenRouter fallback на сессию из чипа композера**: `QUOTA`/`KEY_QUOTA` банят подписочный источник сразу на `quotaCooldownMs` (дефолт 10 минут); переключатель решает, уходит ли ход на OpenRouter при израсходованной подписке (по умолчанию `true`) или падает с `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, чтобы следующее сообщение снова пошло на подписку. Выбор — событие `model-routing/openrouter-fallback` в логе сессии, переживает рестарт хоста. Документы обновлены там же: раздел в [ROUTING.md](ROUTING.md) (пункт 7) и строки 10–13 в [DECISIONS.md](DECISIONS.md#model-routing), плюс запись о persistence-изменении `docs/persistence-changes/2026-10-18-openrouter-fallback.md`.
+Фича Model routing **слита в master** (`0d0263ef41` — переключатель, `5afe1dbe9a` — дефолт выключен). Это **переключатель OpenRouter fallback на сессию из чипа композера**: `QUOTA`/`KEY_QUOTA` банят подписочный источник сразу на `quotaCooldownMs` (дефолт 10 минут); переключатель решает, уходит ли ход на OpenRouter при израсходованной подписке (дефолт `fallbackToOpenRouter: false`, у тредов и суб-агентов своего выбора не бывает) или падает с `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, чтобы следующее сообщение снова пошло на подписку. Выбор — событие `model-routing/openrouter-fallback` в логе сессии, переживает рестарт хоста. Раздел в [ROUTING.md](ROUTING.md) (пункт 7) и решения 11–13 в [DECISIONS.md](DECISIONS.md#model-routing); запись о persistence-изменении — `docs/persistence-changes/2026-10-18-openrouter-fallback.md`.
 
-Проверено в worktree: `npx tsc --build` по обоим пакетам чист; `npx vitest run packages/experimental/model-routing packages/experimental/client-ui-model-routing packages/experimental/model-routing-profile packages/experimental/tool-threads` — 29 файлов, **416 тестов зелёные**; lint по новым файлам чист (две ошибки в `model-switch.ts` были до этого и остаются); `persistence-changes --record` сделан, пара документации в `README.i18n.yaml` записана. Проверка готовности к жизни — ключ `OPENROUTER_API_KEY` разрешается из `~/.dsh/.env`, тиры в профиле объявляют `extraSources`. Поднятие на живом хосте — отдельное окно по [adr/0003](adr/0003-merge-in-worktree-with-fast-forward-cutover.md).
+### Прерывание ожидания ретрая (2026-10-22)
+
+Живой прогон вскрыл дефект, которого не было видно на тестах: **галочка не подхватывалась, а сессия висела до 10 минут на раунд.** Две причины, обе в коде, а не в конфиге:
+
+1. Значение читается в начале каждого запроса (`adapter.ts`, `run`) и при каждом перерешении (`reroute`), но **нового запроса не начинается**, пока `llm-retry` висит в ожидании `providerRetryAfterMs`. С политикой рабочего профиля (`maxRetries: 100`, `maxDelayMs: 900000`, `MODEL_ROUTING_SUBSCRIPTION_LIMIT` в `retryableCodes`) это цикл по 10 минут; всё это время новое сообщение не принимается.
+2. `setOpenRouterFallback` только писал событие в лог. Прервать ожидание было нечем: `cancellableDelay` слушал лишь abort хода.
+
+Правка: `llm-retry` публикует сервис `ctx.llmRetryControl` с `wake(sessionId)`, ожидание слушает третий сигнал и возобновляет попытку сразу; `setOpenRouterFallback` зовёт `wake` после записи события. Поставили галочку посреди ожидания — ход уходит на OpenRouter немедленно, не успели — со следующего сообщения. Правила ретраев подписок не менялись: при включённом fallback подписка уходит из ранжирования только на `quotaCooldownMs` и потом снова выигрывает по цене; `RATE_LIMIT`, `SERVER`, `TIMEOUT` ретраятся как раньше. Решения — 18 и 19 в [DECISIONS.md](DECISIONS.md#model-routing), поведение — [ROUTING.md](ROUTING.md) пункт 7.
+
+Проверено: `tsc` по `llm-retry` и `model-routing` чист; `vitest run packages/experimental/model-routing/tests packages/llm/llm-retry/tests` — 22 файла, **342 теста зелёные**; пробуждение проверено одноразовым тестом (ожидание прерывается, повторный `wake` возвращает `false`), тест удалён; lint по моим файлам чист (20 оставшихся ошибок — в `llm-pi-ai`, `client-ui-*`, `subagent`, `threads` и их тестах, они были до правки). Профиль надо перезапустить: патч читается при старте.
 
 
 ## Приоритеты

@@ -82,7 +82,7 @@ done
 |---|---|---|
 | **A. Перегенерируемое** | 14 | 8 сгенерированных `docs/*`, 4 `.i18n.yaml` под `docs/`, `pnpm-lock.yaml`, `THIRD_PARTY_NOTICES.md`, `no-unknown-casts.baseline.json`, `known-event-types.ts`, `tool-cordis/src/api-catalog.ts` |
 | **B. Точки регистрации** | 13 | `tsconfig.*.json` (3), `lefthook.yml`, `scripts/*` (7), и прочие скрипты |
-| **C. Правки апстримных пакетов** | 122 | настоящая цена мержа, таблица ниже |
+| **C. Правки апстримных пакетов** | 123 | настоящая цена мержа, таблица ниже |
 | Документация подсистем и заметки | 10 | `docs/subsystems/*` (8) и два перевода заметки в `.agents/notes/implemented/feature/` |
 | Снапшоты | 3 | `snapshots/session/headless.snapshot.ts`, два в `web-search-endpoint-guidance` |
 
@@ -113,7 +113,7 @@ done
 
 | Что | Апстримные пакеты | Файлов |
 |---|---|---|
-| Model routing, маршрут `claude-proxy`, ключи (`KEY_QUOTA`, `CLIENT_GATE`) | `llm/llm-pi-ai` (13), `llm/llm` (7) | 20 |
+| Model routing, маршрут `claude-proxy`, ключи (`KEY_QUOTA`, `CLIENT_GATE`), прерываемое ожидание ретрая | `llm/llm-pi-ai` (13), `llm/llm` (7), `llm/llm-retry` (1) | 21 |
 | Restore: форк диалога от сообщения | `client/ui-chat` | 15 |
 | Threads: continuable subagent, шов `cwd`/`agentPreset`/`handles` | `subagent/subagent` | 14 |
 | Threads: `allowedModels`, `repository`, `backgroundMode` | `subagent/tool-subagent` (9) и пять провайдеров `subagent/subagent-*` (5) | 14 |
@@ -126,6 +126,8 @@ done
 | Прочее | `.gitignore`, `client/product-analytics`, `client/ui-workflow-run`, `experimental/tool-ralph`, README групп `experimental`, `subagent` и `web` (5 файлов с i18n) | 11 |
 
 **`bundle/*` из этой таблицы исчез:** после T2 `packages/bundle/` побайтово апстримный целиком.
+
+Файл `llm/llm-retry/src/index.ts` (сервис `ctx.llmRetryControl`, решение 18) добавлен 2026-10-22 и на момент записи ещё не был коммитом, поэтому в истории против пина он пока не виден: число 123 — сумма таблицы с ним, а перемер командой ниже даст его после коммита.
 
 Строка про `web-fetch-http` — отдельный кастом форка, а не часть web-search: в `trustedProxyAddressRanges` оператор объявляет CIDR-блоки (LAN и fake-ip пул transparent-proxy), адреса внутри которых guard принимает как допустимые назначения. Решение с причинами — [DECISIONS.md](DECISIONS.md), раздел «Web fetch». Конфиг-точка фичи — теперь наш бандл `packages/web/web-search-profile/cordis.patch.yml` (была `bundle/base/cordis.patch.yml` до T2), дефолт `trustedProxyAddressRanges: [198.18.0.0/15]`.
 
