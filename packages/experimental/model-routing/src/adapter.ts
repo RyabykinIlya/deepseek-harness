@@ -47,7 +47,7 @@ import type { JudgeRequest } from './judge.ts'
 import type { KeyInfo } from './key-info.ts'
 import { quantizationsAtOrAbove } from './quantization.ts'
 import { unwrapHistory, wrapReplay } from './replay.ts'
-import { directSourcesOf, defaultMix, isDirect, mixFromUsage, policyFor, rankWithRelaxation } from './select.ts'
+import { directSourcesOf, defaultMix, isDirect, mixFromUsage, policyFor, rankWithRelaxation, subscriptionServesRequest } from './select.ts'
 import type { DirectSource, RequiredInput } from './select.ts'
 import type { UsageTotals } from './select.ts'
 import type {
@@ -763,12 +763,37 @@ export class TiersAdapter extends LlmAdapter {
     // satisfies it — and the tier says so — ranks again with the images left out,
     // which is the case the dispatch projects to placeholders and the decision
     // records as `imagesOmitted`.
-    const strict = rankWithRelaxation(lists, models, policy('require'), mix)
-    const relaxed = tier.imageInput === 'omit' && requirement !== undefined && strict.ranked.length === 0
-      ? rankWithRelaxation(lists, models, policy('omit'), mix)
+    const requirePolicy = policy('require')
+    const strict = rankWithRelaxation(lists, models, requirePolicy, mix)
+    const omitPolicy = tier.imageInput === 'omit' && requirement !== undefined && strict.ranked.length === 0
+      ? policy('omit')
       : undefined
+    const relaxed = omitPolicy === undefined ? undefined : rankWithRelaxation(lists, models, omitPolicy, mix)
     const result = relaxed ?? strict
+    const resultPolicy = omitPolicy ?? requirePolicy
     const best = result.ranked[0]
+    // A Session that refused OpenRouter fallback meets an all-benched
+    // subscription pool with a wait, not with the ranking's OpenRouter-only
+    // survivors: serving one would spend exactly where the Session chose to
+    // wait, so the exhaustion outranks the ranking. A request no subscription
+    // could serve even unbenched — an input none of their models declares —
+    // keeps those survivors, because there the switch chooses a source for a
+    // model, it does not remove the model. The cooldown is reported both in
+    // the message and as `providerRetryAfterMs`, so a retry policy that lists
+    // this code — and allows a delay that long — holds the turn until the
+    // soonest subscription returns and decides again, while the default policy
+    // lets the failure surface and leaves the retry to the next message.
+    if (subscriptionOnly !== undefined
+      && this.subscriptionsExhausted(key, extraSources)
+      && subscriptionServesRequest(extraSources, resultPolicy)) {
+      const retryAfterMs = this.earliestRetryMs(key, extraSources)
+      throw new LlmError(
+        `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
+        + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
+        MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+        retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : undefined,
+      )
+    }
     let decidedModel: string
     let endpoint: OpenRouterEndpoint | undefined
     let direct: DirectSource | undefined
@@ -808,21 +833,6 @@ export class TiersAdapter extends LlmAdapter {
       source = { kind: 'openrouter', tag: first }
       block = unpinnedBlock(tier)
       unpinnedReason = reasons
-    } else if (subscriptionOnly !== undefined && this.subscriptionsExhausted(key, extraSources)) {
-      // Nothing ranked because every subscription that could serve these models
-      // is benched: the Session chose to wait rather than spend. The cooldown is
-      // reported both in the message and as `providerRetryAfterMs`, so a retry
-      // policy that lists this code — and allows a delay that long — holds the
-      // turn until the soonest subscription returns and decides again, while the
-      // default policy lets the failure surface and leaves the retry to the next
-      // message.
-      const retryAfterMs = this.earliestRetryMs(key, extraSources)
-      throw new LlmError(
-        `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
-        + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
-        MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
-        retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : undefined,
-      )
     } else {
       const counts = Object.entries(result.rejections)
         .filter(([, count]) => count > 0)

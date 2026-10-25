@@ -1566,6 +1566,74 @@ describe('TiersAdapter direct sources', () => {
     expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
   })
 
+  it('waits out an all-benched subscription pool instead of serving another model from OpenRouter', async () => {
+    // The refusal covers the pool, not only the failed model's own candidates:
+    // a tier holding OpenRouter-only models ranks one of them the moment every
+    // subscription is benched, and serving it would spend exactly where the
+    // Session chose to wait. The failure reports the cooldown a retry policy
+    // waits out; the OpenRouter-only model is never dispatched to.
+    const h = await harness({
+      tiers: [{
+        ...MIMO,
+        models: ['xiaomi/mimo-v2.6-pro', 'z-ai/glm-5.3'],
+        extraSources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      }],
+      endpoints: {
+        'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.1e-7)],
+      },
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: false,
+        quotaCooldownMs: 600000,
+      },
+      responses: [failureChunks('QUOTA')],
+    })
+    const failure = await run(h.adapter).then((): undefined => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(LlmError)
+    expect((failure as LlmError).failure).toMatchObject({
+      code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+      providerRetryAfterMs: 600000,
+    })
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
+  })
+
+  it('still serves an image request from an OpenRouter-only model while the subscriptions are benched', async () => {
+    // The wait exists to bring the turn back to a subscription that can serve
+    // it. A request whose input no subscription model declares has no such
+    // subscription to wait for, so the tier's image-capable OpenRouter model
+    // serves it: the switch chooses a source for a model, it does not remove
+    // the model.
+    const h = await harness({
+      tiers: [{
+        ...MIMO,
+        models: ['xiaomi/mimo-v2.6-pro', 'z-ai/glm-5.3'],
+        extraSources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      }],
+      endpoints: {
+        'xiaomi/mimo-v2.6-pro': [endpointOf('streamlake/fp8', 1.2e-7)],
+        'z-ai/glm-5.3': [endpointOf('novita/fp8', 1.1e-7)],
+      },
+      catalog: [
+        { id: 'xiaomi/mimo-v2.6-pro', canonicalSlug: 'xiaomi/mimo-v2.6-pro-20260423', inputModalities: ['text'] },
+        { id: 'z-ai/glm-5.3', canonicalSlug: 'z-ai/glm-5.3-20260423', inputModalities: ['text', 'image'] },
+      ],
+      settings: {
+        judgeEnabled: false,
+        defaultTier: 'flash', judgeProTier: 'flash', judgeFlashTier: 'flash',
+        fallbackToOpenRouter: false,
+        quotaCooldownMs: 600000,
+      },
+      responses: [failureChunks('QUOTA')],
+    })
+    await expect(run(h.adapter)).rejects.toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
+    const chunks = await run(h.adapter, imageRequest())
+    expect(h.sent[1]?.options.provider).toBe('openrouter')
+    expect(h.sent[1]?.options.model).toBe('z-ai/glm-5.3')
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('reports the subscription cooldown as the retry delay, so a policy may hold the turn for it', async () => {
     // The cooldown is the one fact a retry policy needs to wait out a spent
     // subscription instead of failing the turn. Without it on the failure, a

@@ -382,6 +382,29 @@ export function modelRejectionOf(model: string, policy: SelectionPolicy): Endpoi
 }
 
 /**
+ * Whether one of these subscriptions would clear the request's model-level
+ * filter, so a bench is the only thing keeping it out of a ranking.
+ *
+ * A Session that refused OpenRouter fallback waits out a benched subscription
+ * pool only while an unbenched subscription would have served the request: a
+ * request whose input no subscription model declares keeps the tier's
+ * OpenRouter-only models, because there the switch chooses a source for a
+ * model rather than removing the model.
+ * @param extraSources - the direct candidates per canonical model id.
+ * @param policy - the policy the ranking runs under.
+ * @returns true when at least one subscription's model can serve the request.
+ */
+export function subscriptionServesRequest(
+  extraSources: ReadonlyMap<string, readonly DirectSource[]>,
+  policy: SelectionPolicy,
+): boolean {
+  for (const model of extraSources.keys()) {
+    if (modelRejectionOf(model, policy) === undefined) return true
+  }
+  return false
+}
+
+/**
  * The first reason one candidate cannot serve the tier, or `undefined` when it can.
  *
  * Order is the order the failures are worth reporting in: a tag excluded after a
