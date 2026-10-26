@@ -4,11 +4,16 @@
 # (порядок dsh-credentials-local: managed store -> process env -> <cwd>/.env -> $DSH_HOME/.env)
 # по ключам TG_NOTIFY_BOT_TOKEN / TG_NOTIFY_CHAT_ID, поэтому в конфиге их держать не нужно.
 #
+# Метка машины (вторая строка сообщения) тоже не требует конфига: hostLabel -> TG_NOTIFY_HOST
+# -> os.hostname(). Два компа с одним конфигом из dotfiles различаются автоматически, потому
+# что hostname у них разный; короткое имя задаётся на самой машине через TG_NOTIFY_HOST.
+#
 # Переопределения (все поля опциональны, значения по умолчанию — в resolveConfig index.js):
 #   - id: tg-notify
 #     name: '@local/tg-notify'
 #     config:
 #       level: all                # all | approval-only
+#       hostLabel: ''             # метка машины; пусто — TG_NOTIFY_HOST, затем os.hostname()
 #       minRunSeconds: 30         # короче — «задача завершена» не шлём
 #       idleDebounceMs: 8000      # склейка последовательных ходов (goal-раунды не спамят)
 #       minJobMs: 60000           # фоновой джобе нужно столько, чтобы о ней пинговать

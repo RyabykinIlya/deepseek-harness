@@ -16,6 +16,7 @@
  */
 
 import net from 'node:net'
+import os from 'node:os'
 import tls from 'node:tls'
 
 /** Loader row id; matches the `insert` in cordis.patch.yml. */
@@ -37,6 +38,7 @@ const DEFAULTS = {
   threadId: '',
   proxy: '',
   level: '',
+  hostLabel: '',
   apiBase: 'https://api.telegram.org',
   tokenEnv: 'TG_NOTIFY_BOT_TOKEN',
   chatIdEnv: 'TG_NOTIFY_CHAT_ID',
@@ -44,6 +46,7 @@ const DEFAULTS = {
   enabledEnv: 'TG_NOTIFY_ENABLED',
   levelEnv: 'TG_NOTIFY_LEVEL',
   proxyEnv: 'TG_NOTIFY_PROXY',
+  hostEnv: 'TG_NOTIFY_HOST',
   timeoutMs: 8000,
   maxChars: 3800,
   minRunSeconds: 30,
@@ -85,6 +88,7 @@ const STRING_FIELDS = [
   'threadId',
   'proxy',
   'level',
+  'hostLabel',
   'apiBase',
   'tokenEnv',
   'chatIdEnv',
@@ -92,6 +96,7 @@ const STRING_FIELDS = [
   'enabledEnv',
   'levelEnv',
   'proxyEnv',
+  'hostEnv',
 ]
 
 /** Values of `<enabledEnv>` that switch notifications off; anything else non-empty means on. */
@@ -148,6 +153,208 @@ function fit(text, budget) {
     used += piece.length
   }
   return out
+}
+
+/**
+ * Reserved characters at the tail of a rendered body: the `…` itself plus the
+ * closing tags an open stack can need (link inside bold inside a code block).
+ */
+const TRUNCATION_RESERVE = 64
+
+/** Inline markdown → Telegram HTML. Order matters: longer delimiters first. */
+const INLINE_PATTERNS = [
+  // Fenced code never reaches here; a single-backtick span may hold anything.
+  { re: /`([^`\n]+)`/y, render: (m) => `<code>${escapeHtml(m[1])}</code>` },
+  { re: /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/y, render: (m) => `<a href="${escapeHtml(m[2])}">${inlineToTelegramHtml(m[1])}</a>` },
+  // `**` before `*`, or bold would be read as two italics.
+  { re: /\*\*([^*\n]+)\*\*/y, render: (m) => `<b>${inlineToTelegramHtml(m[1])}</b>` },
+  { re: /~~([^~\n]+)~~/y, render: (m) => `<s>${inlineToTelegramHtml(m[1])}</s>` },
+  { re: /\*([^*\n]+)\*/y, render: (m) => `<i>${inlineToTelegramHtml(m[1])}</i>` },
+]
+
+/**
+ * Convert one line's inline markdown to Telegram HTML, escaping every literal
+ * run. `_emphasis_` is deliberately unsupported: it would rewrite the
+ * SNAKE_CASE identifiers this plugin's own diagnostics are full of.
+ * @param text - raw inline markdown.
+ * @returns Telegram-safe HTML.
+ */
+function inlineToTelegramHtml(text) {
+  const source = String(text ?? '')
+  let out = ''
+  let literal = ''
+  let index = 0
+  const flush = () => {
+    if (literal !== '') {
+      out += escapeHtml(literal)
+      literal = ''
+    }
+  }
+  while (index < source.length) {
+    let matched = false
+    for (const { re, render } of INLINE_PATTERNS) {
+      re.lastIndex = index
+      const match = re.exec(source)
+      if (match === null) continue
+      // Read the end offset before rendering: `render` recurses into this
+      // function, and the nested call rewinds this shared regex's lastIndex.
+      const end = re.lastIndex
+      flush()
+      out += render(match)
+      index = end
+      matched = true
+      break
+    }
+    if (matched) continue
+    literal += source[index]
+    index += 1
+  }
+  flush()
+  return out
+}
+
+const FENCE_OPEN = /^\s*(```|~~~)\s*([\w+#.-]*)\s*$/
+const HEADING = /^\s{0,3}#{1,6}\s+(.*)$/
+const BULLET = /^(\s*)[-*+]\s+(.*)$/
+const ORDERED = /^(\s*)(\d{1,2})[.)]\s+(.*)$/
+const RULE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/
+
+/**
+ * Render Markdown for `parse_mode=HTML`.
+ *
+ * Code fences become `<pre><code class="language-x">` with the content escaped
+ * and never re-interpreted, inline spans and emphasis become their tags, and
+ * headings, lists, quotes and rules get Telegram's equivalents (there are no
+ * header tags, so a heading is bold). A fence left open by a truncated reply is
+ * closed here, because Telegram rejects the whole message on unbalanced tags.
+ *
+ * @param text - the model's markdown, straight from the session log.
+ * @returns Telegram-safe HTML with every tag balanced.
+ */
+function markdownToTelegramHtml(text) {
+  const lines = String(text ?? '').split('\n')
+  const out = []
+  let fence = null
+  let quote = []
+  const flushQuote = () => {
+    if (quote.length === 0) return
+    out.push(`<blockquote>${quote.join('\n')}</blockquote>`)
+    quote = []
+  }
+  for (const line of lines) {
+    if (fence !== null) {
+      if (new RegExp(`^\\s*${fence.marker}\\s*$`).test(line)) {
+        out.push(`</code></pre>`)
+        fence = null
+      } else {
+        out.push(escapeHtml(line))
+      }
+      continue
+    }
+    const opening = FENCE_OPEN.exec(line)
+    if (opening !== null) {
+      flushQuote()
+      fence = { marker: opening[1] }
+      const language = opening[2]
+      out.push(language === ''
+        ? '<pre><code>'
+        : `<pre><code class="language-${escapeHtml(language)}">`)
+      continue
+    }
+    const quoted = /^\s{0,3}>\s?(.*)$/.exec(line)
+    if (quoted !== null) {
+      quote.push(inlineToTelegramHtml(quoted[1]))
+      continue
+    }
+    flushQuote()
+    if (line.trim() === '') {
+      out.push('')
+      continue
+    }
+    const rule = RULE.exec(line)
+    if (rule !== null) {
+      out.push('──────────')
+      continue
+    }
+    const heading = HEADING.exec(line)
+    if (heading !== null) {
+      out.push(`<b>${inlineToTelegramHtml(heading[1].trim())}</b>`)
+      continue
+    }
+    const bullet = BULLET.exec(line)
+    if (bullet !== null) {
+      const depth = Math.floor(bullet[1].length / 2)
+      out.push(`${'  '.repeat(depth)}• ${inlineToTelegramHtml(bullet[2])}`)
+      continue
+    }
+    const ordered = ORDERED.exec(line)
+    if (ordered !== null) {
+      out.push(`${ordered[1]}${ordered[2]}. ${inlineToTelegramHtml(ordered[3])}`)
+      continue
+    }
+    out.push(inlineToTelegramHtml(line))
+  }
+  if (fence !== null) out.push('</code></pre>')
+  flushQuote()
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** Tag name of an HTML token, or '' when the token is text. */
+function tagNameOf(token) {
+  if (token.startsWith('</')) return token.slice(2, -1).split(/\s/)[0].toLowerCase()
+  if (token.startsWith('<')) return token.slice(1, -1).split(/\s/)[0].toLowerCase()
+  return ''
+}
+
+/**
+ * Truncate rendered HTML to `budget`, closing whatever tags are still open so
+ * Telegram accepts the result. Tags and entities are consumed atomically, so a
+ * cut never lands inside `<code` or `&amp`.
+ *
+ * @param html - balanced HTML from `markdownToTelegramHtml`.
+ * @param budget - the message-wide character budget.
+ * @returns HTML of at most `budget` characters, ending in `…`.
+ */
+function truncateHtml(html, budget) {
+  if (html.length <= budget) return html
+  const limit = budget - TRUNCATION_RESERVE
+  const tokens = html.match(/<\/?[a-z][^>]*>|&[#a-z0-9]+;|[\s\S]/gi) ?? []
+  const stack = []
+  let out = ''
+  for (const token of tokens) {
+    const name = tagNameOf(token)
+    const closing = token.startsWith('</')
+    const closes = closing && stack.length > 0 && stack[stack.length - 1] === name
+    // The closing tag of whatever is still open is always affordable: its
+    // budget was reserved up front. Any other token must fit whole, and the
+    // first one that does not ends the message.
+    if (!closes && out.length + token.length > limit) break
+    out += token
+    if (name !== '') {
+      if (closing) {
+        if (closes) stack.pop()
+      } else {
+        stack.push(name)
+      }
+    }
+  }
+  while (stack.length > 0) out += `</${stack.pop()}>`
+  return `${out}…`
+}
+
+/**
+ * Render one free-text field (a final answer, a question, a reason) as Telegram
+ * HTML and fit it into `budget`. The raw markdown is pre-cut well above the
+ * budget so a pathological reply never pays for a full render.
+ *
+ * @param text - markdown taken from the session log.
+ * @param budget - the message-wide character budget.
+ * @returns Telegram-safe HTML within `budget`.
+ */
+function fitMarkdown(text, budget) {
+  const raw = String(text ?? '')
+  const capped = raw.length > budget * 4 ? `${raw.slice(0, budget * 4)}\n…` : raw
+  return truncateHtml(markdownToTelegramHtml(capped), budget)
 }
 
 /** Compact Russian duration: "42 с", "5 мин 03 с", "1 ч 07 мин". */
@@ -451,6 +658,28 @@ export function apply(ctx, rawConfig) {
   const resolveProxy = async () => config.proxy || (await envValue(config.proxyEnv)) || ''
 
   /**
+   * Which machine sent this notification. Both the Mac and the WSL PC load the
+   * same tracked dsh config, so the label comes from the host that runs the
+   * plugin: `config.hostLabel` when a profile pins one, else `TG_NOTIFY_HOST`,
+   * else the OS hostname. `hostname -s` is already what the dotfiles machine
+   * layer keys on, so the default names the same host the tokens do.
+   */
+  const resolveHost = async () => {
+    const label = config.hostLabel || (await envValue(config.hostEnv)) || ''
+    if (label !== '') return label
+    try {
+      return os.hostname().split('.')[0]
+    } catch {
+      // A sandboxed host may refuse hostname(); the message is still useful
+      // without the badge, so this never becomes a send failure.
+      return ''
+    }
+  }
+
+  /** Badge line naming the sender, or '' when the host could not be resolved. */
+  const hostLine = (host) => (host === '' ? '' : `🖥 <code>${escapeHtml(host)}</code>`)
+
+  /**
    * Token + chat target, resolved per send so `secret set` and file watching
    * take effect without a restart.
    */
@@ -565,6 +794,8 @@ export function apply(ctx, rawConfig) {
    * run first, the text is built only after they pass, failures only log.
    * `kind` 'approval' and 'question' survive the approval-only level and the
    * rate limit, because a dropped "needs your approval" defeats the plugin.
+   * `buildText` receives the resolving host label so every template names the
+   * machine that sent it without re-reading it per line.
    */
   const fire = (kind, buildText) => {
     void (async () => {
@@ -582,7 +813,7 @@ export function apply(ctx, rawConfig) {
         // Charged only once a message can actually go out, so an unconfigured
         // deployment cannot exhaust the window a later configuration needs.
         if (!urgent && !allowSend()) return
-        await deliver(target, buildText())
+        await deliver(target, buildText(await resolveHost()))
       } catch (error) {
         logger.warn(`tg-notify: отправка не удалась: ${redact(messageOf(error), secret)}`)
       }
@@ -620,50 +851,66 @@ export function apply(ctx, rawConfig) {
   const notifyIdle = (sessionId, durationMs) => {
     const badge = reasonBadge(lastTurnEnd.get(sessionId)?.reason)
     const snippet = lastText.get(sessionId)
-    const lines = [
-      `${badge.icon} <b>DSH: задача завершена${badge.label}</b>`,
-      sessionHeader(sessionId),
-      `⏱ ${formatDuration(durationMs)}`,
-    ]
-    if (snippet !== undefined) {
-      lines.push('——', fit(snippet, bodyBudget))
-    }
-    fire('idle', () => lines.join('\n'))
+    fire('idle', (host) => {
+      const lines = [
+        `${badge.icon} <b>DSH: задача завершена${badge.label}</b>`,
+        hostLine(host),
+        sessionHeader(sessionId),
+        `⏱ ${formatDuration(durationMs)}`,
+      ]
+      if (snippet !== undefined) {
+        const body = fitMarkdown(snippet, bodyBudget)
+        if (body !== '') lines.push('——', body)
+      }
+      return lines.filter((line) => line !== '').join('\n')
+    })
   }
 
   const notifyApproval = (sessionId, data) => {
-    const lines = [
-      '⏸ <b>DSH: нужно одобрение</b>',
-      sessionHeader(sessionId),
-      `🔧 <code>${fit(data.toolName ?? '?', 120)}</code>`,
-    ]
-    if (typeof data.reason === 'string' && data.reason.trim() !== '') lines.push(fit(data.reason, 300))
-    fire('approval', () => lines.join('\n'))
+    const toolName = fit(data.toolName ?? '?', 120)
+    const reason = typeof data.reason === 'string' && data.reason.trim() !== '' ? data.reason : undefined
+    fire('approval', (host) => {
+      const lines = [
+        '⏸ <b>DSH: нужно одобрение</b>',
+        hostLine(host),
+        sessionHeader(sessionId),
+        `🔧 <code>${toolName}</code>`,
+      ]
+      if (reason !== undefined) lines.push(fitMarkdown(reason, 300))
+      return lines.filter((line) => line !== '').join('\n')
+    })
   }
 
   const notifyQuestion = (sessionId, questions) => {
-    const lines = ['❓ <b>DSH: агент ждёт ответа</b>', sessionHeader(sessionId)]
-    if (questions.length === 0) {
-      lines.push('Вопрос открыт в интерфейсе; структура аргументов недоступна.')
-    }
-    for (const question of questions.slice(0, 3)) {
-      const head = typeof question.header === 'string' && question.header !== '' ? `<b>${fit(question.header, 80)}</b> — ` : ''
-      lines.push(`• ${head}${fit(question.question ?? question.id ?? '', 300)}`)
-    }
-    fire('question', () => lines.join('\n'))
+    fire('question', (host) => {
+      const lines = ['❓ <b>DSH: агент ждёт ответа</b>', hostLine(host), sessionHeader(sessionId)]
+      if (questions.length === 0) {
+        lines.push('Вопрос открыт в интерфейсе; структура аргументов недоступна.')
+      }
+      for (const question of questions.slice(0, 3)) {
+        const head = typeof question.header === 'string' && question.header !== '' ? `<b>${fit(question.header, 80)}</b> — ` : ''
+        lines.push(`• ${head}${fitMarkdown(question.question ?? question.id ?? '', 300)}`)
+      }
+      return lines.filter((line) => line !== '').join('\n')
+    })
   }
 
   const notifyJob = (sessionId, data) => {
     const statusLabel = data.status === 'completed' ? 'завершена' : data.status === 'failed' ? 'упала' : 'остановлена'
     const icon = data.status === 'completed' ? '🔔' : data.status === 'failed' ? '💥' : '🛑'
-    const lines = [
-      `${icon} <b>DSH: фоновая задача ${statusLabel}</b>`,
-      sessionHeader(sessionId),
-      `📋 ${fit(data.label || data.kind || 'job', 160)}`,
-      `⏱ ${formatDuration(Number(data.finishedAt ?? 0) - Number(data.startedAt ?? 0))}`,
-    ]
-    if (typeof data.detail === 'string' && data.detail.trim() !== '') lines.push(fit(data.detail, 300))
-    fire('job', () => lines.join('\n'))
+    const detail = typeof data.detail === 'string' && data.detail.trim() !== '' ? data.detail : undefined
+    const durationMs = Number(data.finishedAt ?? 0) - Number(data.startedAt ?? 0)
+    fire('job', (host) => {
+      const lines = [
+        `${icon} <b>DSH: фоновая задача ${statusLabel}</b>`,
+        hostLine(host),
+        sessionHeader(sessionId),
+        `📋 ${fit(data.label || data.kind || 'job', 160)}`,
+        `⏱ ${formatDuration(durationMs)}`,
+      ]
+      if (detail !== undefined) lines.push(fitMarkdown(detail, 300))
+      return lines.filter((line) => line !== '').join('\n')
+    })
   }
 
   const notifySubagent = (info) => {
@@ -673,24 +920,40 @@ export function apply(ctx, rawConfig) {
       .map((block) => block.text)
       .join('\n')
       .trim()
-    const lines = [`🤖 <b>DSH: сабагент завершён (${fit(info.stopReason ?? '?', 40)})</b>`, `<code>#${String(info.id).slice(-8)}</code>`]
-    if (text !== '') lines.push('——', fit(text, bodyBudget))
-    fire('subagent', () => lines.join('\n'))
+    const stopReason = fit(info.stopReason ?? '?', 40)
+    fire('subagent', (host) => {
+      const lines = [
+        `🤖 <b>DSH: сабагент завершён (${stopReason})</b>`,
+        hostLine(host),
+        `<code>#${String(info.id).slice(-8)}</code>`,
+      ]
+      if (text !== '') {
+        const body = fitMarkdown(text, bodyBudget)
+        if (body !== '') lines.push('——', body)
+      }
+      return lines.filter((line) => line !== '').join('\n')
+    })
   }
 
   const notifyGoal = (sessionId, goal) => {
     if (goal.phase === 'complete') {
-      fire('goal', () => ['🏁 <b>DSH: цель достигнута</b>', sessionHeader(sessionId), `🎯 ${fit(goal.objective ?? '', 300)}`].join('\n'))
+      fire('goal', (host) => [
+        '🏁 <b>DSH: цель достигнута</b>',
+        hostLine(host),
+        sessionHeader(sessionId),
+        `🎯 ${fitMarkdown(goal.objective ?? '', 300)}`,
+      ].filter((line) => line !== '').join('\n'))
       return
     }
     if (goal.phase === 'blocked') {
       const reason = typeof goal.blockedReason?.message === 'string' ? goal.blockedReason.message : ''
-      fire('goal', () => [
+      fire('goal', (host) => [
         '⛔ <b>DSH: цель заблокирована</b>',
+        hostLine(host),
         sessionHeader(sessionId),
-        `🎯 ${fit(goal.objective ?? '', 300)}`,
-        reason === '' ? undefined : `❌ ${fit(reason, 300)}`,
-      ].filter((line) => line !== undefined).join('\n'))
+        `🎯 ${fitMarkdown(goal.objective ?? '', 300)}`,
+        reason === '' ? undefined : `❌ ${fitMarkdown(reason, 300)}`,
+      ].filter((line) => line !== undefined && line !== '').join('\n'))
     }
   }
 
@@ -884,10 +1147,17 @@ export function apply(ctx, rawConfig) {
         }
       }
       try {
-        await deliver(target, `📨 <b>DSH /tg-test</b>\nЕсли это сообщение пришло — уведомления работают.\nЧат: <code>${escapeHtml(target.chatId)}</code>`)
+        const host = await resolveHost()
+        await deliver(target, [
+          '📨 <b>DSH /tg-test</b>',
+          hostLine(host),
+          'Если это сообщение пришло — уведомления работают.',
+          `Чат: <code>${escapeHtml(target.chatId)}</code>`,
+        ].filter((line) => line !== '').join('\n'))
         return {
           kind: 'success',
-          text: `tg-notify: тестовое сообщение отправлено в чат ${target.chatId}${proxyHost === '' ? '' : ` через прокси ${proxyHost}`}.`,
+          text: `tg-notify: тестовое сообщение отправлено в чат ${target.chatId}` +
+            `${host === '' ? '' : ` с хоста ${host}`}${proxyHost === '' ? '' : ` через прокси ${proxyHost}`}.`,
         }
       } catch (error) {
         return { kind: 'error', text: `tg-notify: отправка не удалась — ${redact(messageOf(error), target.token)}` }
@@ -950,10 +1220,15 @@ export function apply(ctx, rawConfig) {
         if (announcedAlready()) return
         if (!allowSend()) return
         const level = await resolveLevel()
+        const host = await resolveHost()
         await deliver(
           target,
-          `🚀 <b>DSH TG-нотификатор подключён</b>\nУровень: ${level === 'all' ? 'все события' : 'только одобрения и вопросы'}. ` +
-            'Будут приходить: завершение задач, одобрения, вопросы, фоновые задачи, цели.',
+          [
+            '🚀 <b>DSH TG-нотификатор подключён</b>',
+            hostLine(host),
+            `Уровень: ${level === 'all' ? 'все события' : 'только одобрения и вопросы'}. ` +
+              'Будут приходить: завершение задач, одобрения, вопросы, фоновые задачи, цели.',
+          ].filter((line) => line !== '').join('\n'),
         )
         markAnnounced()
       } catch (error) {

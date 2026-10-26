@@ -20,6 +20,46 @@
 Иконка в «задача завершена» отражает причину конца хода: `❌` ошибка, `⛔`
 блокировка, `✂️` лимит токенов, `🛑` прерывание.
 
+## С какой машины
+
+Вторая строка каждого сообщения — `🖥 <code>хост</code>`: два компа с одним и
+тем же конфигом из dotfiles иначе сливаются в один чат без различения. Метка
+берётся с машины, которая реально шлёт уведомление, в порядке:
+
+1. `hostLabel` из patch-строки (если профиль её задаёт);
+2. `TG_NOTIFY_HOST` из окружения/секретов;
+3. `os.hostname()` без домена — то есть по умолчанию `MacBookPro` на маке и
+   имя WSL-хоста на ПК, без всякой настройки.
+
+`os.hostname()` — тот же ключ, по которому dotfiles выбирает `hosts/<host>/`
+(там он берётся как `hostname -s` в нижнем регистре), так что бейдж совпадает
+с именем машинного слоя. Нужно короткое имя — задайте его на самой машине:
+`bin/dotfiles secret set TG_NOTIFY_HOST`, либо `hostLabel` в patch-строке
+профиля (литерал сильнее env).
+
+## Форматирование
+
+Финальный ответ модели — Markdown, а `parse_mode=HTML` понимает только узкий
+набор тегов Telegram, поэтому текст рендерится перед отправкой
+(`markdownToTelegramHtml`):
+
+| Markdown | В Telegram |
+| --- | --- |
+| ```` ```lang ```` блок | `<pre><code class="language-lang">`; содержимое экранируется и больше не разбирается |
+| `` `code` `` | `<code>` |
+| `**жирный**`, `*курсив*`, `~~зачёркнутый~~` | `<b>`, `<i>`, `<s>` |
+| `# Заголовок` | `<b>Заголовок</b>` (заголовков в Telegram нет) |
+| `- пункт` / `1. пункт` | `• пункт` с отступом по вложенности / нумерация сохраняется |
+| `> цитата` | `<blockquote>`, подряд идущие строки склеиваются в один блок |
+| `---` | `──────────` |
+| `[текст](https://…)` | `<a href="…">текст</a>` |
+| `<b>`, `&`, `snake_case` | остаются текстом; `_курсив_` намеренно не поддержан, иначе поехали бы `SNAKE_CASE`-идентификаторы |
+
+Усечение (`truncateHtml`) режет уже готовый HTML по бюджету `maxChars`, не
+разрывая тег или entity, и закрывает оставшиеся открытые теги: Telegram
+отклоняет всё сообщение целиком (`can't parse entities`) на несбалансированных
+тегах. Место среза помечается `…`.
+
 ## Настройка (env, без правки конфигов)
 
 Ключи читаются через `ctx.credentials` в порядке харнесса: managed store →
@@ -34,6 +74,7 @@ bin/dotfiles secret set TG_NOTIFY_THREAD_ID   # топик в группе/фо�
 bin/dotfiles secret set TG_NOTIFY_PROXY       # http(s)-прокси только для Telegram
 bin/dotfiles secret set TG_NOTIFY_LEVEL       # all (default) | approval-only
 bin/dotfiles secret set TG_NOTIFY_ENABLED     # '0'/'false'/'no'/'off' — выключить
+bin/dotfiles secret set TG_NOTIFY_HOST        # метка машины в сообщениях (default: hostname)
 ```
 
 Значения не пишутся в трекаемые файлы; рендер в `~/.dsh/.env` делает
@@ -43,16 +84,19 @@ bin/dotfiles secret set TG_NOTIFY_ENABLED     # '0'/'false'/'no'/'off' — вы�
 ## Конфиг (cordis.patch.yml, опционально)
 
 Все поля — в `resolveConfig` (`index.js`): `token`/`chatId`/`threadId`
-(литералы, env предпочтительнее), `apiBase`, `proxy`, `level`, `timeoutMs`
-(8000), `maxChars` (3800), `minRunSeconds` (30), `idleDebounceMs` (8000),
-`minJobMs` (60000), `ratePerMinute` (12), `enabled`, `notifyOnIdle/Approval/
-Question/Job/Goal`, `notifySubagents` (false), `notifyStartup` (true) и имена
-env-ключей (`tokenEnv` и т.д.). Config в patch-слое заменяет объект целиком.
+(литералы, env предпочтительнее), `apiBase`, `proxy`, `level`, `hostLabel`,
+`timeoutMs` (8000), `maxChars` (3800), `minRunSeconds` (30), `idleDebounceMs`
+(8000), `minJobMs` (60000), `ratePerMinute` (12), `enabled`,
+`notifyOnIdle/Approval/Question/Job/Goal`, `notifySubagents` (false),
+`notifyStartup` (true) и имена env-ключей (`tokenEnv`, `hostEnv` и т.д.).
+Config в patch-слое заменяет объект целиком.
 
 ## Гигиена
 
-- `parse_mode=HTML`, экранирование с побайтовым усечением (`fit`), сообщение
-  всегда ≤ 4096 по построению (бюджет тела = `maxChars` − резерв заголовка).
+- `parse_mode=HTML`, Markdown рендерится в теги Telegram (`markdownToTelegramHtml`)
+  и усекается по готовому HTML с закрытием открытых тегов (`truncateHtml`),
+  сообщение всегда ≤ 4096 по построению (бюджет тела = `maxChars` − резерв
+  заголовка и закрывающих тегов).
 - Таймаут `timeoutMs`, один ретрай (429 — с `retry_after` от Telegram;
   дубль при потере ответа — осознанный at-least-once).
 - Отправки fire-and-forget: любая ошибка — только строчка в лог, ход агента

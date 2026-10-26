@@ -364,6 +364,109 @@ async function main() {
   check('goal: ветка blocked', blockedMessage !== undefined)
   check('goal: причина блокировки в тексте', blockedMessage?.body?.text?.includes('нужен chat id') === true)
 
+  // 16) machine badge: the default is this OS hostname, TG_NOTIFY_HOST and
+  // config.hostLabel override it, and a sandboxed host degrades to no badge
+  // rather than to a broken message.
+  const hostNow = (await import('node:os')).hostname().split('.')[0]
+  check('host: бейдж по умолчанию — hostname машины',
+    received.filter((r) => r.body?.text?.includes('🖥 <code>')).every((r) => r.body?.text?.includes(`<code>${hostNow}</code>`)),
+    hostNow)
+
+  const ctxHost = new Context()
+  new CredentialsStub(ctxHost, { ...ENV, TG_NOTIFY_HOST: 'wsl-workstation' })
+  new SessionTitleStub(ctxHost)
+  new SessionsStub(ctxHost)
+  new CommandsStub(ctxHost)
+  await ctxHost.plugin(plugin, { ...baseConfig, notifyStartup: false })
+  const hostBefore = received.length
+  const hostSession = makeSession('sess-host')
+  ctxHost.emit('session/event', hostSession, event('approval/asked', { id: 'ap-host', toolName: 'bash' }))
+  await sleep(400)
+  const hostMessage = received.slice(hostBefore).find((r) => r.body?.text?.includes('нужно одобрение'))
+  check('host: TG_NOTIFY_HOST переопределяет машину', hostMessage?.body?.text?.includes('<code>wsl-workstation</code>') === true, JSON.stringify(hostMessage?.body?.text))
+  check('host: машина не дублируется', (hostMessage?.body?.text?.match(/🖥 /g) ?? []).length === 1)
+
+  const ctxLabel = new Context()
+  new CredentialsStub(ctxLabel, { ...ENV, TG_NOTIFY_HOST: 'from-env' })
+  new SessionTitleStub(ctxLabel)
+  new SessionsStub(ctxLabel)
+  new CommandsStub(ctxLabel)
+  await ctxLabel.plugin(plugin, { ...baseConfig, hostLabel: 'macbook-pro', notifyStartup: false })
+  const labelBefore = received.length
+  const labelSession = makeSession('sess-label')
+  ctxLabel.emit('session/event', labelSession, event('approval/asked', { id: 'ap-label', toolName: 'bash' }))
+  await sleep(400)
+  const labelMessage = received.slice(labelBefore).find((r) => r.body?.text?.includes('нужно одобрение'))
+  check('host: config.hostLabel сильнее env', labelMessage?.body?.text?.includes('<code>macbook-pro</code>') === true, JSON.stringify(labelMessage?.body?.text))
+
+  // 17) markdown rendering: the final answer arrives as Telegram HTML, not raw
+  // markdown — fences, inline code and emphasis become tags, and markup the
+  // model wrote as literal text stays escaped.
+  const ctxMd = new Context()
+  new CredentialsStub(ctxMd, ENV)
+  new SessionTitleStub(ctxMd)
+  new SessionsStub(ctxMd)
+  new CommandsStub(ctxMd)
+  await ctxMd.plugin(plugin, { ...baseConfig, idleDebounceMs: 100, minRunSeconds: 0, notifyStartup: false })
+  const mdBefore = received.length
+  const mdSession = makeSession('sess-md')
+  const mdAgent = { id: 'agent-md', session: mdSession }
+  const answer = [
+    'Итог: **готово**, файл *Main.java* тронут.',
+    '',
+    '- пункт с `inline code`',
+    '',
+    '```js',
+    'const x = a < b && c > d',
+    '```',
+    '',
+    'Литеральный тег <b> остаётся текстом, snake_case_name цел.',
+  ].join('\n')
+  ctxMd.emit('agent/status', { agent: mdAgent, status: 'running' })
+  await sleep(30)
+  ctxMd.emit('session/event', mdSession, event('turn/start', { turn: 1 }))
+  ctxMd.emit('session/event', mdSession, event('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: answer }] } }))
+  ctxMd.emit('session/event', mdSession, event('turn/end', { turn: 1, reason: { kind: 'completed' } }))
+  ctxMd.emit('agent/status', { agent: mdAgent, status: 'idle' })
+  await sleep(500)
+  const mdText = received.slice(mdBefore).find((r) => r.body?.text?.includes('DSH: задача завершена'))?.body?.text ?? ''
+  check('md: жирный стал тегом', mdText.includes('<b>готово</b>'), mdText.slice(0, 200))
+  check('md: курсив стал тегом', mdText.includes('<i>Main.java</i>'))
+  check('md: inline code стал тегом', mdText.includes('<code>inline code</code>'))
+  check('md: блок кода стал pre+code', mdText.includes('<pre><code class="language-js">'))
+  check('md: в коде < и && экранированы', mdText.includes('a &lt; b &amp;&amp; c &gt; d'))
+  check('md: сырых ** и ``` не осталось', !mdText.includes('**') && !mdText.includes('```'), mdText.slice(0, 300))
+  check('md: литеральный <b> модели остался текстом', mdText.includes('&lt;b&gt;'))
+  check('md: snake_case не стал курсивом', mdText.includes('snake_case_name'))
+  check('md: теги сбалансированы',
+    (mdText.match(/<[a-z]+/gi) ?? []).length === (mdText.match(/<\/[a-z]+>/gi) ?? []).length,
+    `${(mdText.match(/<[a-z]+/gi) ?? []).length} открыто / ${(mdText.match(/<\/[a-z]+>/gi) ?? []).length} закрыто`)
+
+  // 18) a fenced block cut by the budget is still closed, or Telegram rejects
+  // the whole message
+  const ctxCut = new Context()
+  new CredentialsStub(ctxCut, ENV)
+  new SessionTitleStub(ctxCut)
+  new SessionsStub(ctxCut)
+  new CommandsStub(ctxCut)
+  const cutLimit = 700
+  await ctxCut.plugin(plugin, { ...baseConfig, maxChars: cutLimit, idleDebounceMs: 100, minRunSeconds: 0, notifyStartup: false })
+  const cutBefore = received.length
+  const cutSession = makeSession('sess-cut')
+  const cutAgent = { id: 'agent-cut', session: cutSession }
+  const longAnswer = ['```py', ...Array.from({ length: 200 }, (_, i) => `line_${i} = compute(${i}) < 10 && ok`), '```'].join('\n')
+  ctxCut.emit('agent/status', { agent: cutAgent, status: 'running' })
+  await sleep(30)
+  ctxCut.emit('session/event', cutSession, event('turn/start', { turn: 1 }))
+  ctxCut.emit('session/event', cutSession, event('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: longAnswer }] } }))
+  ctxCut.emit('session/event', cutSession, event('turn/end', { turn: 1, reason: { kind: 'completed' } }))
+  ctxCut.emit('agent/status', { agent: cutAgent, status: 'idle' })
+  await sleep(500)
+  const cutText = received.slice(cutBefore).find((r) => r.body?.text?.includes('DSH: задача завершена'))?.body?.text ?? ''
+  check('md-обрезка: уложились в лимит', cutText.length <= cutLimit, `длина ${cutText.length}`)
+  check('md-обрезка: <pre> закрыт', (cutText.match(/<pre>/g) ?? []).length === (cutText.match(/<\/pre>/g) ?? []).length, JSON.stringify(cutText.slice(-120)))
+  check('md-обрезка: <code> закрыт', (cutText.match(/<code[\s>]/g) ?? []).length === (cutText.match(/<\/code>/g) ?? []).length)
+
   sink.close()
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
   process.exitCode = failures === 0 ? 0 : 1
