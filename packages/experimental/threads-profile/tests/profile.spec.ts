@@ -196,7 +196,7 @@ async function compose(withBundle: boolean): Promise<{ ctx: Context; providers: 
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await ctx.plugin(JsonlSessionPersistence, { root: dir })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(AgentLoop, { agents: [] })

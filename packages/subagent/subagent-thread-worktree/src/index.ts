@@ -115,11 +115,15 @@ class ThreadWorktreeProvider implements SubagentProvider {
   // in the parent's own checkout.
   readonly isolatesContinuableCwd = true
 
-  constructor(
-    readonly name: string,
-    private readonly worktrees: WorktreeService,
-    private readonly config: Config,
-  ) {}
+  readonly name: string
+  private readonly worktrees: WorktreeService
+  private readonly config: Config
+
+  constructor(name: string, worktrees: WorktreeService, config: Config) {
+    this.name = name
+    this.worktrees = worktrees
+    this.config = config
+  }
 
   /**
    * Create the Thread's worktree from the repository the delegation names and return the

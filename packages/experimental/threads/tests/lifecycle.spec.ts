@@ -87,7 +87,7 @@ async function harness(
 ): Promise<Harness> {
   const ctx = new Context()
   const root = mkdtempSync(join(tmpdir(), 'dsh-threads-lifecycle-'))
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   const persistence = await ctx.plugin(JsonlSessionPersistence, { root })
   cleanups.push(async () => {
     await ctx.fiber.dispose()

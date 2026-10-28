@@ -7,12 +7,14 @@ import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import AgentPresets, { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import ProjectMemoryService from '../src/index.ts'
@@ -58,11 +60,14 @@ export async function harness(options: {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SystemPrompt, {})
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   const pool = options.pool ?? new MemoryMediaPool()
   await memoryBacking(ctx, pool)
   if (options.projections === true) {
+    await ctx.plugin(Loader)
     await ctx.plugin(SessionProjectionRegistry)
-    ctx.effect(() => () => { void ctx.sessionProjections.register(agentPresetProjectionDefinition) })
+    await ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    await ctx.plugin(AgentPresets, { default: 'standard' })
   }
   if (options.persisted !== undefined) {
     const persisted = options.persisted

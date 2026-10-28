@@ -98,8 +98,11 @@ export class ThreadsService extends TypertRemoteService {
   /** Typed reader for this plugin's own projection, registered with the registry above. */
   private threadsHandle: ProjectionHandle<ThreadsProjectionState> | undefined
 
-  constructor(ctx: Context, private config: Config) {
+  private config: Config
+
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'threads')
+    this.config = config
     ctx.inject(['sessionProjections'], async (projectionCtx) => {
       this.threadsHandle = await projectionCtx.sessionProjections.register(threadsProjectionDefinition)
       this.registry = projectionCtx.sessionProjections

@@ -140,8 +140,11 @@ export class ProjectMemoryService extends TypertRemoteService {
    * @param ctx - Host services providing storage domains and live Sessions.
    * @param config - Validated limits and Project preset ids.
    */
-  constructor(private readonly host: Context, config: Config) {
+  private readonly host: Context
+
+  constructor(host: Context, config: Config) {
     super(host, 'projectMemory')
+    this.host = host
     this.config = config
     this.projectPresets = new Set(config.projectPresets ?? ['project'])
     this.maxLineageDepth = config.maxLineageDepth ?? 4

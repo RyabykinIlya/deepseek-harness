@@ -77,8 +77,11 @@ describe('ModelRoutingService as a Host plugin', () => {
 
 describe('the durable tier-route selection', () => {
   /** The minimal Agent surface the selection listeners carry: identity, session, current route. */
-  function agentFor(session: Session): Agent {
-    const current = { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash' }
+  function agentFor(
+    session: Session,
+    route: { provider: string; model: string } = { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash' },
+  ): Agent {
+    const current = { ...route }
     return {
       id: session.id,
       session,
@@ -101,7 +104,9 @@ describe('the durable tier-route selection', () => {
       meta: { parentSession: project.id, origin: 'subagent' },
     })
     project.append('model-routing/tier-override', { threadId: thread.id, tier: 'pro' }, { ignorable: true })
-    const agent = agentFor(thread)
+    // The override applies while the route already serves from the tiers route —
+    // the same condition the old rewrite checked on the proposed request.
+    const agent = agentFor(thread, { provider: 'tiers', model: 'flash' })
     ctx.emit('agent/created', { agent, source: 'resume' })
     expect(agent.model.current()).toMatchObject({ provider: 'tiers', model: 'pro' })
     expect(thread.ownEvents().some(event => event.type === 'model/selection')).toBe(true)

@@ -16,7 +16,9 @@ export interface PresetSelectionRequest {
 
 /** Validates configured choices and resolves model input against the allowlist. */
 export class SubagentPresetSelection {
-  constructor(private readonly config: PresetSelectionConfig) {
+  private readonly config: PresetSelectionConfig
+  constructor(config: PresetSelectionConfig) {
+    this.config = config
     const { agentPreset, allowedAgentPresets } = config
     if (allowedAgentPresets === undefined) return
     if (new Set(allowedAgentPresets).size !== allowedAgentPresets.length) {

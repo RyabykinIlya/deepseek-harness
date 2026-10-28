@@ -22,10 +22,12 @@ import type {
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { LlmFallbackEventData } from '../src/types.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -109,13 +111,16 @@ async function harness(
   policies: Readonly<Record<string, RetryPolicyConfig | undefined>>,
 ): Promise<Context> {
   const ctx = new Context()
+  await ctx.plugin(Loader)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
-  // The real agentPreset unit: llm-fallback resolves the chain through it.
-  await ctx.sessionProjections.register(agentPresetProjectionDefinition)
+  // The real preset registry: llm-fallback resolves the chain intent through
+  // its presetForSession, exactly as in a deployment composition.
+  await ctx.plugin(AgentPresets, { default: 'test' })
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   adapter.configureRetryPolicies(policies)
   await ctx.plugin(Fallback, chains)

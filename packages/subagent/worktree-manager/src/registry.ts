@@ -156,7 +156,12 @@ export class WorktreeRegistry {
    * @param root - the configured `worktreeRoot`; it holds the sidecar and the worktrees.
    * @param locking - lock acquisition and staleness settings.
    */
-  constructor(readonly root: string, private readonly locking: WorktreeRegistryLocking) {
+  readonly root: string
+  private readonly locking: WorktreeRegistryLocking
+
+  constructor(root: string, locking: WorktreeRegistryLocking) {
+    this.root = root
+    this.locking = locking
     this.file = join(root, REGISTRY_FILE_NAME)
     this.lockPath = join(root, REGISTRY_LOCK_NAME)
   }

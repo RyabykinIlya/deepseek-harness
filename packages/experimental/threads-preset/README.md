@@ -83,10 +83,10 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 | `thread-contract` | this package's `./threads-contract` subpath | `threads:contract` in the coordinator, `threads:worker-contract` in the worker |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` | The ordinary delegation tool, repointed at the `thread` provider in continuable background mode |
 | `tool-threads` | `@deepseek-ai/dsh-experimental-threads-tool` | `thread_status` and `thread_diff`, the bounded reads of Thread state |
-| `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` | `send_message` and `interrupt_agent`, the only handles on a running Thread |
+| `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` | `send_message`, `interrupt_agent`, and `list_agents`, the handles on a running Thread |
 | `project-memory-tools` | `@deepseek-ai/dsh-experimental-project-memory/tools` | `memory_read` and `memory_write` over the Project memory, in both presets |
 
-The coordinator keeps the base rows except those it replaces: `tool-subagent` (repointed), `tool-subagent-fork` (a fork child would run in the Project checkout with no worktree) and `tool-subagent-list-agents` (`thread_status` is its bounded replacement). It mounts `tool-subagent-control` itself only when the base rows do not already carry it. The worker keeps every base row unchanged, so its `subagent` stays on the shipped `spawn` provider.
+The coordinator keeps the base rows except those it replaces: `tool-subagent` (repointed) and `tool-subagent-fork` (a fork child would run in the Project checkout with no worktree). The former `tool-subagent-list-agents` row folded into the control row upstream, so the coordinator also sees `list_agents`; `thread_status` stays the bounded Thread view next to it. It mounts `tool-subagent-control` itself only when the base rows do not already carry it. The worker keeps every base row unchanged, so its `subagent` stays on the shipped `spawn` provider.
 
 -----
 

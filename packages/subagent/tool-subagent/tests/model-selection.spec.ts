@@ -210,7 +210,7 @@ describe('dsh-tool-subagent model selection', () => {
     const agent = modelSelectionSetupAgent(ctx)
     const schema = ctx.tools.schemas(agent).find(entry => entry.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'model', 'prompt', 'provider', 'reasoning_effort'])
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'model', 'prompt', 'provider', 'reasoning_effort', 'run_in_background'])
     expect(schema.description).not.toContain('list_subagent_models')
     expect(schema.description).not.toContain('Changing the route can prevent provider-side reuse')
     expect(ctx.tools.get('list_subagent_models', agent)).toBeDefined()
@@ -585,7 +585,7 @@ describe('dsh-tool-subagent model selection', () => {
     })
     const schema = ctx.tools.schemas(agent).find(entry => entry.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt'])
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt', 'run_in_background'])
     expect(schema.description).toContain('inherits this conversation')
     expect(schema.description).not.toContain('list_subagent_models')
     expect(ctx.tools.get('list_subagent_models', agent)).toBeUndefined()

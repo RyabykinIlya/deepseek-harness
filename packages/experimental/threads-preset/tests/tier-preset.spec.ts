@@ -93,7 +93,7 @@ async function harness(config: Partial<ThreadsPresetInput> = {}): Promise<Contex
   contexts.push(ctx)
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   const root = mkdtempSync(join(tmpdir(), 'dsh-threads-tier-preset-'))
   roots.push(root)
   await ctx.plugin(JsonlSessionPersistence, { root })

@@ -158,7 +158,7 @@ async function compose(withBundle: boolean): Promise<Composition> {
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await ctx.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
   await ctx.plugin(Storage)
   const backend = new MemoryStorageBackend(new MemoryMediaPool())

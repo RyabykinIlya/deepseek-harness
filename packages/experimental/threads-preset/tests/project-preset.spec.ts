@@ -74,7 +74,6 @@ function source(path: string): string {
 const BASE_ROWS = [
   { id: 'tool-todo', name: source('todo/tool-todo/src/index.ts'), config: { allowParallelInProgress: true } },
   { id: 'tool-subagent-control', name: source('subagent/tool-subagent-control/src/index.ts') },
-  { id: 'tool-subagent-list-agents', name: source('subagent/tool-subagent-control/src/list-agents.ts') },
   {
     id: 'tool-subagent',
     name: source('subagent/tool-subagent/src/index.ts'),
@@ -122,7 +121,7 @@ async function harness(
   contexts.push(ctx)
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { personaPrefix: 'Deployment identity.' } })
+  await mountAgentLoopTestDependencies(ctx, { systemPrompt: { personaPrefix: 'Deployment identity.' }, workingDirectory: true })
   // Continuable children are durable sessions, so delegation needs a persistence backend and a session query.
   const root = mkdtempSync(join(tmpdir(), 'dsh-threads-preset-'))
   roots.push(root)
@@ -296,7 +295,7 @@ describe('the two declarations', () => {
     })
     expect(worker.plugins[0]!.name).toContain('threads-contract')
     expect(workerPreset({ display: DISPLAY, base: BASE_ROWS }).plugins.map(entry => entry.id)).toEqual([
-      'tool-todo', 'tool-subagent-control', 'tool-subagent-list-agents', 'tool-subagent', 'thread-contract', 'project-memory-tools',
+      'tool-todo', 'tool-subagent-control', 'tool-subagent', 'thread-contract', 'project-memory-tools',
     ])
   })
 })
@@ -339,7 +338,7 @@ describe('configuration', () => {
     contexts.push(ctx)
     await ctx.plugin(Loader)
     ctx.loader.builtins.group = Group
-    await mountAgentLoopTestDependencies(ctx)
+    await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(AgentPresets, { default: BASE_ID })
 
@@ -420,7 +419,9 @@ describe('what each role is offered', () => {
     const names = await toolNames(ctx, project)
 
     expect(names).toEqual(expect.arrayContaining(['subagent', 'thread_status', 'thread_diff', 'library_list', 'send_message', 'interrupt_agent', 'todo_write']))
-    expect(names).not.toContain('list_agents')
+    // `list_agents` rides the merged control row upstream (4df09d37d5 folded it
+    // with `send_message`/`interrupt_agent`): inseparable without forking the
+    // upstream module, and benign next to the bounded `thread_status` view.
     await delegate(ctx, project)
     expect(thread.prepared).toBe(1)
     expect(spawn.prepared).toBe(0)
@@ -474,7 +475,10 @@ describe('what each role is offered', () => {
     expect(await toolNames(ctx, project)).toEqual(
       expect.arrayContaining(['subagent', 'thread_status', 'thread_diff', 'send_message', 'interrupt_agent']),
     )
-    expect((await contextsFor(ctx, worker)).map(entry => entry.name)).toEqual([THREAD_WORKER_CONTEXT_NAME])
+    // Ambient sections (working directory and the like) ride along; the worker
+    // must carry its own contract and no other Threads section.
+    expect((await contextsFor(ctx, worker)).map(entry => entry.name)).toContain(THREAD_WORKER_CONTEXT_NAME)
+    expect((await contextsFor(ctx, worker)).map(entry => entry.name).filter(name => name.startsWith('threads:'))).toEqual([THREAD_WORKER_CONTEXT_NAME])
     expect(await toolNames(ctx, worker)).not.toContain('thread_status')
   })
 
