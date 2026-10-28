@@ -38,11 +38,11 @@
  * archiving, stopping — belongs to the Threads feature, which contributes its
  * buttons from its own package.
  *
- * The browser entry additionally declares two `list` seats per Session row
- * (`sidebar.session.row.leading` / `sidebar.session.row.hover`) for ambient
- * row decorations. Both take the row's Session identity and nothing else: a
- * session-scoped seat would force a Session binding, which would activate and
- * retain every listed Session.
+ * The browser entry additionally declares `list` seats per Session row
+ * (`sidebar.session.row.leading`, `sidebar.session.row.trailing`, and
+ * `sidebar.session.row.hover`) for ambient row decorations. They receive only
+ * the row's Session identity; a Session binding would activate and retain
+ * every listed Session.
  */
 import type {
   HostObservable, InjectFace, PropsHooks, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory,
@@ -129,6 +129,12 @@ export interface SessionRowScheduleOwnerProps {
   readonly sessionId: SessionId
 }
 
+/** Owner share of the trailing icon list; rendering does not bind the Session. */
+export interface SessionRowTrailingOwnerProps {
+  /** Session this row shows. */
+  readonly sessionId: SessionId
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Directory-flow hole under the conversation empty-state picker (declared by the WorkspacePicker entry). */
@@ -144,7 +150,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * An archived row keeps that cell blank — neither its status dot nor this
      * seat renders there, and its live status appears on the hover card only.
      */
-    'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; owner: SessionRowScheduleOwnerProps }
+    'sidebar.session.row.leading': { kind: 'list'; scope: 'root'; inline: true; owner: SessionRowScheduleOwnerProps }
+    /**
+     * Non-interactive icons after the row's time label, before its pin marker,
+     * in ascending `order`. On hover-capable devices, hidden while the row is
+     * hovered, has keyboard focus on itself or its actions, or has an open menu.
+     * Hoverless devices keep the icons beside the menu trigger. Blank Sessions
+     * omit the slot. Occupants address their own data by Session id; they must not
+     * bind or retain the Session.
+     */
+    'sidebar.session.row.trailing': { kind: 'list'; scope: 'root'; inline: true; owner: SessionRowTrailingOwnerProps }
     /**
      * Section of the Session row's hover card between its relative time and
      * its trailing status line. Mounted only while that card is open.
@@ -200,7 +215,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `pin` (200) here. An entry renders one icon button (or nothing, when its
      * action does not apply to the row) and owns the action it performs. Clicks
      * inside the strip stay in the strip, so the button needs no propagation
-     * handling to keep the row from opening.
+     * handling to keep the row from opening. Hoverless devices hide this slot;
+     * contribute the action to the menu list as well for touch access.
      */
     'sidebar.workspaces.session.row.action': { kind: 'list'; scope: 'root'; owner: SessionRowOwnerProps }
     /**
@@ -498,6 +514,7 @@ export type WorkspaceBrowserProps =
     | 'sidebar.workspaces.session.menu.item'
     | 'sidebar.workspaces.session.row.action'
     | 'sidebar.workspaces.thread.row.action'
+    | 'sidebar.session.row.trailing'
     | 'sidebar.session.row.leading'
     | 'sidebar.session.row.hover'
   >

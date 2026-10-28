@@ -952,7 +952,15 @@ export class SubagentManager {
           setup,
         })
 
-      resource = { kind: 'local', handle, outputStart: handle.agent.session.seq, structured, failureAt: undefined, poke: Promise.withResolvers<void>() }
+      resource = {
+        kind: 'local',
+        handle,
+        outputStart: handle.agent.session.seq,
+        structured,
+        failureAt: undefined,
+        poke: Promise.withResolvers<void>(),
+        omitClosingText: false,
+      }
     }
     const observer = this.host.observeActivation(provider, childId, parent)
 
@@ -981,8 +989,19 @@ export class SubagentManager {
       if (activation.kind === 'local') {
         observeLocalFailure(activation, wakeSettlement)
         activation.handle.agent.ctx.on('agent/inbox/inserted', wakeSettlement)
-        activation.handle.agent.ctx.on('agent/inbox/claimed', wakeSettlement)
+        activation.handle.agent.ctx.on('agent/inbox/claimed', () => {
+          // Claimed input means the closing text may report work the child's
+          // last message to its parent did not.
+          activation.omitClosingText = false
+          wakeSettlement()
+        })
         activation.handle.agent.ctx.on('agent/inbox/discarded', wakeSettlement)
+        // A tool call logged after the message also voids it; logged calls
+        // cannot be skipped by tool policy. `send_message` is not concurrency
+        // safe, so a later call in its step is logged after it executes.
+        activation.handle.agent.ctx.on('session/event', (_session, event) => {
+          if (event.type === 'tool/call') activation.omitClosingText = false
+        })
       }
       observer.start(activationAgent(activation))
     } catch (error: unknown) {
@@ -1221,7 +1240,7 @@ export class SubagentManager {
       const parent = this.ctx.agents.get(activation.parent.id)
       if (parent !== activation.parent) return
       const message = createSettlementMessage(
-        activation.childId, terminal, activationAgent(activation) !== undefined,
+        activation.childId, terminal, activation.kind === 'local', activation.kind === 'local' && activation.omitClosingText,
       )
       if (this.closingTeardownFor(parent) !== undefined) {
         parent.inject(message)
@@ -1364,7 +1383,7 @@ export class SubagentManager {
 
   /** Deliver one resident continuable child's message to its live direct parent. */
   private sendToParent(
-    activation: Activation,
+    activation: LocalActivation,
     sender: Agent,
     content: ContentBlock[],
   ): MessageId {
@@ -1385,6 +1404,7 @@ export class SubagentManager {
     }
     const message = createAgentMessage(sender, content)
     this.sendAgentMessage(parent, message)
+    activation.omitClosingText = true
     return message.id
   }
 

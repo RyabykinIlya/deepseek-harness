@@ -96,7 +96,7 @@ describe('tool-subagent allowedModels', () => {
     expect(policies).toEqual([])
   })
 
-  it('refuses to mount next to modelSelectionSettings', async () => {
+  it('refuses to mount next to modelSelection', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
@@ -106,8 +106,8 @@ describe('tool-subagent allowedModels', () => {
     await expect(ctx.plugin(tool, {
       provider: 'mock',
       allowedModels: TIERS,
-      modelSelectionSettings: true,
-    })).rejects.toThrow('`allowedModels` and `modelSelectionSettings` are mutually exclusive')
+      modelSelection: true,
+    })).rejects.toThrow('`allowedModels` and `modelSelection` are mutually exclusive')
   })
 
   it('treats an empty list as no effect', async () => {

@@ -667,8 +667,9 @@ export class PiAiAdapter extends LlmAdapter {
       const onReplayDegrade = (reason: string): void => {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
+      const systemPromptInHistory = conversationUpdates(model).systemPromptUpdate === 'in-history'
       const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade)
+        ? toPiContext(options, undefined, onReplayDegrade, systemPromptInHistory)
         : await toPiContext({ ...options, signal: watchdog.signal }, {
           attachments,
           resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
@@ -677,7 +678,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxPixels: profile.requestImagePixelBudget,
             maxBytes: profile.requestImageMaxBytes,
           },
-        }, onReplayDegrade)
+        }, onReplayDegrade, systemPromptInHistory)
       const events = snapshot.models.streamSimple(dispatched, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },

@@ -1,3 +1,5 @@
+import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -20,6 +22,7 @@ import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
 import * as mock from './scripted-provider.ts'
+import type { Config as toolConfig } from '../src/index.ts'
 import * as tool from '../src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -77,6 +80,34 @@ describe('dsh-tool-subagent', () => {
       output: [{ type: 'text', text: 'child says hi' }],
     })
     expect(text(result)).toBe('child says hi')
+  })
+
+  it('omits run_in_background entirely when the instance disables it', async () => {
+    const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
+    const schema = ctx.tools.schemas().find(s => s.name === 'subagent')!
+    const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt'])
+    // The schema promises no collection because no job is ever created.
+    expect(schema.description).not.toContain('job_output')
+  })
+
+  it('refuses a forced run_in_background at execution time when the instance disables it', async () => {
+    // Schema omission is advertising, not enforcement: the arg validator
+    // permits undeclared keys, so the opt-out must also hold in execute().
+    const started: SubagentStartRequest[] = []
+    const ctx = await setup({ provider: 'mock', enableRunInBackground: false }, {
+      onStart: (request) => { started.push(request) },
+    })
+
+    const forced = await callSubagent(ctx, { description: 'd', prompt: 'p', run_in_background: true })
+    expect(forced.isError).toBe(true)
+    expect(text(forced)).toContain('run_in_background is disabled for this tool instance')
+    // The refusal precedes any child: the provider was never asked to start one.
+    expect(started).toEqual([])
+
+    const foreground = await callSubagent(ctx, { description: 'd', prompt: 'p' })
+    expect(foreground.isError).toBe(false)
+    expect(started).toHaveLength(1)
   })
 
   it('resolves an explicit child directory without changing the parent directory', async () => {
@@ -175,13 +206,13 @@ describe('dsh-tool-subagent', () => {
 
   it('classifies delegations as concurrency-safe', async () => {
     const ctx = await setup({ provider: 'mock' })
-    expect(ctx.tools.executionMode({
+    expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
       callId: ToolCallId('subagent-first'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
-    expect(ctx.tools.executionMode({
+    expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
       callId: ToolCallId('subagent-second'),
       name: 'subagent',
@@ -227,8 +258,10 @@ describe('dsh-tool-subagent', () => {
     expect(names).toEqual(['subagent', 'subagent_acp'])
 
     const parent = (await ctx.agents.create({ sessionId: SessionId('multi-provider-parent') })).agent
-    const viaSpawn = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: parent })
-    const viaAcp = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+    const viaSpawn = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+    const viaAcp = await executeToolFixture(ctx, { signal: testToolSignal, callId: ToolCallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: parent })
+    // Each tool instance proves its own binding: one-shot policy stays on the
+    // foreground route, so the rendered result is the child's own answer.
     expect(text(viaSpawn)).toBe('from spawn')
     expect(text(viaAcp)).toBe('from acp')
   })
@@ -329,7 +362,7 @@ describe('dsh-tool-subagent', () => {
       model: 'child-model',
     })
     expect(ctx.tools.schemas(modelSelectionSetupAgent(ctx)).find(schema => schema.name === 'subagent')?.description)
-      .toContain('this provider\'s route defaults')
+      .toContain('this backend\'s route defaults')
     expect(seen?.agentOptions).toEqual({
       provider: 'alpha',
       model: 'child-model',
@@ -446,21 +479,21 @@ describe('dsh-tool-subagent', () => {
 
     const forkProvider = await mock.mountScriptedProvider(ctx, { name: 'fork', inheritsParentContext: true })
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     await mock.mountScriptedProvider(ctx, { name: 'spawn' })
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
 
     await forkProvider.dispose()
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     await mock.mountScriptedProvider(ctx, { name: 'fork', inheritsParentContext: true })
     await spawnTool.dispose()
     expect(await delegationGuidance(ctx)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     await forkTool.dispose()
     expect(await delegationGuidance(ctx)).toEqual([])
@@ -474,19 +507,19 @@ describe('dsh-tool-subagent', () => {
     const peer = (await ctx.agents.create({ sessionId: SessionId('guidance-peer') })).agent
     const showSpawn = parent.ctx.tools.restrict({ deny: ['subagent'] })
     expect(await delegationGuidance(ctx, parent)).toEqual([
-      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     expect(await delegationGuidance(ctx, peer)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     expect(await delegationGuidance(unrelated)).toEqual([
-      'Start independent delegations with `other_delegate` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `other_delegate` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     showSpawn()
 
     const scoped = await parent.ctx.plugin(tool, { provider: 'mock', toolName: 'subagent' })
     expect(await delegationGuidance(ctx, parent)).toEqual([
-      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run.',
+      'Start independent delegations with `subagent` or `subagent_fork` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.',
     ])
     await scoped.dispose()
     parent.ctx.tools.restrict({ deny: ['subagent', 'subagent_fork'] })
@@ -576,7 +609,7 @@ describe('dsh-tool-subagent', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')!
     expect(schema.description).toContain('inherits this conversation')
     expect(schema.description).not.toContain('does not see this conversation')
-    expect(schema.description).not.toContain('can prevent provider-side reuse of the inherited conversation prefix')
+    expect(schema.description).not.toContain('Inspect options with `list_subagent_models`')
     const props = (schema.parameters as { properties: Record<string, { description: string }> }).properties
     expect(props['prompt']!.description).toContain('completed turns')
   })
@@ -683,7 +716,7 @@ describe('dsh-tool-subagent', () => {
       .rejects.toThrow()
   })
 
-  it('validates maxDepth when apply() is invoked directly without Schemastery', async () => {
+  it('validates maxDepth during initialization without Schemastery', async () => {
     const ctx = await projectedContext()
     await expect(tool.apply(ctx, {
       provider: 'unused',
@@ -760,7 +793,7 @@ describe('dsh-tool-subagent local activation', () => {
 
   it('classifies local activations concurrency-safe', async () => {
     const { ctx } = await continuableSetup()
-    expect(ctx.tools.executionMode({
+    expect(new ToolExecutionPipeline(ctx).executionMode({
       signal: testToolSignal,
       callId: ToolCallId('subagent-continuable'),
       name: 'subagent',
@@ -785,14 +818,14 @@ describe('dsh-tool-subagent local activation', () => {
     expect(properties.run_in_background?.description).toContain('Defaults to true')
     const assembly = await ctx.systemPrompt.assemble(assembleContextFor(parent))
     const guidance = assembly.sections.find(section => section.name === 'tool:subagent')
-    expect(guidance?.text).toBe('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run.')
+    expect(guidance?.text).toBe('Start independent delegations with `subagent` together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.')
 
     const started = await callSubagent(
       ctx,
       { description: 'continuable work', prompt: 'dig in' },
       { agent: parent },
     )
-    expect(started.isError).toBe(false)
+    expect(started.isError, text(started)).toBe(false)
     const match = /^started subagent (\S+)$/.exec(text(started))
     expect(match).not.toBeNull()
     const [, childId] = match!
@@ -844,6 +877,46 @@ describe('dsh-tool-subagent local activation', () => {
     expect(text(result)).toMatch(/^started subagent \S+\nworktree: \/wt\/thread-1\nbranch: dsh\/thread-1$/)
   })
 
+  it('refuses a foreground request on a provider that isolates only its continuable children', async () => {
+    // Such a provider establishes its working directory while preparing a
+    // continuable creation and nowhere else, so the one-shot foreground route
+    // would run the child in the parent's own checkout. The refusal is the
+    // point: the isolation must not be dropped silently.
+    const { ctx, parent } = await continuableSetup()
+    const calls: string[] = []
+    ctx.subagents.registerProvider({
+      name: 'isolating',
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: true, depthLimit: true, repository: false },
+      inheritsParentContext: false,
+      isolatesContinuableCwd: true,
+      start: async () => {
+        calls.push('start')
+        throw new Error('an isolating provider must not take the one-shot route')
+      },
+      prepareContinuable: async () => {
+        calls.push('prepare')
+        return {}
+      },
+    })
+    await tool.apply(ctx, {
+      provider: 'isolating',
+      toolName: 'subagent_isolating',
+      backgroundMode: 'continuable',
+    })
+
+    const result = await executeToolFixture(ctx, {
+      signal: testToolSignal,
+      callId: ToolCallId('call-isolating'),
+      name: 'subagent_isolating',
+      arguments: { description: 'blocking work', prompt: 'dig in', run_in_background: false },
+      agent: parent,
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('run_in_background: false is not available for this provider')
+    // Neither route ran: the refusal happens before any child exists.
+    expect(calls).toEqual([])
+  })
+
   it('isolates a cancelled continuable preparation from a concurrent sibling', async () => {
     const { ctx, parent } = await continuableSetup()
     const bothPreparing = Promise.withResolvers<undefined>()
@@ -873,7 +946,7 @@ describe('dsh-tool-subagent local activation', () => {
       maxDepth: 3,
     })
 
-    const execute = (callId: string, description: string, signal: AbortSignal) => ctx.tools.execute({
+    const execute = (callId: string, description: string, signal: AbortSignal) => executeToolFixture(ctx, {
       signal,
       callId: ToolCallId(callId),
       name: 'subagent_gated',
@@ -889,7 +962,7 @@ describe('dsh-tool-subagent local activation', () => {
     const [failed, succeeded] = await Promise.all([cancelledResult, survivingResult])
     expect(preparationCount).toBe(2)
     expect(failed.isError).toBe(true)
-    expect(succeeded.isError).toBe(false)
+    expect(succeeded.isError, text(succeeded)).toBe(false)
     expect(cancelledChildId).toBeDefined()
     expect(survivingChildId).toBeDefined()
     expect(ctx.agents.get(cancelledChildId!)).toBeUndefined()
@@ -911,8 +984,8 @@ describe('dsh-tool-subagent local activation', () => {
 
 describe('dsh-tool-subagent one-shot background jobs', () => {
   /** Boot the jobs stack over the scripted provider for background calls. */
-  async function backgroundSetup(toolConfig: tool.Config, mockConfig: Partial<mock.Config> = {}) {
-    const ctx = await setup(toolConfig, mockConfig)
+  async function backgroundSetup(config: toolConfig, mockConfig: Partial<mock.Config> = {}) {
+    const ctx = await setup(config, mockConfig)
     await ctx.plugin(LocalJobRegistry)
     await ctx.plugin(ToolJobs, {})
     return ctx
@@ -987,7 +1060,7 @@ describe('dsh-tool-subagent one-shot background jobs', () => {
 
 describe('depth budget configuration', () => {
   /** Mount the tool over a request-capturing provider with full capabilities. */
-  async function captureSetup(config: Omit<tool.Config, 'provider'> = {}) {
+  async function captureSetup(config: Omit<toolConfig, 'provider'> = {}) {
     const requests: SubagentStartRequest[] = []
     const ctx = await projectedContext()
     await mountWorkingDirectoryFixture(ctx)
