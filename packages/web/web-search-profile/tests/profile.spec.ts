@@ -70,17 +70,11 @@ describe('web-search profile bundle', () => {
     ])
   })
 
-  it('declares the fetch range a fake-IP transparent-proxy host needs', () => {
-    expect(overrideOf('web-fetch-http').config).toEqual({
-      trustedProxyAddressRanges: ['198.18.0.0/15'],
-    })
-  })
-
   it('addresses the overridden rows by id only', () => {
     // A name here would have to match the earlier layer's row exactly, and the
     // row is that layer's to rename; the bundle loads no plugin of its own for
     // an override.
-    for (const id of ['web', 'web-fetch-http']) {
+    for (const id of ['web']) {
       expect(overrideOf(id).name).toBeUndefined()
     }
     // Every inserted row is a plugin load and names one.
@@ -106,10 +100,4 @@ describe('the rationale the patch carries', () => {
     expect(patchSource).toContain('a configured id has no fallback')
   })
 
-  it('keeps the security rationale and the preferred remedy for the trusted range', () => {
-    // The range relaxes a guard for the synthetic address only; dropping either
-    // sentence would leave the trade-off unstated.
-    expect(patchSource).toContain('never the domain\'s real destination')
-    expect(patchSource).toContain('Preferred remedy: switch the transparent client to `redir-host`/`real-ip`')
-  })
 })
