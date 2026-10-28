@@ -205,7 +205,7 @@ async function bench(options: {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
-  ctx.sessionProjections.register(threadsProjectionDefinition)
+  const threadsHandle = await ctx.sessionProjections.register(threadsProjectionDefinition)
   const agents = new FakeAgents()
   ctx.provide('agents', agents as never)
   const worktrees = new FakeWorktrees()
@@ -216,12 +216,11 @@ async function bench(options: {
   })
   agents.register(PROJECT, parent)
   agents.register(CHILD, child)
-  const registry = ctx.sessionProjections
   const warnings = captureWarnings(ctx)
   installThreadLifecycle(ctx, {
     providerName: 'thread',
     noteMaxBytes: 600,
-    registry: () => (options.registry === false ? undefined : registry),
+    registry: () => (options.registry === false ? undefined : threadsHandle),
   })
   contexts.push(ctx)
   return {

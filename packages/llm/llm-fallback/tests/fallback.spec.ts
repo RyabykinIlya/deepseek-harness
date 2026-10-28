@@ -113,7 +113,7 @@ async function harness(
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   // The real agentPreset unit: llm-fallback resolves the chain through it.
-  ctx.sessionProjections.register(agentPresetProjectionDefinition)
+  await ctx.sessionProjections.register(agentPresetProjectionDefinition)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)

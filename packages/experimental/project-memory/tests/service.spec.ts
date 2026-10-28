@@ -168,7 +168,6 @@ describe('ProjectMemoryService project resolution', () => {
 
   it('falls back to the header when no preset unit is registered', async () => {
     const { ctx } = await mount({ projections: true })
-    ctx.sessionProjections.stateOf(agentFor(ctx, 'x', { agentPreset: 'standard' }).session, 'agentPreset')
     const project = agentFor(ctx, 'p', { agentPreset: 'project' })
     expect(await ctx.projectMemory.resolveProject(project.session)).toBe('p')
   })

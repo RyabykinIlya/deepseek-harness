@@ -31,6 +31,7 @@ import type { ThreadStopReason } from '@deepseek-ai/dsh-experimental-threads'
 import type { WorktreeChanges, WorktreeMergeCheck, WorktreeRecord } from '@deepseek-ai/dsh-worktree-manager'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { renderOverview } from '../src/overview.ts'
 import type { ThreadOverviewResult } from '../src/overview.ts'
 
@@ -212,7 +213,7 @@ let callNumber = 0
 
 /** Execute a Thread tool as the given calling agent. */
 function callTool(ctx: Context, agent: Agent | undefined, args: unknown, name = 'thread_status') {
-  return ctx.tools.execute({
+  return executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId(`threads-call-${++callNumber}`),
     name,

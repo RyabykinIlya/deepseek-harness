@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { FallbackConfig, LlmFallbackEventData } from './types.ts'
 import { FallbackChainId } from './brand.ts'
@@ -16,7 +16,7 @@ import { resolveFallbackConfig } from './config.ts'
 
 // Type-only import to merge the canonical agentPreset declaration (string | null).
 // The canonical agentPreset declaration lives in agent-preset-registry; this import merges it for typing.
-import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 
 export const name = 'llm-fallback'
 export const inject = ['agents', 'sessionProjections']
@@ -25,7 +25,7 @@ export const inject = ['agents', 'sessionProjections']
 export type Config = FallbackConfig
 
 /** Runtime schema for {@link Config}. */
-export const Config = z.object({
+export const Config: z<Config> = z.object({
   chains: z.dict(
     z.object({
       id: z.string().required(false),
@@ -39,7 +39,7 @@ export const Config = z.object({
       ).min(1),
     }),
   ),
-}) as unknown as z<Config>
+})
 
 /**
  * Per-agent slot for fallback progress tracking.
@@ -67,14 +67,11 @@ interface Slot {
 }
 
 /** Resolve the effective agent preset for a session, mirroring model-routing's presetOf. */
-function presetOf(registry: SessionProjectionRegistry, session: Session): string | undefined {
-  try {
-    // stateOf throws if the projection is not registered; treat as absent.
-    // agentPreset is string | null; normalize null to undefined.
-    return registry.stateOf(session, 'agentPreset') ?? undefined
-  } catch {
-    return undefined
-  }
+function presetOf(ctx: Context, session: Session): string | undefined {
+  // A composition without the preset package leaves the service unregistered;
+  // that is capability absence, not a fault to propagate into every request.
+  // agentPreset is string | null; normalize null to undefined.
+  return ctx.get('agentPresets')?.presetForSession(session) ?? undefined
 }
 
 export function apply(ctx: Context, config: Config = { chains: {} }): void {
@@ -166,10 +163,7 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     }
 
     // 5. Resolve chain for this agent's session.
-    // ctx.sessionProjections is injected and guaranteed available at apply time.
-    const registry = ctx.sessionProjections
-
-    const intent = presetOf(registry, agent.session)
+    const intent = presetOf(ctx, agent.session)
     if (!intent) {
       return downstream
     }

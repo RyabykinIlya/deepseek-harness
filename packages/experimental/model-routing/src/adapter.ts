@@ -859,7 +859,7 @@ export class TiersAdapter extends LlmAdapter {
     // A tier that accepted a text-only candidate for an image request has to say
     // so: the model is about to answer about a picture it never received.
     const imagesOmitted: true | undefined = requiredInput !== undefined
-      && requirement?.modalities?.get(decidedModel)?.includes(requiredInput) !== true
+      && requirement?.modalities.get(decidedModel)?.includes(requiredInput) !== true
       && tier.imageInput === 'omit' ? true : undefined
     const payload: RoutingDecision = {
       boundary,

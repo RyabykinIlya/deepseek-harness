@@ -378,6 +378,8 @@ export const ja = {
   'time.months': '{n}か月',
   'time.years': '{n}年',
   'time.ago': '{t}前',
+  'threads.expand': 'スレッドをさらに{n}件表示',
+  'threads.collapse': '折りたたむ',
 } satisfies Record<keyof typeof en, string>
 
 /** Spanish dictionary, checked against the English keys. */
@@ -501,6 +503,8 @@ export const es = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Hace {t}',
+  'threads.expand': 'Mostrar {n} hilos más',
+  'threads.collapse': 'Mostrar menos',
 } satisfies Record<keyof typeof en, string>
 
 /** French dictionary, checked against the English keys. */
@@ -624,6 +628,8 @@ export const fr = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Il y a {t}',
+  'threads.expand': 'Afficher {n} threads de plus',
+  'threads.collapse': 'Afficher moins',
 } satisfies Record<keyof typeof en, string>
 
 /** German dictionary, checked against the English keys. */
@@ -747,6 +753,8 @@ export const de = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': 'Vor {t}',
+  'threads.expand': '{n} weitere Threads anzeigen',
+  'threads.collapse': 'Weniger anzeigen',
 } satisfies Record<keyof typeof en, string>
 
 /** Russian dictionary, checked against the English keys. */
@@ -870,6 +878,8 @@ export const ru = {
   'time.months': '{n}mo',
   'time.years': '{n}y',
   'time.ago': '{t} назад',
+  'threads.expand': 'Показать ещё {n} тредов',
+  'threads.collapse': 'Свернуть',
 } satisfies Record<keyof typeof en, string>
 
 /** Portuguese dictionary, checked against the English keys. */
@@ -993,4 +1003,6 @@ export const pt = {
   'time.months': '{n} mês',
   'time.years': '{n}s',
   'time.ago': '{t} atrás',
+  'threads.expand': 'Mostrar mais {n} threads',
+  'threads.collapse': 'Mostrar menos',
 } satisfies Record<keyof typeof en, string>

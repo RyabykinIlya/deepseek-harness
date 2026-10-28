@@ -25,6 +25,7 @@ import * as ThreadsPreset from '@deepseek-ai/dsh-experimental-threads-preset'
 import { THREADS_CONTEXT_NAME, THREAD_WORKER_CONTEXT_NAME } from '@deepseek-ai/dsh-experimental-threads-preset'
 import * as ThreadsTool from '@deepseek-ai/dsh-experimental-threads-tool'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -283,7 +284,7 @@ async function surface(ctx: Context, agent: Agent): Promise<{ tools: string[]; c
 
 /** Start a child with the `subagent` tool as `agent`. */
 async function delegate(ctx: Context, agent: Agent): Promise<Agent> {
-  const result = await ctx.tools.execute({
+  const result = await executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId(`delegate-${agent.id}`),
     name: 'subagent',

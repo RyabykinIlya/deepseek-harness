@@ -312,6 +312,18 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_worktree_manager["worktree-manager"]
+  pkg_subagent_thread_worktree["subagent-thread-worktree"]
+  pkg_experimental_threads["experimental-threads"]
+  pkg_experimental_tool_threads["experimental-tool-threads"]
+  svc_threads["ctx.threads<br/>Project Thread status and archival"]
+  pkg_experimental_model_routing["experimental-model-routing"]
+  svc_modelRouting["ctx.modelRouting<br/>Tier-based model and provider selection"]
+  svc_piAiDispatch["ctx.piAiDispatch<br/>Per-call pi-ai dispatch with a routing block"]
+  pkg_experimental_project_memory["experimental-project-memory"]
+  svc_projectMemory["ctx.projectMemory<br/>Project-shared durable memory"]
+  pkg_llm_retry["llm-retry"]
+  svc_llmRetryControl["ctx.llmRetryControl<br/>End a pending retry wait early"]
   pkg_experimental_liveshare["experimental-liveshare"]
   svc_liveshareShares["ctx.liveshareShares<br/>Owner share management Remote"]
   pkg_action_cards --> svc_actionCards
@@ -372,9 +384,12 @@ flowchart LR
   pkg_experimental_forge_github --> svc_forge
   pkg_experimental_forge_session --> svc_forgeSession
   pkg_experimental_liveshare --> svc_liveshareShares
+  pkg_experimental_model_routing --> svc_modelRouting
+  pkg_experimental_project_memory --> svc_projectMemory
   pkg_experimental_ptc_runtime_python --> svc_ptcRuntime
   pkg_experimental_speech_to_text --> svc_speechToText
   pkg_experimental_speech_to_text_sensevoice --> svc_speechToText
+  pkg_experimental_threads --> svc_threads
   pkg_experimental_translator --> svc_translator
   pkg_experimental_worktree --> svc_worktrees
   pkg_file_reference --> svc_fileReferences
@@ -397,7 +412,9 @@ flowchart LR
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
   pkg_llm_pi_ai --> svc_llm
+  pkg_llm_pi_ai --> svc_piAiDispatch
   pkg_llm_replay --> svc_llm
+  pkg_llm_retry --> svc_llmRetryControl
   pkg_lsp --> svc_lsp
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
@@ -480,6 +497,7 @@ flowchart LR
   pkg_working_directory --> svc_workingDirectory
   pkg_workspace --> svc_workspaceRegistry
   pkg_workspace_changes --> svc_workspaceChanges
+  pkg_worktree_manager --> svc_worktrees
   svc_actionCards --> pkg_client_ui_action_cards
   svc_actionCards --> pkg_creation_recommendations
   svc_agentDefaultModel --> pkg_api_session_controller
@@ -534,11 +552,14 @@ flowchart LR
   svc_jobs --> pkg_tool_terminal
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
+  svc_llmRetryControl --> pkg_experimental_model_routing
   svc_lsp --> pkg_tool_lsp
   svc_mcpResources --> pkg_mcp_resources
+  svc_modelRouting --> pkg_experimental_tool_threads
   svc_officeToPdf --> pkg_client_ui_sidebar_documentpreview
   svc_otel --> pkg_host_product_telemetry_otel
   svc_otel --> pkg_session_telemetry_otel
+  svc_piAiDispatch --> pkg_experimental_model_routing
   svc_pluginManager --> pkg_plugin_manager
   svc_pluginManager --> pkg_ui_settings_plugin_inventory
   svc_pluginMarket --> pkg_client_ui_plugin_market
@@ -610,6 +631,7 @@ flowchart LR
   svc_systemPrompt --> pkg_tool_web
   svc_systemPrompt --> pkg_tools
   svc_terminals --> pkg_tool_terminal
+  svc_threads --> pkg_experimental_tool_threads
   svc_tokenMeter --> pkg_compaction_basic
   svc_toolResultPruner --> pkg_compaction_basic
   svc_tools --> pkg_agent_loop
@@ -642,7 +664,10 @@ flowchart LR
   svc_workingDirectory --> pkg_tool_working_directory
   svc_workspaceRegistry --> pkg_api_session_controller
   svc_workspaceRegistry --> pkg_api_workspace_controller
+  svc_worktrees --> pkg_experimental_threads
+  svc_worktrees --> pkg_experimental_tool_threads
   svc_worktrees --> pkg_experimental_tool_worktree
+  svc_worktrees --> pkg_subagent_thread_worktree
   svc_fs -. event gate .-> pkg_fs_observation_policy
 ```
 
@@ -754,6 +779,12 @@ flowchart LR
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | [`lsp-stdio`](../packages/lsp/lsp-stdio) | [`tool-lsp`](../packages/lsp/tool-lsp) | - | Provider registration and selection plus normalized query execution over exactly four operations; the seam offers no protocol escape hatch, so a backend translates into the normalized request and result. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
+| `ctx.worktrees` | `service` | [`worktree-manager`](../packages/subagent/worktree-manager) | - | [`subagent-thread-worktree`](../packages/subagent/subagent-thread-worktree), [`experimental-threads`](../packages/experimental/threads), `experimental-tool-threads` | - | Owns worktree creation, the append-only JSONL intent registry, the state machine, and orphan reconcile. The thread provider is its only writer; the Thread domain and the diff tool read records, commits and changes. It confines a child Session by giving it a working directory, not by mediating files, so a consumer must place a Session cwd and pass the record onward. |
+| `ctx.threads` | `service` | [`experimental-threads`](../packages/experimental/threads) | - | `experimental-tool-threads` | - | Folds the log-only thread/* events into the threads projection, computes liveness from the live runtime instead of the log, and archives a Thread. Writers are the subagent/start and subagent/end listener; the status and diff tools are the direct consumers, and the Project profile bundle mounts the service without calling it. |
+| `ctx.modelRouting` | `service` | [`experimental-model-routing`](../packages/experimental/model-routing) | - | `experimental-tool-threads` | - | Folds model-routing/decision into the modelRouting projection, prices what a tier's models would cost, and records a Thread's tier override. The route adapter is its direct consumer, the thread_tier tool calls setThreadTier, and the settings page reads quote and freeUsage. |
+| `ctx.piAiDispatch` | `service` | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | - | [`experimental-model-routing`](../packages/experimental/model-routing) | - | Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer. |
+| `ctx.projectMemory` | `service` | [`experimental-project-memory`](../packages/experimental/project-memory) | - | - | - | Stores a bounded entry set per Project Session on a storage domain and resolves a Thread to its Project through Session lineage. It has no in-process consumer outside its own package: agents reach it through the memory_read and memory_write tools and the browser through its Remote namespace. |
+| `ctx.llmRetryControl` | `service` | [`llm-retry`](../packages/llm/llm-retry) | - | [`experimental-model-routing`](../packages/experimental/model-routing) | - | A policy-held retry wait (a provider-reported cooldown, for instance) does not see a change the operator made until the wait ends and the next attempt reads it; wake(sessionId) ends every pending wait for a Session so its next attempt starts at once and decides under the new value. The model-routing OpenRouter-fallback toggle calls it after recording the switch; a composition without that toggle is unaffected. |
 | `ctx.liveshareShares` | `service` | [`experimental-liveshare`](../packages/experimental/liveshare) | - | - | - | Publishes the owner share-management operations as one Typert Remote namespace that the owner client face calls; every method delegates to the same operations the same-origin routes used. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

@@ -236,15 +236,15 @@ describe('userAgentOverride', () => {
   })
 
   it('is validated as one header value Fetch could send', () => {
-    expect(() => assertServiceable(route('claude-cli/2.1.289') as Options)).not.toThrow()
-    expect(() => assertServiceable(route('line\nbreak') as Options))
+    expect(() => { assertServiceable(route('claude-cli/2.1.289') as Options) }).not.toThrow()
+    expect(() => { assertServiceable(route('line\nbreak') as Options) })
       .toThrow(/userAgentOverride is not valid for Fetch/)
-    expect(() => assertServiceable(route('部署') as Options))
+    expect(() => { assertServiceable(route('部署') as Options) })
       .toThrow(/userAgentOverride is not valid for Fetch/)
     // An empty string is still a value Fetch can send, so it is taken
     // verbatim like any other override; refusing it is not this validator's
     // call, and a gateway is free to accept or reject what it sees.
-    expect(() => assertServiceable(route('') as Options)).not.toThrow()
+    expect(() => { assertServiceable(route('') as Options) }).not.toThrow()
   })
 })
 
@@ -291,7 +291,7 @@ describe('metadataUserId', () => {
   })
 
   it('refuses an empty value: no client is declared and no gate could accept it', () => {
-    expect(() => assertServiceable(route('') as Options)).toThrow(/has an empty metadataUserId/)
-    expect(() => assertServiceable(route('user_x') as Options)).not.toThrow()
+    expect(() => { assertServiceable(route('') as Options) }).toThrow(/has an empty metadataUserId/)
+    expect(() => { assertServiceable(route('user_x') as Options) }).not.toThrow()
   })
 })

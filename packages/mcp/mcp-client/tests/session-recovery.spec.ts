@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { isExpiredSessionError, syncTools } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 import type { ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 
@@ -81,7 +82,7 @@ describe('syncTools session recovery', () => {
     const recoverSession = vi.fn(async () => fresh as never)
 
     await syncTools(stale as never, ctx, opts(recoverSession), new Map())
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('c1'),
       name: 'mcp__srv__lookup',
@@ -98,7 +99,7 @@ describe('syncTools session recovery', () => {
     const stale = clientWith(async () => { throw expiredSessionError() })
 
     await syncTools(stale as never, ctx, opts(async () => undefined), new Map())
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('c2'),
       name: 'mcp__srv__lookup',
@@ -113,7 +114,7 @@ describe('syncTools session recovery', () => {
     const stale = clientWith(async () => { throw expiredSessionError() })
 
     await syncTools(stale as never, ctx, opts(), new Map())
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('c3'),
       name: 'mcp__srv__lookup',
@@ -129,7 +130,7 @@ describe('syncTools session recovery', () => {
     const recoverSession = vi.fn(async () => undefined)
 
     await syncTools(failing as never, ctx, opts(recoverSession), new Map())
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('c4'),
       name: 'mcp__srv__lookup',

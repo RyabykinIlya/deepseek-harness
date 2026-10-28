@@ -30,6 +30,7 @@ import * as ThreadsPreset from '@deepseek-ai/dsh-experimental-threads-preset'
 import * as ThreadsTool from '@deepseek-ai/dsh-experimental-threads-tool'
 import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -345,7 +346,7 @@ describe('Threads bundle on its real rows', { timeout: 120_000 }, () => {
     for (const comp of [{ comp: without, agent: plain }, { comp: withBundle, agent: bundled }]) {
       const started: string[] = []
       comp.comp.ctx.on('subagent/start', (info) => { started.push(info.provider) })
-      const result = await comp.comp.ctx.tools.execute({
+      const result = await executeModelToolFixture(comp.comp.ctx, {
         signal: new AbortController().signal,
         callId: ToolCallId(`delegate-${comp.agent.id}`),
         name: 'subagent',

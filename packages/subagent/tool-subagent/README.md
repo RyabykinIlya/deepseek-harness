@@ -151,6 +151,10 @@ Read these pages when the package-level contract is not enough; they move from t
 
 The generated default [`subagent` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent) appears under the configured tool name while its provider exists. An instance with `modelSelection` (or a configured `allowedModels` list) adds `provider`, `model`, and `reasoning_effort` plus route guidance in every Session. `allowedAgentPresets` adds the `agent_preset` enum and guidance for the default or inherited selection. Context inheritance and continuation support determine task and follow-up descriptions. Enabled background mode adds `run_in_background`: continuable mode documents its `true` default, runtime settlement notice, and explicit foreground override, while one-shot mode documents its `false` default and the job id collected with `job_output` or stopped with `job_kill`. A provider that declares the `repository` capability adds `repository`, which names the repository the child works in. Agent restrictions apply to inherited preset delegation tools in schemas, execution, and guidance, including when historical `toolFilter` overrides are restored; sibling Agents remain unaffected. Preset-selection guidance depends only on the tool configuration, so it does not depend on other presets' declaration order.
 
+#### Token effect
+
+Fixed schema cost per parent request; `modelSelection` adds three optional route fields, while preset selection adds one enum parameter and default guidance, and a repository-selecting provider adds one more. Each tool instance adds one schema; visible delegation tools share one short system-prompt section.
+
 #### KV Cache effect
 
 Prefix-stable while provider instances and their configuration are unchanged. Adapter catalog changes do not alter the definition. Shipped fork tools omit model-selection fields to preserve reuse of the inherited parent prefix. A custom fork tool may enable selection; changing its route can prevent prefix reuse.

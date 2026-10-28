@@ -25,6 +25,7 @@ import { ThreadId, ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import type { ModelRoutingControl } from '@deepseek-ai/dsh-experimental-model-routing'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 
 const SIGNAL = new AbortController().signal
 
@@ -91,7 +92,7 @@ let callNumber = 0
 
 /** Execute `thread_tier` as the given calling agent. */
 function callTier(ctx: Context, agent: Agent, args: unknown) {
-  return ctx.tools.execute({
+  return executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId(`tier-${++callNumber}`),
     name: 'thread_tier',
@@ -169,7 +170,7 @@ describe('switching a Thread', () => {
   it('needs a calling agent', async () => {
     const { ctx, calls } = await setup()
     await provideRouting(ctx, calls)
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: SIGNAL,
       callId: ToolCallId('tier-no-agent'),
       name: 'thread_tier',

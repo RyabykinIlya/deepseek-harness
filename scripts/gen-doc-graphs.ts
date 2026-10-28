@@ -979,6 +979,14 @@ const SCRIPTED_SERVICE_ROLES: ServiceRole[] = [
     note: 'Streams one request through a configured pi-ai route carrying a caller-supplied OpenRouter provider block. Exists because the block is per request, not per route: an adapter that pins one upstream provider per Session cannot express that through route configuration. The model-routing route adapter is its only consumer.',
   },
   {
+    key: 'llmRetryControl',
+    pkg: 'llm-retry',
+    title: 'End a pending retry wait early',
+    mode: 'service',
+    consumers: ['experimental-model-routing'],
+    note: 'A policy-held retry wait (a provider-reported cooldown, for instance) does not see a change the operator made until the wait ends and the next attempt reads it; wake(sessionId) ends every pending wait for a Session so its next attempt starts at once and decides under the new value. The model-routing OpenRouter-fallback toggle calls it after recording the switch; a composition without that toggle is unaffected.',
+  },
+  {
     key: 'liveshareShares',
     pkg: 'experimental-liveshare',
     title: 'Owner share management Remote',

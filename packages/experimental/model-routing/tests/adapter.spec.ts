@@ -1644,9 +1644,11 @@ describe('TiersAdapter direct sources', () => {
       settings: { fallbackToOpenRouter: false, quotaCooldownMs: 600000 },
       responses: [failureChunks('QUOTA'), normalChunks()],
     })
-    const failure = await run(h.adapter).catch(error => error)
-    expect(failure).toMatchObject({ code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE })
-    expect(failure.failure.providerRetryAfterMs).toBe(600000)
+    const failure: unknown = await run(h.adapter).catch((error: unknown) => error)
+    expect(failure instanceof LlmError).toBe(true)
+    const llmFailure = failure as LlmError
+    expect(llmFailure.code).toBe(MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE)
+    expect(llmFailure.failure.providerRetryAfterMs).toBe(600000)
   })
 
   it('walks every spent subscription past `maxReroutes` to report the cooldown', async () => {

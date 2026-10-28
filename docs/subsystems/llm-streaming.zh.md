@@ -1179,6 +1179,30 @@ Types: [FileAttachmentRef](attachment.zh.md) · [ImageAttachmentRef](attachment.
 
 Source: [`packages/llm/llm/src/index.ts`](../../packages/llm/llm/src/index.ts)
 
+<a id="ctxllmretrycontrol--llmretrycontrol"></a>
+
+### `ctx.llmRetryControl` — `LlmRetryControl`
+
+`ctx.llmRetryControl`: end a pending retry wait early.
+
+A policy that lists a provider-reported delay — a subscription cooldown, for instance — holds the turn for as long as that long. Something the person changed while the turn waited, such as the route's fallback switch, has no effect until the wait ends and the next attempt reads the new choice, so the surface that recorded the change ends the wait instead: the next attempt starts at once and decides under the value the person just set.
+
+```ts cordis-catalog
+/**
+ * End every retry wait pending for one Session, so its attempts resume now.
+ *
+ * The waits belong to attempts that were already scheduled; ending one is not
+ * a retry decision of its own — it only brings the next attempt forward.
+ * @param sessionId - the Session whose pending retry waits to resume.
+ * @returns whether this Session had a wait to end.
+ */
+wake(sessionId: SessionId): boolean
+```
+
+Types: [SessionId](core.zh.md)
+
+Source: [`packages/llm/llm-retry/src/index.ts`](../../packages/llm/llm-retry/src/index.ts)
+
 <a id="ctxpiaidispatch--piaidispatch"></a>
 
 ### `ctx.piAiDispatch` — `PiAiDispatch`

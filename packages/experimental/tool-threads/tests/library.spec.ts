@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { unsupportedInbox } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { unsupportedInbox, unsupportedModel } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -23,6 +23,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { ThreadId, ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import type { WorktreeRecord } from '@deepseek-ai/dsh-worktree-manager'
 import * as tool from '../src/index.ts'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import {
   fitLibrary, renderLibrary, toAttachmentEntry, toChangesEntry, toLibraryListResult, toPresentedEntry,
 } from '../src/library.ts'
@@ -74,6 +75,7 @@ function project(ctx: Context, id = 'project'): Session {
 function agentFor(ctx: Context, session: Session): Agent {
   return {
     id: session.id, session, ctx: ctx.extend(), options: {}, status: 'idle', inbox: unsupportedInbox(),
+    model: unsupportedModel(),
     send() {}, followup() {}, steer() {}, inject() {}, cancel() {},
     whenIdle: async () => {}, runMaintenance: operation => operation(new AbortController().signal),
   }
@@ -110,7 +112,7 @@ let callNumber = 0
 
 /** Execute `library_list` as the given calling agent. */
 function callTool(ctx: Context, agent: Agent | undefined, args: unknown = {}) {
-  return ctx.tools.execute({
+  return executeModelToolFixture(ctx, {
     signal: new AbortController().signal,
     callId: ToolCallId(`library-call-${++callNumber}`),
     name: 'library_list',

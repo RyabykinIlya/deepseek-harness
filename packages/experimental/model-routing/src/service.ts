@@ -16,10 +16,11 @@ import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 // The projections this service folds over, read but never written.
-import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import { tokenUsageProjectionDefinition } from '@deepseek-ai/dsh-token-meter'
+import type { TokenUsageState } from '@deepseek-ai/dsh-token-meter'
 // The `agent/request` seam this service rewrites.
 import type {} from '@deepseek-ai/dsh-agent'
 // `ctx.llmRetryControl`: the asks that end a pending retry wait, so a switch the
@@ -40,7 +41,7 @@ import { modelRoutingProjectionDefinition } from './projection.ts'
 import { DiagnosticsFile } from './diagnostics.ts'
 import { defaultMix, directSourcesOf, isDirect, policyFor, rankWithRelaxation } from './select.ts'
 import type { EndpointLists } from './select.ts'
-import type { FreeUsage, ModelQuote, ModelRoutingControl } from './types.ts'
+import type { FreeUsage, ModelQuote, ModelRoutingControl, ModelRoutingState } from './types.ts'
 
 /** The most models one `quote` call may price at once. */
 const QUOTE_MODEL_LIMIT = 50
@@ -50,7 +51,8 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
   static inject = ['llm']
   static Config = Config
 
-  private registry: SessionProjectionRegistry | undefined
+  private modelRoutingHandle: ProjectionHandle<ModelRoutingState> | undefined
+  private tokenUsageHandle: ProjectionHandle<TokenUsageState> | undefined
   private readonly adapter: TiersAdapter
   private readonly endpoints: EndpointsCache
   private readonly catalog: FamilyCache
@@ -99,9 +101,9 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       settings,
       dispatch: () => ctx.get('piAiDispatch'),
       session: id => ctx.get('sessions')?.get(id),
-      routingState: session => this.registry?.stateOf(session, 'modelRouting'),
+      routingState: session => this.modelRoutingHandle?.stateOf(session),
       usage: (session) => {
-        const totals = this.registry?.stateOf(session, 'tokenUsage')?.totals
+        const totals = this.tokenUsageHandle === undefined ? undefined : this.tokenUsageHandle.stateOf(session).totals
         return totals === undefined
           ? undefined
           : {
@@ -140,11 +142,14 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
     })
     ctx.llm.registerAdapter([config.routeName], this.adapter)
     ctx.on('session/disposed', (session: Session) => { this.adapter.forget(session.id) })
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(modelRoutingProjectionDefinition)
-      this.registry = projectionCtx.sessionProjections
+    ctx.inject(['sessionProjections'], async (projectionCtx) => {
+      this.modelRoutingHandle = await projectionCtx.sessionProjections.register(modelRoutingProjectionDefinition)
+      this.tokenUsageHandle = await projectionCtx.sessionProjections.register(tokenUsageProjectionDefinition)
     })
-    ctx.effect(() => () => { this.registry = undefined })
+    ctx.effect(() => () => {
+      this.modelRoutingHandle = undefined
+      this.tokenUsageHandle = undefined
+    })
     ctx.effect(() => this.rewrites(ctx))
     this.warnEmptyCatalog(ctx)
     // `super(ctx, 'modelRouting')` already registered this instance under that
@@ -287,13 +292,13 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
   private rewrites(ctx: Context): () => void {
     return ctx.on('agent/request', async ({ agent }: { agent: Agent }, next: () => Promise<LlmCallConfig>) => {
       const proposed = await next()
-      const registry = this.registry
-      if (registry === undefined) return proposed
+      const modelRoutingHandle = this.modelRoutingHandle
+      if (modelRoutingHandle === undefined) return proposed
       const settings = readSettings(this.config)
       let result = proposed
-      const presetRoute = settings.presetRoutes.find(route => route.preset === presetOf(registry, agent.session))
-      const own = registry.stateOf(agent.session, 'modelRouting')
-      if (presetRoute !== undefined && own?.explicitSelection !== true) {
+      const presetRoute = settings.presetRoutes.find(route => route.preset === presetOf(ctx, agent.session))
+      const own = modelRoutingHandle.stateOf(agent.session)
+      if (presetRoute !== undefined && !own.explicitSelection) {
         // The effort belongs to the route the proposal came from, and a tier never
         // chose it, so it is dropped rather than forwarded.
         const { reasoningEffort: _dropped, ...rest } = proposed
@@ -303,7 +308,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       const parent = parentId === undefined ? undefined : ctx.get('sessions')?.get(parentId)
       const override = parent === undefined
         ? undefined
-        : registry.stateOf(parent, 'modelRouting')?.overrides[agent.id]
+        : modelRoutingHandle.stateOf(parent).overrides[agent.id]
       if (override !== undefined && result.provider === this.config.routeName && result.model !== override) {
         result = { ...result, model: override }
       }
@@ -328,14 +333,10 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
 }
 
 /** The preset a Session effectively runs, or `undefined` when the preset registry is absent. */
-function presetOf(registry: SessionProjectionRegistry, session: Session): string | undefined {
-  try {
-    return registry.stateOf(session, 'agentPreset') ?? undefined
-  } catch {
-    // A composition without the preset package leaves the key unregistered; that
-    // is capability absence, not a fault to propagate into every request.
-    return undefined
-  }
+function presetOf(ctx: Context, session: Session): string | undefined {
+  // A composition without the preset package leaves the service unregistered;
+  // that is capability absence, not a fault to propagate into every request.
+  return ctx.get('agentPresets')?.presetForSession(session) ?? undefined
 }
 
 /**

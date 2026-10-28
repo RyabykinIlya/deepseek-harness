@@ -166,7 +166,8 @@ function outputValueText(values: readonly JsonValue[]): string {
  * @returns the same blocks as canonical JSON values.
  */
 function outputAsJson(blocks: readonly ContentBlock[]): JsonValue[] {
-  return JSON.parse(JSON.stringify(blocks))
+  const parsed: unknown = JSON.parse(JSON.stringify(blocks))
+  return parsed as JsonValue[]
 }
 
 /** One provider handle as the tool's canonical output records it. */
@@ -535,9 +536,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   // A fixed route list mounts its own discovery over those exact routes; a
   // redundant `modelDiscovery: true` would otherwise double-register the
-  // shared tool name and throw.
+  // shared tool name and throw. The handle is synthetic: the routes come from
+  // configuration, not from any Session's folded events, so every reader
+  // returns the same list.
   if (fixedRoutes !== undefined) {
-    registerListSubagentModels(ctx, { stateOf: () => fixedRoutes })
+    registerListSubagentModels(ctx, {
+      stateOf: () => fixedRoutes,
+      readerFor: () => () => fixedRoutes,
+      dispose: () => Promise.resolve(),
+    })
   } else if (config.modelDiscovery === true) {
     registerListSubagentModels(ctx, subagentModelSelectionProjectionHandle)
   }

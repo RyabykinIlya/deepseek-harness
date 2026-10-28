@@ -1,5 +1,5 @@
 import { ToolExecutionPipeline } from '@deepseek-ai/dsh-tools/pipeline'
-import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
+import { executeModelToolFixture, executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -74,11 +74,14 @@ describe('dsh-tool-subagent', () => {
     })
     expect(result.isError).toBe(false)
     if (result.isError) throw new Error('expected subagent success')
-    expect(result.value).toEqual({
-      kind: 'foreground',
-      runId: expect.any(String),
-      output: [{ type: 'text', text: 'child says hi' }],
-    })
+    const value = result.value as {
+      kind: 'foreground'
+      runId: string
+      output: { type: 'text'; text: string }[]
+    }
+    expect(value.kind).toBe('foreground')
+    expect(typeof value.runId).toBe('string')
+    expect(value.output).toEqual([{ type: 'text', text: 'child says hi' }])
     expect(text(result)).toBe('child says hi')
   })
 
@@ -865,7 +868,7 @@ describe('dsh-tool-subagent local activation', () => {
     })
     void tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
 
-    const result = await ctx.tools.execute({
+    const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('handles-start'),
       name: 'subagent_handles',
@@ -1011,7 +1014,7 @@ describe('dsh-tool-subagent one-shot background jobs', () => {
     expect(jobId).toMatch(/^subagent-[0-9a-f]{16}$/)
     expect(text(start)).toBe(`started background subagent job ${jobId}`)
 
-    const collected = await ctx.tools.execute({
+    const collected = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('collect-1'),
       name: 'job_output',

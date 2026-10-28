@@ -174,7 +174,7 @@ describe('native row drag previews', () => {
       }} onToggle={vi.fn()} onCreate={vi.fn()} drag={drag} t={t} />
       : <SessionNodeItem node={{
         id: sid('session'), title: 'Draggable row', blank: false, running: false,
-        runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+        runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false, threads: [],
       }} currentId={undefined} now={0} onOpen={vi.fn()} drag={drag} t={t} />)
     const row = screen.getByRole('treeitem')
     stubRect(row)
@@ -237,7 +237,7 @@ describe('native row drag previews', () => {
     const image = start()
     rerender(<SessionNodeItem node={{
       id: sid('session'), title: 'Draggable row', blank: false, running: false,
-      runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: true,
+      runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: true, threads: [],
     }} currentId={undefined} now={0} onOpen={vi.fn()} drag={drag} t={t} />)
     expect(row.getAttribute('draggable')).toBe('false')
     fireEvent.dragEnd(row)
@@ -1347,7 +1347,7 @@ describe('workspace browser rows', () => {
     const drag = dragProps({ active: true, marker: 'before' })
     render(<SessionNodeItem node={{
       id: sid('not-draggable'), title: 'Not draggable', blank: state === 'blank', running: false,
-      runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: state === 'archived',
+      runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: state === 'archived', threads: [],
     }} currentId={undefined} now={0} onOpen={vi.fn()} drag={drag} t={t} />)
     const row = screen.getByRole('treeitem')
     expect(row.getAttribute('draggable')).toBe('false')

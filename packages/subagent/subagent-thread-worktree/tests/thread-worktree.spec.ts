@@ -157,7 +157,7 @@ describe('thread worktree provider', () => {
     // way to honor one: the worktree exists only as a `prepareContinuable` result.
     // Dropping the method is what makes the absence structural rather than a refusal.
     const provider: SubagentProvider = providerFor(fakeWorktrees())
-    expect(provider.start).toBeUndefined()
+    expect(provider.start === undefined).toBe(true)
   })
 
   it('declares that it isolates a continuable child from the one-shot route', () => {

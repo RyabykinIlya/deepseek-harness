@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Group from '@deepseek-ai/cordis-plugin-group'
+import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -28,6 +29,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { ContinuableCreateSpec, SubagentCapabilities, SubagentProvider, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import { TestSessionQuery } from '../../../subagent/subagent/tests/test-session-query.ts'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import ThreadsPreset, {
   COORDINATOR_REPLACED_ROW_IDS,
   PROJECT_PRESET_ID,
@@ -171,7 +173,7 @@ async function contextsFor(ctx: Context, agent: Agent): Promise<{ name: string; 
 
 /** Call the `subagent` tool as `agent` and return the started child's id. */
 async function delegate(ctx: Context, agent: Agent): Promise<SessionId> {
-  const result = await ctx.tools.execute({
+  const result = await executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId('delegate-1'),
     name: 'subagent',
@@ -441,7 +443,7 @@ describe('what each role is offered', () => {
     expect(names).not.toContain('thread_status')
     expect(names).not.toContain('thread_diff')
     expect(names).not.toContain('library_list')
-    const unknown = await ctx.tools.execute({
+    const unknown = await executeModelToolFixture(ctx, {
       signal: SIGNAL, callId: ToolCallId('status-1'), name: 'thread_status', arguments: {}, agent: worker,
     })
     expect(unknown.isError).toBe(true)
@@ -482,7 +484,7 @@ describe('what each role is offered', () => {
     const project = await agentOn(ctx, 'project-1', PROJECT_PRESET_ID)
 
     expect(project.session.header.agentPreset).toBe(PROJECT_PRESET_ID)
-    expect(ctx.sessionProjections.stateOf(project.session, 'agentPreset')).toBe(PROJECT_PRESET_ID)
+    expect((await ctx.sessionProjections.register(agentPresetProjectionDefinition)).stateOf(project.session)).toBe(PROJECT_PRESET_ID)
   })
 })
 

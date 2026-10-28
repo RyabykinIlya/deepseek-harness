@@ -16,7 +16,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Session, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-projection'
-import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { ProjectMemoryError } from './errors.ts'
@@ -334,7 +334,7 @@ export class ProjectMemoryService extends TypertRemoteService {
    * @returns the effective preset id, or undefined when the Session runs none.
    */
   private effectivePreset(session: Session): string | undefined {
-    const projected = this.host.get('sessionProjections')?.stateOf(session, 'agentPreset')
+    const projected = this.host.get('agentPresets')?.presetForSession(session)
     return projected === undefined ? session.header.agentPreset : projected ?? undefined
   }
 

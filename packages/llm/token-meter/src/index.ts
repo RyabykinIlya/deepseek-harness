@@ -293,4 +293,8 @@ export class TokenMeter extends Service {
   }
 }
 
+/** Shared tokenUsage projection unit; each independently mounted consumer registers this same definition. */
+export { tokenUsageProjectionDefinition } from './usage-projection.ts'
+export type { TokenUsageState } from './usage-projection.ts'
+
 export default TokenMeter
