@@ -364,7 +364,9 @@ describe('spawn preset selection', () => {
     ctx.on('agent/pre-step', async ({ agent }, next) => agent === handle.agent ? { kind: 'reject' } : next())
     const retried = await callSubagent(ctx, args, { agent: handle.agent })
     expect(retried.isError).not.toBe(true)
-    expect(text(retried)).toContain('started subagent')
+    // The foreground one-shot delegation returns the child's own output text;
+    // only background and continuable starts report `started subagent`.
+    expect(text(retried)).toContain('reviewed')
     await ctx.subagents.waitForChildren(handle.agent)
     expect(ctx.tools.get('subagent', handle.agent)).toBe(definition)
   })

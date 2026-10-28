@@ -866,7 +866,7 @@ describe('dsh-tool-subagent local activation', () => {
       start: async () => { throw new Error('continuable policy must not start a one-shot child') },
       prepareContinuable: async () => ({ handles: { worktree: '/wt/thread-1', branch: 'dsh/thread-1' } }),
     })
-    void tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
+    await tool.apply(ctx, { provider: 'handling', toolName: 'subagent_handles', backgroundMode: 'continuable' })
 
     const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
