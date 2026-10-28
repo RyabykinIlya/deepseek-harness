@@ -32,7 +32,7 @@ import type { ModelRoutingChipFace } from './ModelRoutingChip.tsx'
 import { ModelSwitchNotice } from './ModelSwitchNotice.tsx'
 import { modelSwitchDefinition } from './model-switch.ts'
 import { MODEL_ROUTING_NS, ModelRoutingCardController } from './model-routing-card-controller.ts'
-import { en, NS, zh } from './locales.ts'
+import { de, en, es, fr, ja, NS, pt, ru, zh } from './locales.ts'
 
 export type { ModelRoutingCardProps } from './ModelRoutingCard.tsx'
 export type {
@@ -45,7 +45,7 @@ export { MODEL_ROUTING_NS, pricePerMillion, quoteRow, quoteRowKey, splitList } f
 export { ModelRoutingCard, cardShell, formLabels } from './ModelRoutingCard.tsx'
 export { ModelRoutingChip, shortModel } from './ModelRoutingChip.tsx'
 export type { ModelRoutingChipFace, ModelRoutingChipProps } from './ModelRoutingChip.tsx'
-export { en, zh } from './locales.ts'
+export { de, en, es, fr, ja, pt, ru, zh } from './locales.ts'
 export type { ModelRoutingLocaleKey } from './locales.ts'
 
 /** Services required before the surfaces register. */
@@ -62,7 +62,7 @@ export const inject = ['slots', 'locale', 'remote', 'remote.session', 'configFor
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(modelRoutingRemote)
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-model-routing: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-model-routing: dictionaries')
 
   // The chip reads one projection and one Remote method; it mounts whenever the
   // conversation surface offers its seat and the Host serves the namespace. A

@@ -38,7 +38,7 @@ import type {} from '@deepseek-ai/dsh-experimental-threads/remote'
 // Type-only: the generated `projectMemory` Remote namespace declaration.
 import type {} from '@deepseek-ai/dsh-experimental-project-memory/remote'
 import type { ProjectId } from './memory-types.ts'
-import { en, NS, zh } from './locales.ts'
+import { de, en, es, fr, ja, NS, pt, ru, zh } from './locales.ts'
 
 /** Services the mount needs before it can run; `remote.threads` is provided by the mount itself. */
 export const inject = [
@@ -161,7 +161,7 @@ function assertNamespacesMounted(ctx: ClientContext): void {
 function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
   // Schemastery's field default is materialized before Cordis calls apply.
   const projectAgentPresets = config.projectAgentPresets as readonly string[]
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-threads: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-threads: dictionaries')
   const feedback = createThreadsFeedbackStore()
   const threadActions: ThreadActionsInjected = {
     refreshProjection: (ownerSessionId) => {

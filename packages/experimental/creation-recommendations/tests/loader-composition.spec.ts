@@ -29,6 +29,9 @@ import { RESULT_TEXT, writeBundle } from './fixture.ts'
 
 it.each(['portable-bundle', 'foreign-nested-row'] as const)('validates and installs through pnpm/HMR: %s', async (scenario) => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-creation-loader-'))
+  // The store the child `pnpm add` writes through must be writable; a relocated
+  // or read-only HOME would otherwise fail every install below.
+  vi.stubEnv('PNPM_CONFIG_STORE_DIR', await mkdtemp(join(tmpdir(), 'dsh-creation-store-')))
   let owner: Context | undefined
   onTestFinished(async () => { await owner?.fiber.dispose(); await rm(home, { recursive: true, force: true }) })
   const dir = join(home, 'profiles', 'test')

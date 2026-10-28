@@ -17,7 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { ProjectMemoryCard } from './ProjectMemoryCard.tsx'
 import { PROJECT_MEMORY_NS, ProjectMemoryCardController } from './project-memory-card-controller.ts'
-import { en, zh, type ProjectMemorySettingsLocaleKey } from './locales.ts'
+import { de, en, es, fr, ja, pt, ru, zh, type ProjectMemorySettingsLocaleKey } from './locales.ts'
 
 export type { ProjectMemoryCardProps } from './ProjectMemoryCard.tsx'
 export type {
@@ -44,7 +44,7 @@ export const inject = ['slots', 'locale', 'configForms']
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-project-memory: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-project-memory: dictionaries')
   const card = new ProjectMemoryCardController(ctx.configForms.get(PROJECT_MEMORY_NS))
   ctx.effect(() => () => { card.dispose() }, 'ui-project-memory: form subscription')
   ctx.effect(() => ctx.configForms.whileServed([PROJECT_MEMORY_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({

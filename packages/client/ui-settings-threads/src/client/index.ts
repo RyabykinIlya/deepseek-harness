@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { ThreadsCard } from './ThreadsCard.tsx'
 import { THREADS_PRESET_NS, ThreadsCardController } from './threads-card-controller.ts'
-import { en, zh, type ThreadsSettingsLocaleKey } from './locales.ts'
+import { de, en, es, fr, ja, pt, ru, zh, type ThreadsSettingsLocaleKey } from './locales.ts'
 
 export type { ThreadsCardProps } from './ThreadsCard.tsx'
 export type {
@@ -46,7 +46,7 @@ export const inject = ['slots', 'locale', 'configForms']
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-threads: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-settings-threads: dictionaries')
   const card = new ThreadsCardController(ctx.configForms.get(THREADS_PRESET_NS))
   ctx.effect(() => () => { card.dispose() }, 'ui-settings-threads: form subscription')
   ctx.effect(() => ctx.configForms.whileServed([THREADS_PRESET_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({

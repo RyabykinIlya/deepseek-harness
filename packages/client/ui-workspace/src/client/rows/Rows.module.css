@@ -137,8 +137,10 @@
   padding-inline-start: calc(20px + var(--dsh-workspace-indent, 0px));
 }
 
-.sessionRow.threadRow:hover .time {
-  display: inline;
+@media (hover: hover) {
+  .sessionRow.threadRow:hover .time {
+    display: inline;
+  }
 }
 
 .threadRow .title {

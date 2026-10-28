@@ -3,6 +3,7 @@ import { SdkErrorCode, SdkHttpError } from '@modelcontextprotocol/client'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { isExpiredSessionError, syncTools } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
@@ -25,6 +26,7 @@ async function mount(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   return ctx
 }
 

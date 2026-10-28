@@ -74,10 +74,16 @@
   cursor: pointer;
 }
 
-.button:hover,
 .button:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .button:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .button:disabled {

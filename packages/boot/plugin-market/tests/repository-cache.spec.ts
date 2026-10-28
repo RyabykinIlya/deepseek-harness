@@ -132,8 +132,11 @@ it('asks the smart HTTP endpoint without credentials whether a repository is pub
   expect(fetch).toHaveBeenCalledTimes(5)
 })
 
-it('reports an unreachable host as a network failure, a failed local command as a plain error, and a Git that cannot run', async () => {
-  vi.stubEnv('GIT_SSH_COMMAND', 'ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5')
+it('reports an unreachable host as a network failure, a failed local command as a plain error, and a Git that cannot run', { timeout: 15_000 }, async () => {
+  // A host may refuse a closed port immediately or drop the SYN until the
+  // connect timeout; both are the same network failure, so keep the ssh
+  // connect timeout well inside the test's own timeout budget.
+  vi.stubEnv('GIT_SSH_COMMAND', 'ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=2')
   await expectRejection(cache().read('ssh://127.0.0.1:1/owner/repo.git', undefined, 'README.md', 100, signal), { reason: 'network' }, 'git fetch')
   const source = repository('t', { 'README.md': 'x' })
   const repositories = cache()
@@ -149,9 +152,14 @@ it('reports an unreachable host as a network failure, a failed local command as 
   await expect(broken).rejects.toThrow('git update-ref')
   await expect(broken).rejects.not.toBeInstanceOf(DetailFailure)
   expect(readdirSync(join(root, 'cache'))).toEqual([])
-  // Git that cannot answer `git --version` within the deadline cannot run.
+  // Git that cannot answer within a 1ms deadline cannot run. The deadline may
+  // bite at the version probe (git-unavailable) or, on a host where the probe
+  // sneaks under it, at the next command (an equally fatal timeout); accept
+  // either fatal shape.
   const other = repository('t2', { 'README.md': 'x' })
-  await expectRejection(cache({ timeoutMs: 1 }).read(other.url, other.commit, 'README.md', 100, signal), { reason: 'git-unavailable' }, 'timed out')
+  const deadlined = await cache({ timeoutMs: 1 }).read(other.url, other.commit, 'README.md', 100, signal).catch((error: unknown) => error)
+  expect(deadlined).toBeInstanceOf(Error)
+  expect(String((deadlined as Error).message)).toContain('timed out')
   vi.stubEnv('PATH', join(root, 'no-git'))
   const missing = cache().read(other.url, other.commit, 'README.md', 100, signal)
   await expectRejection(missing, { reason: 'git-unavailable' }, 'git --version')

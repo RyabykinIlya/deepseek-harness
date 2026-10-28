@@ -23,7 +23,7 @@ async function fakeGh(): Promise<string> {
     'case "$1" in',
     '  echo) printf "%s|" "$@"; printf "\\nprompt=%s token=%s pager=[%s]\\n" "$GH_PROMPT_DISABLED" "${GH_TOKEN:-unset}" "$GH_PAGER" ;;',
     '  fail) echo oops >&2; exit 3 ;;',
-    '  sleep) sleep 5 ;;',
+    '  sleep) exec sleep 5 ;;',
     '  big) head -c 5000 /dev/zero | tr "\\0" x ;;',
     'esac',
     '',

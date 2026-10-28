@@ -24,7 +24,7 @@ import {
   WEB_SEARCH_PROVIDERS, WebSearchCardController, type WebSearchProviderId,
 } from './web-search-card-controller.ts'
 import { WEB_SEAM_NS, WebSearchSelectionController } from './web-search-selection-controller.ts'
-import { en, zh, type WebSearchSettingsLocaleKey } from './locales.ts'
+import { de, en, es, fr, ja, pt, ru, zh, type WebSearchSettingsLocaleKey } from './locales.ts'
 
 export type { WebSearchCardProps } from './WebSearchCard.tsx'
 export type { WebSearchSelectionCardProps } from './WebSearchSelectionCard.tsx'
@@ -74,7 +74,7 @@ const PROVIDER_LABEL: Readonly<Record<WebSearchProviderId, 'providerDeepseek' | 
  */
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-web-search: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-settings-web-search: dictionaries')
   const selection = new WebSearchSelectionController(ctx.configForms.get(WEB_SEAM_NS))
   ctx.effect(() => () => { selection.dispose() }, 'ui-settings-web-search: provider selection form subscription')
   ctx.effect(() => ctx.configForms.whileServed([WEB_SEAM_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
