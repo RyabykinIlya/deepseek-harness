@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-挂载 `@deepseek-ai/dsh-llm-fallback`，可在当前提供方的失败为终态后，自动切换到配置链中的下一提供方。链是按 intent（会话的 agent preset）索引的、有序的 `{provider, model, label?}` 步骤列表；失败的提供方先通过 `llm-retry` 耗尽自己的重试预算 — 回退监听在 `llm-retry` 之后，仅当失败本应为终态时才前进链。每次尝试都是一次完整、计费的请求；持久的 `llm/fallback` 会话事件（带 `ignorable: true` 追加）记录过渡；链耗尽时错误保持终态，无循环。
+挂载 `@deepseek-ai/dsh-llm-fallback`，可在当前提供方的失败为终态后，自动切换到配置链中的下一提供方。链是按 intent（会话的 agent preset）索引的、有序的 `{provider, model, label?}` 步骤列表；失败的提供方先通过 `llm-retry` 耗尽自己的重试预算 — 回退监听在 `llm-retry` 之后，仅当失败本应为终态时才前进链。步骤的模型路由在步骤准备时即固定（session-model-selection），因此前进链会把下一提供方记录为会话的持久模型选择：失败步骤以其错误结束，而下一步 — 下一条用户消息或后续 — 进入新提供方。持久的 `llm/fallback` 会话事件（带 `ignorable: true` 追加）记录过渡；链耗尽时错误保持终态，无循环。
 
 ## 目录
 
@@ -60,7 +60,7 @@ kind: "package-reference"
 
 ### 与 llm-retry 的顺序
 
-插件在 `agent/request-error` 上注册，位于 `llm-retry` 之后（标准 Cordis 监听器顺序）。在其监听器中，它先调用 `next()`，因此 `llm-retry` 先运行并决定是否在同一提供方上重试。仅当 `llm-retry` 返回非 `retry` 动作（预算耗尽或不合格失败 code）时，回退监听器才前进链并返回 `{ kind: 'retry' }`，导致 loop 以下一提供方重启同一步骤。新提供方从全新的重试预算开始，因为 `llm-retry` 的状态键是 `(provider, policyKey)` 对。
+插件在 `agent/request-error` 上注册，位于 `llm-retry` 之后（标准 Cordis 监听器顺序）。在其监听器中，它先调用 `next()`，因此 `llm-retry` 先运行并决定是否在同一提供方上重试。仅当 `llm-retry` 返回非 `retry` 动作（预算耗尽或不合格失败 code）时，回退监听器才前进链：它通过会话的模型选择记录下一提供方，并返回下游动作，让失败步骤以其错误结束。新提供方从全新的重试预算开始，因为 `llm-retry` 的状态键是 `(provider, policyKey)` 对，而它的第一步运行在下一个步骤边界上。
 
 ### 耗尽时发生什么
 
@@ -90,7 +90,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-执行器建立在一条规定之上：**先持久、后前进，打开步骤边界。** 任何 loop 重启步骤之前，回退过渡就已通过会话日志计划，因此崩溃或取消永远不会留下不可见的待处理过渡。恢复运行在 agent loop 的 `agent/request-error` waterfall（瀑布式事件），即打开步骤扩展点上，而不是包装 `ctx.llm.stream()`——原始流无法持久地区分已发出的分片，而 loop 可以在同一个打开的轮次内重跑失败步骤。
+执行器建立在一条规定之上：**先持久、后前进，步骤边界。** 回退过渡在失败步骤结束之前就通过会话日志（模型选择）记录，因此崩溃或取消永远不会把会话留在已死的提供方上。恢复运行在 agent loop 的 `agent/request-error` waterfall（瀑布式事件），即打开步骤扩展点上，而不是包装 `ctx.llm.stream()`——原始流无法持久地区分已发出的分片，而 loop 把失败报告为结构化事件。
 
 ### 源码地图
 
@@ -103,11 +103,11 @@ kind: "package-reference"
 
 ### 恢复流程
 
-失败步骤连同其提供方与失败一起到达 waterfall。`agent/request-error` 监听器先调用 `next()`（这样 `llm-retry` 先运行），然后检查下游是否返回了 `retry`。如果没有，它读取按 agent 分槽的状态，匹配 `agent/request` 为此 `(turn, step)` 最后返回的 `(provider, model)` 对。循环卫士阻止若同一 `(turn, step)` 的待处理过渡存在但未被消费则重复前进。为会话的 intent 解析链；通过严格的 `(provider, model)` 匹配找到当前步骤索引。若存在下一步，记录待处理过渡，追加 `llm/fallback` 事件，并返回 `{ kind: 'retry' }`。随后的 `agent/request` 监听器消费待处理过渡，并返回下一步的 provider/model。
+失败步骤连同其提供方与失败一起到达 waterfall。`agent/request-error` 监听器先调用 `next()`（这样 `llm-retry` 先运行），然后检查下游是否返回了 `retry`。如果没有，它读取按 agent 分槽的状态，匹配该步骤捕获选择所运行的 `(provider, model)` 对。循环卫士阻止对同一 `(turn, step)` 的重复前进。为会话的 intent 解析链；通过严格的 `(provider, model)` 匹配找到当前步骤索引。若存在下一步，追加 `llm/fallback` 事件，通过会话的模型选择记录下一提供方，并返回下游动作 — 步骤以其失败结束，下一步进入新提供方。
 
 ### 进度状态
 
-进度状态是按 agent 分槽的 `WeakMap` 中的一个槽位 — `lastProposed`（`agent/request` 监听器为此 `(turn, step)` 最后返回的 `(provider, model)` 对）与 `pending`（计划的过渡）。待处理由 `agent/request` 恰好消费一次；无需重置监听器，因为 `(turn, step)` 在会话内永不重复，`lastProposed` 在每次请求时覆写，而未被消费的 `pending` 仅阻止对同一 `(turn, step)` 的重复前进 — 即循环卫士。
+进度状态是按 agent 分槽的 `WeakMap` 中的一个槽位 — `lastProposed`（该步骤捕获选择所运行的 `(provider, model)` 对，在每次 `agent/pre-step` 时记录）与 `advanced`（其失败已使链前进的 `(turn, step)`）。无需重置监听器，因为 `(turn, step)` 在会话内永不重复，`lastProposed` 在每次步骤准备时覆写，而 `advanced` 仅阻止对同一 `(turn, step)` 的重复前进 — 即循环卫士。
 
 ### Waterfall 组合
 

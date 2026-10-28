@@ -6,12 +6,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { Agent, RequestErrorAction } from '@deepseek-ai/dsh-agent'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import type { Agent, PreStepDecision, RequestErrorAction } from '@deepseek-ai/dsh-agent'
 
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { FallbackConfig, LlmFallbackEventData } from './types.ts'
-import { FallbackChainId } from './brand.ts'
 import { resolveFallbackConfig } from './config.ts'
 
 // Type-only import to merge the canonical agentPreset declaration (string | null).
@@ -47,23 +45,14 @@ export const Config: z<Config> = z.object({
  * We use a WeakMap keyed by Agent so slots are collected with the agent.
  * No step/start or turn/end listeners are needed:
  * - (turn, step) never repeats within a session
- * - lastProposed is overwritten on every request
- * - a pending transition is consumed exactly once by agent/request
- * - an unconsumed pending only blocks re-advance for the same (turn, step) — the loop guard
+ * - lastProposed is overwritten at every step's preparation
+ * - advanced only blocks re-advance for the same (turn, step) — the loop guard
  */
 interface Slot {
-  /** The (provider, model) pair last proposed by agent/request for this agent. */
+  /** The (provider, model) pair the step's captured selection runs on. */
   lastProposed?: { turn: number; step: number; provider: string; model: string }
-  /** A pending fallback transition awaiting consumption by agent/request. */
-  pending?: {
-    turn: number
-    step: number
-    from: { provider: string; model: string }
-    to: { provider: string; model: string }
-    chainId: FallbackChainId
-    chainIntent: string
-    attempt: number
-  }
+  /** The (turn, step) whose failure already advanced the chain one step. */
+  advanced?: { turn: number; step: number }
 }
 
 /** Resolve the effective agent preset for a session, mirroring model-routing's presetOf. */
@@ -85,46 +74,23 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
 
   const slots = new WeakMap<Agent, Slot>()
 
-  // --- agent/request listener ---
-  const disposeRequestListener = ctx.on('agent/request', async (
-    { agent, turn, step, signal },
-    next: () => Promise<LlmCallConfig>,
-  ): Promise<LlmCallConfig> => {
-    const proposed = await next()
-
-    // If the turn was aborted after next() returned, don't consume the pending
-    // record — the loop throws right after the waterfall; a dead (turn,step)
-    // pending is harmless, a consumed-but-unused one is not.
-    if (signal.aborted) {
-      return proposed
-    }
-
+  // --- pre-step bookkeeping listener ---
+  // The step's route is fixed at step preparation (session-model-selection), so
+  // a fallback no longer rewrites the in-flight request: selecting the chain's
+  // next route applies from the following step. This listener only records the
+  // route each step actually runs on, which the error listener matches against.
+  const disposeRequestListener = ctx.on('agent/pre-step', async ({ agent, turn, step }, next): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    const route = agent.model.current()
+    if (route === undefined) return decision
     let slot = slots.get(agent)
     if (!slot) {
       slot = {}
       slots.set(agent, slot)
     }
-
-    // If there's a pending transition for this exact (turn, step), consume it.
-    if (slot.pending && slot.pending.turn === turn && slot.pending.step === step) {
-      const { to } = slot.pending
-      delete slot.pending // consume exactly once
-
-      const overridden: LlmCallConfig = {
-        ...proposed,
-        provider: to.provider,
-        model: to.model,
-      }
-
-      // Record the pair we actually returned so request-error can match it.
-      slot.lastProposed = { turn, step, provider: to.provider, model: to.model }
-
-      return overridden
-    }
-
-    // No pending transition for this (turn, step): record what we proposed.
-    slot.lastProposed = { turn, step, provider: proposed.provider, model: proposed.model }
-    return proposed
+    slot.lastProposed = { turn, step, provider: route.provider, model: route.model }
+    return decision
   })
 
   // --- agent/request-error listener ---
@@ -157,8 +123,10 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
       return downstream
     }
 
-    // 4. Loop guard: pending for same (turn, step) exists but was not consumed.
-    if (slot.pending && slot.pending.turn === turn && slot.pending.step === step) {
+    // 4. Loop guard: already advanced this (turn, step) — the retried attempt runs
+    // on the captured route, so a second failure of the same step is the new route
+    // failing; the chain resumes from the next step (its own request-error).
+    if (slot.advanced?.turn === turn && slot.advanced.step === step) {
       return downstream
     }
 
@@ -188,15 +156,11 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
     if (!nextStep) return downstream // Should never happen due to guard above
     const attempt = currentIndex + 2 // 1-based: primary=1, first fallback=2, etc.
 
-    slot.pending = {
-      turn,
-      step,
-      from: { provider: last.provider, model: last.model },
-      to: { provider: nextStep.provider, model: nextStep.model },
-      chainId: chain.id,
-      chainIntent: intent,
-      attempt,
-    }
+    slot.advanced = { turn, step }
+    // The recorded selection applies from the following step's preparation: a
+    // retry of this step would rerun the captured route, so the step ends with
+    // its failure and the next step enters the chain's next route.
+    agent.model.select({ provider: nextStep.provider, model: nextStep.model })
 
     // Append durable session event for the fallback transition.
     // We do this HERE (not in agent/request) so the real failure from the
@@ -215,8 +179,10 @@ export function apply(ctx: Context, config: Config = { chains: {} }): void {
       failure,
     } satisfies LlmFallbackEventData, { ignorable: true })
 
-    // Return retry so the loop restarts the step; agent/request will consume pending.
-    return { kind: 'retry' }
+    // The step's route is captured at preparation, so a retry action would rerun
+    // the failed route; returning the downstream action ends this step with its
+    // failure, and the recorded selection serves the next step.
+    return downstream
   })
 
   // Dispose both listeners on plugin unload.

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Mount `@deepseek-ai/dsh-llm-fallback` to automatically switch to the next provider in a configured chain after the current provider's failure is terminal. Chains are ordered lists of `{provider, model, label?}` steps keyed by intent (the session's agent preset); the failing provider first exhausts its own retry budget via `llm-retry` — fallback listens after `llm-retry` and only advances the chain when the failure would otherwise be terminal. Each attempt is a complete, billed request; the durable `llm/fallback` session event (appended with `ignorable: true`) records the transition; on exhaustion the error stays terminal with no loop.
+Mount `@deepseek-ai/dsh-llm-fallback` to automatically switch to the next provider in a configured chain after the current provider's failure is terminal. Chains are ordered lists of `{provider, model, label?}` steps keyed by intent (the session's agent preset); the failing provider first exhausts its own retry budget via `llm-retry` — fallback listens after `llm-retry` and only advances the chain when the failure would otherwise be terminal. A step's model route is fixed at step preparation (session-model-selection), so advancing records the next provider as the session's durable model selection: the failed step ends with its error, and the next step — the next user message or follow-up — enters the new provider. The durable `llm/fallback` session event (appended with `ignorable: true`) records the transition; on chain exhaustion the error stays terminal with no loop.
 
 ## Table of Contents
 
@@ -60,15 +60,15 @@ The session's agent preset name is the intent key used to look up a chain in `co
 
 ### Ordering with llm-retry
 
-The plugin registers on `agent/request-error` after `llm-retry` (standard Cordis listener order). In its listener, it calls `next()` first, so `llm-retry` runs first and decides whether to retry on the same provider. Only when `llm-retry` returns a non-`retry` action (exhausted budget or ineligible failure code) does the fallback listener advance the chain and return `{ kind: 'retry' }`, causing the loop to restart the same step with the next provider. The new provider starts with a fresh retry budget because `llm-retry`'s state key is the `(provider, policyKey)` pair.
+The plugin registers on `agent/request-error` after `llm-retry` (standard Cordis listener order). In its listener, it calls `next()` first, so `llm-retry` runs first and decides whether to retry on the same provider. Only when `llm-retry` returns a non-`retry` action (exhausted budget or ineligible failure code) does the fallback listener advance the chain: it records the next provider through the session's model selection and returns the downstream action, ending the failed step with its error. The new provider starts with a fresh retry budget because `llm-retry`'s state key is the `(provider, policyKey)` pair, and its first step runs on the following step boundary.
 
 ### What happens on exhaustion
 
-If the failing step is the last in its chain, the plugin returns the downstream action (terminal error) and does not return `retry`. The turn ends with the original failure — no loop, no silent retry. The session log shows the failed step's provider/model and the chain exhaustion.
+If the failing step is the last in its chain, the plugin leaves the downstream action untouched (terminal error). The step ends with the original failure — no loop, no silent retry. The session log shows the failed step's provider/model and the chain exhaustion.
 
 ### Cost note
 
-Every attempt — primary, retries on the primary, and each fallback step — is a complete provider request and is billed accordingly. The `llm/fallback` event itself contributes no tokens.
+Every attempt — primary and its retries — is a complete provider request and is billed accordingly; the step that triggers an advance adds no extra request on the next provider, which serves the following step. The `llm/fallback` event itself contributes no tokens.
 
 ### What you can observe
 
@@ -90,7 +90,7 @@ This section explains the design behind the executor; the observable behavior is
 
 ### Design philosophy
 
-The executor is built on one rule: **durable before advance, open-step boundaries.** A fallback transition is scheduled through the session log before the loop restarts the step, so a crash or cancellation never leaves an invisible pending transition. Recovery runs on the agent loop's `agent/request-error` waterfall, the open-step extension point, rather than wrapping `ctx.llm.stream()` — a raw stream cannot separate already-emitted chunks durably, while the loop can re-run the failed step inside the same open turn.
+The executor is built on one rule: **durable before advance, step boundaries.** A fallback transition is recorded through the session log (the model selection) before the failed step ends, so a crash or cancellation never leaves the session on a dead provider. Recovery runs on the agent loop's `agent/request-error` waterfall, the open-step extension point, rather than wrapping `ctx.llm.stream()` — a raw stream cannot separate already-emitted chunks durably, while the loop reports failures as structured events.
 
 ### Source map
 
@@ -103,11 +103,11 @@ The executor is built on one rule: **durable before advance, open-step boundarie
 
 ### Recovery flow
 
-A failed step arrives on the waterfall with its provider and failure. The `agent/request-error` listener calls `next()` first (so `llm-retry` runs), then checks whether downstream returned `retry`. If not, it reads the per-agent slot to match the `(provider, model)` pair last proposed by `agent/request` for this `(turn, step)`. A loop guard blocks re-advance if a pending transition for the same `(turn, step)` exists but was not consumed. The chain for the session's intent is resolved; the current step index is found by strict `(provider, model)` match. If a next step exists, a pending transition is recorded, the `llm/fallback` event is appended, and `{ kind: 'retry' }` is returned. The subsequent `agent/request` listener consumes the pending transition and returns the next step's provider/model.
+A failed step arrives on the waterfall with its provider and failure. The `agent/request-error` listener calls `next()` first (so `llm-retry` runs), then checks whether downstream returned `retry`. If not, it reads the per-agent slot to match the `(provider, model)` pair the step's captured selection runs on. A loop guard blocks re-advance for the same `(turn, step)`. The chain for the session's intent is resolved; the current step index is found by strict `(provider, model)` match. If a next step exists, the `llm/fallback` event is appended, the next provider is recorded through the session's model selection, and the downstream action is returned — the step ends with its failure, and the next step enters the new provider.
 
 ### Progress state
 
-Progress state is one slot per agent in a `WeakMap` — `lastProposed` (the `(provider, model)` pair the `agent/request` listener last returned for that `(turn, step)`) and `pending` (the scheduled transition). A pending is consumed exactly once by `agent/request`; no reset listeners are needed because `(turn, step)` never repeats within a session, `lastProposed` is overwritten on every request, and an unconsumed `pending` only blocks re-advancing the same `(turn, step)` — the loop guard.
+Progress state is one slot per agent in a `WeakMap` — `lastProposed` (the `(provider, model)` pair the step's captured selection runs on, recorded at each `agent/pre-step`) and `advanced` (the `(turn, step)` whose failure already advanced the chain). No reset listeners are needed because `(turn, step)` never repeats within a session, `lastProposed` is overwritten at every step's preparation, and `advanced` only blocks re-advancing the same `(turn, step)` — the loop guard.
 
 ### Waterfall composition
 

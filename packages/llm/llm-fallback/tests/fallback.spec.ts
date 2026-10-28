@@ -171,7 +171,7 @@ const twoStepChain = {
 } satisfies FallbackConfig
 
 describe('fallback switch', () => {
-  it('switches to the next chain step once the primary exhausts its retry budget', async () => {
+  it('records the next chain step for the following turn once the primary exhausts its retry budget', async () => {
     const adapter = new ScriptedAdapter([
       new LlmError('a failed', 'SERVER'),
       new LlmError('a failed again', 'SERVER'),
@@ -184,8 +184,13 @@ describe('fallback switch', () => {
 
     await send(agent)
 
-    // The primary received its whole budget (initial request + 1 retry).
-    expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a', 'b'])
+    // The step's route is captured at preparation, so the failed turn spends only
+    // the primary's own budget; the transition applies from the next turn.
+    expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a'])
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'error', error: { code: 'SERVER' } } },
+    })
 
     const [event] = events(agent, 'llm/fallback')
     expect(event?.data).toMatchObject({
@@ -200,11 +205,9 @@ describe('fallback switch', () => {
     })
     expect(event?.ignorable).toBe(true)
 
-    const changed = events(agent, 'request/header').filter(item => item.data.reason === 'change')
-    expect(changed.map(item => item.data.header.config)).toEqual([
-      expect.objectContaining({ provider: 'b', model: 'model-b' }),
-    ])
-
+    // The recorded selection serves the next step on the new provider.
+    await send(agent)
+    expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a', 'b'])
     expect(agent.session.deriveMessages().at(-1)).toMatchObject({
       role: 'assistant',
       content: [{ type: 'text', text: 'b succeeded' }],
@@ -216,7 +219,7 @@ describe('fallback switch', () => {
     })
   })
 
-  it('starts the fallback provider with a fresh retry budget', async () => {
+  it('starts the fallback provider with a fresh retry budget on the following turn', async () => {
     const adapter = new ScriptedAdapter([
       new LlmError('a failed', 'SERVER'),
       new LlmError('a failed again', 'SERVER'),
@@ -230,7 +233,11 @@ describe('fallback switch', () => {
     const agent = await agentOn(context, 'fallback-fresh-budget', { provider: 'a', model: 'model-a' }, 'test')
 
     await send(agent)
+    // Turn 1 spends the primary's budget and records the transition.
+    expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a'])
 
+    await send(agent)
+    // Turn 2 runs on b with its own fresh budget: initial request + 1 retry.
     expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a', 'b', 'b'])
     // Retry numbering restarts at 1 for b: a's budget does not carry over.
     expect(events(agent, 'llm/retry').map(item => ({
@@ -286,9 +293,14 @@ describe('fallback negative controls', () => {
     const agent = await agentOn(context, 'fallback-terminal-last', { provider: 'a', model: 'model-a' }, 'test')
 
     await send(agent)
+    // Turn 1 runs the primary's budget and records the single transition.
+    expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a'])
+    expect(events(agent, 'llm/fallback').map(item => item.data.provider)).toEqual(['b'])
 
+    await send(agent)
+    // Turn 2 runs the chain's last step; it has no successor, so its failure is
+    // terminal without a second transition.
     expect(adapter.requests.map(request => request.provider)).toEqual(['a', 'a', 'b', 'b'])
-    // Exactly one transition: the last step has no successor.
     expect(events(agent, 'llm/fallback').map(item => item.data.provider)).toEqual(['b'])
     expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
       type: 'turn/end',
