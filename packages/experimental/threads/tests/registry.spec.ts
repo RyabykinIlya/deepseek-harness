@@ -211,10 +211,14 @@ describe('threads projection through the registry', () => {
 
   it('E7: registering the key twice at a different stateVersion throws loudly', async () => {
     const { ctx } = await harness()
-    expect(() => ctx.sessionProjections.register({
+    // Registration resolves through acquisition: the loud refusal arrives as
+    // a rejection, not a synchronous throw. The Promise.resolve normalizes the
+    // registration thenable for the rejects matcher, the same shape the
+    // registry's own suite asserts.
+    await expect(Promise.resolve(ctx.sessionProjections.register({
       ...threadsProjectionDefinition,
       stateVersion: LIVE_VERSION + 1,
-    })).toThrow(
+    }))).rejects.toThrow(
       new RegExp(`already registered at stateVersion ${String(LIVE_VERSION)}`),
     )
   })

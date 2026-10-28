@@ -26,6 +26,8 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ThreadId, ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import type { ThreadStopReason } from '@deepseek-ai/dsh-experimental-threads'
 import type { WorktreeChanges, WorktreeMergeCheck, WorktreeRecord } from '@deepseek-ai/dsh-worktree-manager'
@@ -195,6 +197,7 @@ async function setupWithoutProjectionRegistry(): Promise<{ ctx: Context; project
   const registry = await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-threads-'))
   roots.push(root)

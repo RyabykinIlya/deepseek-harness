@@ -20,6 +20,8 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ThreadId, ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import type { WorktreeRecord } from '@deepseek-ai/dsh-worktree-manager'
 import * as tool from '../src/index.ts'
@@ -48,6 +50,7 @@ async function mount(config?: tool.Config): Promise<Context> {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SystemPrompt, {})
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(ThreadsService)
   await ctx.plugin(tool, config)
   return ctx
@@ -62,6 +65,7 @@ async function mountWithoutThreads(config?: tool.Config): Promise<Context> {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SystemPrompt, {})
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(tool, config)
   return ctx
 }

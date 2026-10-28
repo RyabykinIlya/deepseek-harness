@@ -133,7 +133,6 @@ function standardPlugins(): { id: string; name: string; config?: object }[] {
   return [
     { id: 'tool-todo', name: source('todo/tool-todo/src/index.ts'), config: { allowParallelInProgress: true } },
     { id: 'tool-subagent-control', name: source('subagent/tool-subagent-control/src/index.ts') },
-    { id: 'tool-subagent-list-agents', name: source('subagent/tool-subagent-control/src/list-agents.ts') },
     {
       id: 'tool-subagent',
       name: source('subagent/tool-subagent/src/index.ts'),

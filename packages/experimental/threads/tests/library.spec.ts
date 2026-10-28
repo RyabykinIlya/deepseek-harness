@@ -16,7 +16,9 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentPresets, { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
 import WorktreeService from '@deepseek-ai/dsh-worktree-manager'
@@ -63,8 +65,11 @@ const DEFAULTS: Config = {
 
 async function mount(config: Partial<Config> = {}): Promise<Context> {
   const ctx = new Context()
+  await ctx.plugin(Loader)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(AgentPresets, { default: 'standard' })
   await ctx.plugin(ThreadsService, { ...DEFAULTS, ...config })
   return ctx
 }

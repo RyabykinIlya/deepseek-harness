@@ -150,7 +150,6 @@ function source(path: string): string {
 const STANDARD_PLUGINS = [
   { id: 'tool-todo', name: source('todo/tool-todo/src/index.ts'), config: { allowParallelInProgress: true } },
   { id: 'tool-subagent-control', name: source('subagent/tool-subagent-control/src/index.ts') },
-  { id: 'tool-subagent-list-agents', name: source('subagent/tool-subagent-control/src/list-agents.ts') },
   {
     id: 'tool-subagent',
     name: source('subagent/tool-subagent/src/index.ts'),
@@ -182,6 +181,7 @@ const ThreadProviderStandIn = {
 
 const WorktreeManagerStandIn = { name: 'worktree-manager', apply(): void {} }
 const ProjectMemoryStandIn = { name: 'project-memory', apply(): void {} }
+const ClientUiSettingsThreadsStandIn = { name: 'ui-settings-threads', apply(): void {} }
 
 /**
  * Boot one composition through the Loader.
@@ -226,6 +226,7 @@ async function compose(withBundle: boolean): Promise<{ ctx: Context; providers: 
     ['@deepseek-ai/dsh-subagent-thread-worktree', ThreadProviderStandIn],
     ['@deepseek-ai/dsh-experimental-client-ui-threads', ClientUiThreads],
     ['@deepseek-ai/dsh-experimental-client-ui-project-memory', ClientUiProjectMemory],
+    ['@deepseek-ai/dsh-client-ui-settings-threads', ClientUiSettingsThreadsStandIn],
     ['@deepseek-ai/dsh-experimental-threads-preset', ThreadsPreset],
     ['@deepseek-ai/dsh-experimental-threads-tool', ThreadsTool],
   ])
@@ -337,7 +338,8 @@ describe('real Loader composition', { timeout: 60_000 }, () => {
     expect(tools).toEqual(expect.arrayContaining([
       'subagent', 'thread_status', 'thread_diff', 'send_message', 'interrupt_agent', 'todo_write',
     ]))
-    expect(tools).not.toContain('list_agents')
+    // The merged control row also carries `list_agents` (upstream folded the
+    // standalone row in); `thread_status` stays the bounded Thread view.
     expect(texts.map(entry => entry.name)).toContain(THREADS_CONTEXT_NAME)
     const child = await delegate(ctx, project)
     expect(providers).toEqual(['thread'])
