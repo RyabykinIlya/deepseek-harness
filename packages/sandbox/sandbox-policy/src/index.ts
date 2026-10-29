@@ -108,6 +108,16 @@ export interface Config {
    * `read-only`.
    */
   additionalWritableRoots?: string[]
+  /**
+   * Which session directory bounds `workspace-write` (default: `header-cwd`).
+   * `header-cwd` is the upstream meaning: the directory frozen into the session
+   * header at creation. `current-cwd` bounds by the session's CURRENT working
+   * directory (`ctx.workingDirectory`) instead — a host integration that moves
+   * the working directory per session before its first turn (the tg_bro_bot
+   * bridge does, one runtime serves many chats) then jails each session's
+   * writes to that session's own directory rather than the shared launch root.
+   */
+  boundary?: 'header-cwd' | 'current-cwd'
 }
 
 /** Inputs that select the sandbox policy for one capability call. */
@@ -139,6 +149,7 @@ export class SandboxPolicyService extends Service {
     // stored root is always absolute regardless of how it was supplied.
     workspaceRoot: z.string(),
     additionalWritableRoots: z.array(z.string()).default([]),
+    boundary: z.union(['header-cwd', 'current-cwd'] as const).default('header-cwd'),
   })
 
   static inject = ['sessionProjections']
@@ -149,6 +160,8 @@ export class SandboxPolicyService extends Service {
   readonly workspaceRoot: string
   /** The frozen extra writable directories shared by every resolved policy, or `undefined` for none. */
   readonly additionalWritableRoots: readonly string[] | undefined
+  /** Which session directory bounds `workspace-write` (see {@link Config.boundary}). */
+  readonly boundary: 'header-cwd' | 'current-cwd'
   private sandboxModeProjectionHandle!: ProjectionHandle<SandboxMode | null>
 
   constructor(ctx: Context, config: Config) {
@@ -159,6 +172,7 @@ export class SandboxPolicyService extends Service {
     this.defaultMode = config.mode as SandboxMode
     this.workspaceRoot = resolveWorkspaceRoot(config.workspaceRoot ?? process.cwd())
     this.additionalWritableRoots = resolveAdditionalWritableRoots(config.additionalWritableRoots)
+    this.boundary = config.boundary ?? 'header-cwd'
   }
 
   protected async [Service.init](): Promise<void> {
@@ -188,9 +202,11 @@ export class SandboxPolicyService extends Service {
   /**
    * Resolve the complete policy for one capability call. An approved explicit
    * mode outranks the session's last `sandbox/mode` event, which outranks the
-   * deployment default. A session cwd is its workspace-write boundary; the
-   * configured root is the fallback for agentless calls and sessions without a
-   * cwd.
+   * deployment default. The boundary directory is the session's header cwd
+   * (upstream) or its CURRENT working directory (config `boundary:
+   * 'current-cwd'`, falling back to the header when the workingDirectory
+   * service is not mounted); the configured root is the fallback for agentless
+   * calls and sessions without a cwd.
    * @param request - optional session and approved mode override.
    * @returns the fully resolved per-call mode and absolute workspace root.
    */
@@ -198,9 +214,31 @@ export class SandboxPolicyService extends Service {
     const { session } = request
     return {
       mode: request.mode ?? (session === undefined ? undefined : this.overrideOf(session)) ?? this.defaultMode,
-      workspaceRoot: resolveWorkspaceRoot(session?.header.cwd ?? this.workspaceRoot),
+      workspaceRoot: resolveWorkspaceRoot(this.boundaryOf(session) ?? this.workspaceRoot),
       ...this.additionalWritableRoots === undefined ? {} : { additionalWritableRoots: this.additionalWritableRoots },
       ...session === undefined ? {} : { sessionId: session.id },
+    }
+  }
+
+  /**
+   * The boundary directory for one session under the configured {@link boundary}
+   * semantics. `current-cwd` reads the working-directory service when it is
+   * mounted in this scope — accessed structurally (not via `ctx.workingDirectory`
+   * typing) because that service is NOT a dependency of this package: importing
+   * it would drag foreign sources into this project's rootDir, while compositions
+   * without the working-directory plugin must keep sandbox-policy loadable.
+   * @param session - calling session, if any.
+   * @returns the absolute boundary directory, or `undefined` for agentless calls.
+   */
+  private boundaryOf(session: Session | undefined): string | undefined {
+    if (session === undefined) return undefined
+    if (this.boundary !== 'current-cwd') return session.header.cwd
+    const directories = (this.ctx as { workingDirectory?: { get(session: Session): string } }).workingDirectory
+    if (directories === undefined) return session.header.cwd
+    try {
+      return directories.get(session)
+    } catch {
+      return session.header.cwd
     }
   }
 
