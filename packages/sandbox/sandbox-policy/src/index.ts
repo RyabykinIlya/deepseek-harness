@@ -223,17 +223,20 @@ export class SandboxPolicyService extends Service {
   /**
    * The boundary directory for one session under the configured {@link boundary}
    * semantics. `current-cwd` reads the working-directory service when it is
-   * mounted in this scope — accessed structurally (not via `ctx.workingDirectory`
-   * typing) because that service is NOT a dependency of this package: importing
-   * it would drag foreign sources into this project's rootDir, while compositions
-   * without the working-directory plugin must keep sandbox-policy loadable.
+   * mounted in this scope via `ctx.reflect.get` (no inject requirement): the
+   * service is NOT a dependency of this package, and compositions without the
+   * working-directory plugin must keep sandbox-policy loadable.
    * @param session - calling session, if any.
    * @returns the absolute boundary directory, or `undefined` for agentless calls.
    */
   private boundaryOf(session: Session | undefined): string | undefined {
     if (session === undefined) return undefined
     if (this.boundary !== 'current-cwd') return session.header.cwd
-    const directories = (this.ctx as { workingDirectory?: { get(session: Session): string } }).workingDirectory
+    // ctx.reflect.get returns undefined for an unmounted service without the
+    // proxy get trap's inject requirement (same seam tool-executor-ptc uses).
+    const directories = this.ctx.reflect.get('workingDirectory') as
+      | { get(session: Session): string }
+      | undefined
     if (directories === undefined) return session.header.cwd
     try {
       return directories.get(session)
