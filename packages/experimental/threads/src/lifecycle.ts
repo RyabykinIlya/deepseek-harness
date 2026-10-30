@@ -4,9 +4,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRunEndInfo, SubagentRunInfo } from '@deepseek-ai/dsh-subagent'
-import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-worktree-manager'
 import { threadNote } from './note.ts'
+import type { ThreadsProjectionState } from './projection.ts'
 import { ThreadId } from './types.ts'
 import type { ThreadStopReason } from './types.ts'
 
@@ -16,8 +17,8 @@ export interface ThreadLifecycleOptions {
   readonly providerName: string
   /** Maximum UTF-8 size of a recorded note. */
   readonly noteMaxBytes: number
-  /** The projection registry while installed; Thread events are only written when it is. */
-  readonly registry: () => SessionProjectionRegistry | undefined
+  /** This plugin's typed projection handle while installed; Thread events are only written when it is. */
+  readonly registry: () => ProjectionHandle<ThreadsProjectionState> | undefined
 }
 
 /** Facts remembered between a Thread's start and end edges. */
@@ -71,12 +72,14 @@ export function installThreadLifecycle(ctx: Context, options: ThreadLifecycleOpt
   const announce = async (child: Agent, parent: Agent, threadId: ThreadId): Promise<void> => {
     const registry = options.registry()
     if (registry === undefined) return
-    if (registry.stateOf(parent.session, 'threads')?.threads.some(thread => thread.threadId === threadId)) return
+    if (registry.stateOf(parent.session).threads.some(thread => thread.threadId === threadId)) return
     // The child's own descriptor carries the creation label the provider froze.
-    const label = registry.snapshot(child.session, ['subagent']).values.subagent?.label ?? threadId
+    const label = ctx.get('sessionProjections')?.snapshot(child.session, ['subagent']).values.subagent?.label ?? threadId
     const record = await ctx.get('worktrees')?.get(threadId)
     // The Project may have unloaded or archived while the record was read.
-    if (disposed || registered(parent.id) !== parent || registry.stateOf(parent.session, 'threads')?.threads.some(thread => thread.threadId === threadId) === true) return
+    const already = registry.stateOf(parent.session).threads
+      .some(thread => thread.threadId === threadId)
+    if (disposed || registered(parent.id) !== parent || already) return
     const cwd = child.session.header.cwd
     parent.session.append('thread/created', {
       threadId,

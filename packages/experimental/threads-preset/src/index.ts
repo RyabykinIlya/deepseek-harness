@@ -286,7 +286,13 @@ export default class ThreadsPreset {
   static inject = ['agentPresets']
   static Config: z<ThreadsPresetInput, Config> = Config
 
-  constructor(private readonly ctx: Context, private readonly config: Config) {}
+  private readonly ctx: Context
+  private readonly config: Config
+
+  constructor(ctx: Context, config: Config) {
+    this.ctx = ctx
+    this.config = config
+  }
 
   async* [Service.init](): AsyncGenerator<() => Promise<void>> {
     const config = this.config

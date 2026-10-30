@@ -97,7 +97,7 @@ async function harness(): Promise<{ ctx: Context; session: Session; entries: rea
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
-  ctx.sessionProjections.register(threadsProjectionDefinition)
+  await ctx.sessionProjections.register(threadsProjectionDefinition)
   const session = ctx.sessions.create()
   return { ctx, session, entries: buildLog(session) }
 }
@@ -211,18 +211,22 @@ describe('threads projection through the registry', () => {
 
   it('E7: registering the key twice at a different stateVersion throws loudly', async () => {
     const { ctx } = await harness()
-    expect(() => ctx.sessionProjections.register({
+    // Registration resolves through acquisition: the loud refusal arrives as
+    // a rejection, not a synchronous throw. The Promise.resolve normalizes the
+    // registration thenable for the rejects matcher, the same shape the
+    // registry's own suite asserts.
+    await expect(Promise.resolve(ctx.sessionProjections.register({
       ...threadsProjectionDefinition,
       stateVersion: LIVE_VERSION + 1,
-    })).toThrow(
+    }))).rejects.toThrow(
       new RegExp(`already registered at stateVersion ${String(LIVE_VERSION)}`),
     )
   })
 
   it('E7: re-registering the same key at the same stateVersion is a counted share', async () => {
     const { ctx } = await harness()
-    const dispose = ctx.sessionProjections.register(threadsProjectionDefinition)
-    expect(() => { dispose() }).not.toThrow()
+    const handle = await ctx.sessionProjections.register(threadsProjectionDefinition)
+    await expect(handle.dispose()).resolves.toBeUndefined()
     // The first registration is still live, so the key survives.
     expect(ctx.sessionProjections.restoreFloor({})).toBe(0)
   })

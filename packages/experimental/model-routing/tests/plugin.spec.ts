@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import LlmRuntime, { LlmAdapter } from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -75,37 +75,50 @@ describe('ModelRoutingService as a Host plugin', () => {
   })
 })
 
-describe('the agent/request rewrites', () => {
-  /** Fire `agent/request` through the agent-scoped dispatcher. */
-  function request(ctx: Context, agent: Agent, proposed: LlmCallConfig): Promise<LlmCallConfig> {
-    return agentEvents(ctx, agent).waterfall(
-      'agent/request',
-      { turn: 1, step: 0, signal: new AbortController().signal },
-      () => Promise.resolve(proposed),
-    )
+describe('the durable tier-route selection', () => {
+  /** The minimal Agent surface the selection listeners carry: identity, session, current route. */
+  function agentFor(
+    session: Session,
+    route: { provider: string; model: string } = { provider: 'openrouter', model: 'deepseek/deepseek-v4-flash' },
+  ): Agent {
+    const current = { ...route }
+    return {
+      id: session.id,
+      session,
+      options: {},
+      model: {
+        current: () => current,
+        select: (selection: { provider: string; model: string }) => {
+          current.provider = selection.provider
+          current.model = selection.model
+          session.append('model/selection', selection)
+        },
+      },
+    } as unknown as Agent
   }
 
-  /** The minimal Agent surface the `agent/request` payload carries. */
-  function agentFor(session: Session): Agent {
-    return { id: session.id, session, options: {} } as Agent
-  }
-
-  it('moves a Thread to the tier the coordinator recorded', async () => {
+  it('records the override tier at the Thread agent creation', async () => {
     const { ctx } = await setup()
     const project = ctx.sessions.create(SessionId('project'))
     const thread = ctx.sessions.create(SessionId('t1'), {
       meta: { parentSession: project.id, origin: 'subagent' },
     })
     project.append('model-routing/tier-override', { threadId: thread.id, tier: 'pro' }, { ignorable: true })
-    const result = await request(ctx, agentFor(thread), { provider: 'tiers', model: 'flash' })
-    expect(result).toMatchObject({ provider: 'tiers', model: 'pro' })
+    // The override applies while the route already serves from the tiers route —
+    // the same condition the old rewrite checked on the proposed request.
+    const agent = agentFor(thread, { provider: 'tiers', model: 'flash' })
+    ctx.emit('agent/created', { agent, source: 'resume' })
+    expect(agent.model.current()).toMatchObject({ provider: 'tiers', model: 'pro' })
+    expect(thread.ownEvents().some(event => event.type === 'model/selection')).toBe(true)
   })
 
   it('leaves a Thread alone once the coordinator did not ask for an override', async () => {
     const { ctx } = await setup()
     const thread = ctx.sessions.create(SessionId('t1'), { meta: { origin: 'subagent' } })
-    const proposed: LlmCallConfig = { provider: 'tiers', model: 'flash' }
-    expect(await request(ctx, agentFor(thread), proposed)).toEqual(proposed)
+    const agent = agentFor(thread)
+    ctx.emit('agent/created', { agent, source: 'resume' })
+    expect(agent.model.current()).toEqual({ provider: 'openrouter', model: 'deepseek/deepseek-v4-flash' })
+    expect(thread.ownEvents().some(event => event.type === 'model/selection')).toBe(false)
   })
 })
 

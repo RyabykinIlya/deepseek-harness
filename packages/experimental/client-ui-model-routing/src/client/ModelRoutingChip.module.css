@@ -41,6 +41,8 @@
   user-select: none;
 }
 
-.fallback:hover {
-  color: var(--dsw-alias-label-secondary);
+@media (hover: hover) {
+  .fallback:hover {
+    color: var(--dsw-alias-label-secondary);
+  }
 }

@@ -45,7 +45,10 @@ describe('compositions over the shipped standard preset', () => {
 
   it('nests the delegation rows the coordinator rewrites', () => {
     expect(base.some(entry => entry.id === 'tool-subagent')).toBe(false)
-    expect(activeIds(base)).toEqual(expect.arrayContaining(['tool-subagent', 'tool-subagent-fork', 'tool-subagent-list-agents']))
+    // The shipped base carries the merged control row (upstream folded the
+    // standalone list-agents row into it), plus the two delegation rows.
+    expect(activeIds(base)).toEqual(expect.arrayContaining(['tool-subagent', 'tool-subagent-fork', 'tool-subagent-control']))
+    expect(activeIds(base)).not.toContain('tool-subagent-list-agents')
   })
 
   it('gives the coordinator one subagent row, on the thread provider, inside the delegation group', () => {

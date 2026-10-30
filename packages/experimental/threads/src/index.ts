@@ -17,8 +17,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
-import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
-import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
+import type { ProjectionHandle, SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type { WorktreeRecord, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
@@ -95,18 +95,26 @@ export class ThreadsService extends TypertRemoteService {
    * are both loaded. Its absence is capability absence, never corruption.
    */
   private registry: SessionProjectionRegistry | undefined
+  /** Typed reader for this plugin's own projection, registered with the registry above. */
+  private threadsHandle: ProjectionHandle<ThreadsProjectionState> | undefined
 
-  constructor(ctx: Context, private config: Config) {
+  private config: Config
+
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'threads')
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(threadsProjectionDefinition)
+    this.config = config
+    ctx.inject(['sessionProjections'], async (projectionCtx) => {
+      this.threadsHandle = await projectionCtx.sessionProjections.register(threadsProjectionDefinition)
       this.registry = projectionCtx.sessionProjections
     })
-    ctx.effect(() => () => { this.registry = undefined })
+    ctx.effect(() => () => {
+      this.registry = undefined
+      this.threadsHandle = undefined
+    })
     installThreadLifecycle(ctx, {
       providerName: config.providerName,
       noteMaxBytes: config.noteMaxBytes,
-      registry: () => this.registry,
+      registry: () => this.threadsHandle,
     })
   }
 
@@ -125,7 +133,7 @@ export class ThreadsService extends TypertRemoteService {
    * @returns the folded state, or `undefined` when the registry is absent.
    */
   stateOf(session: Session): ThreadsProjectionState | undefined {
-    return this.registry?.stateOf(session, 'threads')
+    return this.threadsHandle?.stateOf(session)
   }
 
   /**
@@ -238,7 +246,7 @@ export class ThreadsService extends TypertRemoteService {
    */
   private projectPresetOf(id: SessionId, header: SessionHeader): string | undefined {
     const live = this.ctx.get('sessions')?.get(id)
-    const projected = live === undefined ? undefined : this.registry?.stateOf(live, 'agentPreset')
+    const projected = live === undefined ? undefined : this.ctx.get('agentPresets')?.presetForSession(live)
     return projected === undefined ? header.agentPreset : projected ?? undefined
   }
 

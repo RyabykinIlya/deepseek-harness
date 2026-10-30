@@ -26,11 +26,14 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ThreadId, ThreadsService } from '@deepseek-ai/dsh-experimental-threads'
 import type { ThreadStopReason } from '@deepseek-ai/dsh-experimental-threads'
 import type { WorktreeChanges, WorktreeMergeCheck, WorktreeRecord } from '@deepseek-ai/dsh-worktree-manager'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as tool from '../src/index.ts'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { renderOverview } from '../src/overview.ts'
 import type { ThreadOverviewResult } from '../src/overview.ts'
 
@@ -194,6 +197,7 @@ async function setupWithoutProjectionRegistry(): Promise<{ ctx: Context; project
   const registry = await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   await ctx.plugin(AgentRegistry)
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-threads-'))
   roots.push(root)
@@ -212,7 +216,7 @@ let callNumber = 0
 
 /** Execute a Thread tool as the given calling agent. */
 function callTool(ctx: Context, agent: Agent | undefined, args: unknown, name = 'thread_status') {
-  return ctx.tools.execute({
+  return executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId(`threads-call-${++callNumber}`),
     name,

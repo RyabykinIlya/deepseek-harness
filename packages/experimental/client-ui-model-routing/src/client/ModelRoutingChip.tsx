@@ -23,7 +23,7 @@
  */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelectionProjection } from '@deepseek-ai/dsh-agent/types'
 import type { NS } from './locales.ts'
 import css from './ModelRoutingChip.module.css'
 

@@ -16,7 +16,9 @@ import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentPresets, { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceChangesSummary } from '@deepseek-ai/dsh-workspace-changes/types'
 import WorktreeService from '@deepseek-ai/dsh-worktree-manager'
@@ -63,8 +65,11 @@ const DEFAULTS: Config = {
 
 async function mount(config: Partial<Config> = {}): Promise<Context> {
   const ctx = new Context()
+  await ctx.plugin(Loader)
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(AgentPresets, { default: 'standard' })
   await ctx.plugin(ThreadsService, { ...DEFAULTS, ...config })
   return ctx
 }
@@ -87,7 +92,9 @@ function present(session: Session, files: Array<{ path: string; description?: st
  * manager this file mounts; the cast restores the mounted service's own type.
  */
 function manager(ctx: Context): WorktreeService {
-  return ctx.worktrees as never as WorktreeService
+  // ctx.worktrees merges the ambient declarations of both packages; this narrows
+  // to the manager's class, which owns the create/status/remove surface used here.
+  return ctx.worktrees as unknown as WorktreeService
 }
 
 const ALPHA = ThreadId('alpha')
@@ -329,7 +336,7 @@ describe('threads.library', () => {
     // default, then recomposed before the first turn. The creation header stays frozen
     // on the default, so reading it alone refuses a real Project.
     const ctx = await mount()
-    ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    await ctx.sessionProjections.register(agentPresetProjectionDefinition)
     const p = project(ctx, 'switched', 'standard')
     p.append('agent-preset/selected', { agentPreset: 'project' })
     say(p, [{ type: 'file', attachment: { attachmentId: 'sha256:s' as AttachmentId, name: 's.txt', bytes: 4 } }])
@@ -339,7 +346,7 @@ describe('threads.library', () => {
 
   it('refuses a Project switched away from its preset', async () => {
     const ctx = await mount()
-    ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    await ctx.sessionProjections.register(agentPresetProjectionDefinition)
     const p = project(ctx, 'left', 'project')
     p.append('agent-preset/selected', { agentPreset: 'standard' })
     const refused = await ctx.threads.library({ projectId: p.id }).catch((error: unknown) => error)

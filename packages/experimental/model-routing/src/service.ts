@@ -3,8 +3,9 @@
  * methods.
  *
  * The service owns everything that outlives one request — the adapter
- * registration, the projection registration, the two `agent/request` rewrites,
- * and the quote/free-budget queries the settings page reads. It is the plugin
+ * registration, the projection registration, the durable tier-route selection
+ * (the preset's tier route and a Thread's tier override), and the
+ * quote/free-budget queries the settings page reads. It is the plugin
  * class itself, so unloading it withdraws the route, the projection, and the
  * service together rather than leaving any of them half-registered.
  *
@@ -13,15 +14,13 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 // The projections this service folds over, read but never written.
-import type {} from '@deepseek-ai/dsh-agent-preset-registry/types'
-import type {} from '@deepseek-ai/dsh-token-meter'
-// The `agent/request` seam this service rewrites.
-import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import { tokenUsageProjectionDefinition } from '@deepseek-ai/dsh-token-meter'
+import type { TokenUsageState } from '@deepseek-ai/dsh-token-meter'
 // `ctx.llmRetryControl`: the asks that end a pending retry wait, so a switch the
 // person just flipped applies to an attempt already scheduled.
 import type {} from '@deepseek-ai/dsh-llm-retry'
@@ -40,7 +39,7 @@ import { modelRoutingProjectionDefinition } from './projection.ts'
 import { DiagnosticsFile } from './diagnostics.ts'
 import { defaultMix, directSourcesOf, isDirect, policyFor, rankWithRelaxation } from './select.ts'
 import type { EndpointLists } from './select.ts'
-import type { FreeUsage, ModelQuote, ModelRoutingControl } from './types.ts'
+import type { FreeUsage, ModelQuote, ModelRoutingControl, ModelRoutingState } from './types.ts'
 
 /** The most models one `quote` call may price at once. */
 const QUOTE_MODEL_LIMIT = 50
@@ -50,7 +49,8 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
   static inject = ['llm']
   static Config = Config
 
-  private registry: SessionProjectionRegistry | undefined
+  private modelRoutingHandle: ProjectionHandle<ModelRoutingState> | undefined
+  private tokenUsageHandle: ProjectionHandle<TokenUsageState> | undefined
   private readonly adapter: TiersAdapter
   private readonly endpoints: EndpointsCache
   private readonly catalog: FamilyCache
@@ -99,9 +99,9 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       settings,
       dispatch: () => ctx.get('piAiDispatch'),
       session: id => ctx.get('sessions')?.get(id),
-      routingState: session => this.registry?.stateOf(session, 'modelRouting'),
+      routingState: session => this.modelRoutingHandle?.stateOf(session),
       usage: (session) => {
-        const totals = this.registry?.stateOf(session, 'tokenUsage')?.totals
+        const totals = this.tokenUsageHandle === undefined ? undefined : this.tokenUsageHandle.stateOf(session).totals
         return totals === undefined
           ? undefined
           : {
@@ -140,12 +140,15 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
     })
     ctx.llm.registerAdapter([config.routeName], this.adapter)
     ctx.on('session/disposed', (session: Session) => { this.adapter.forget(session.id) })
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(modelRoutingProjectionDefinition)
-      this.registry = projectionCtx.sessionProjections
+    ctx.inject(['sessionProjections'], async (projectionCtx) => {
+      this.modelRoutingHandle = await projectionCtx.sessionProjections.register(modelRoutingProjectionDefinition)
+      this.tokenUsageHandle = await projectionCtx.sessionProjections.register(tokenUsageProjectionDefinition)
     })
-    ctx.effect(() => () => { this.registry = undefined })
-    ctx.effect(() => this.rewrites(ctx))
+    ctx.effect(() => () => {
+      this.modelRoutingHandle = undefined
+      this.tokenUsageHandle = undefined
+    })
+    ctx.effect(() => this.selections(ctx))
     this.warnEmptyCatalog(ctx)
     // `super(ctx, 'modelRouting')` already registered this instance under that
     // key, so `ctx.modelRouting` resolves without a second provide.
@@ -283,32 +286,69 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
     return usage ?? null
   }
 
-  /** The two `agent/request` rewrites: the preset's model, and a Thread's tier override. */
-  private rewrites(ctx: Context): () => void {
-    return ctx.on('agent/request', async ({ agent }: { agent: Agent }, next: () => Promise<LlmCallConfig>) => {
-      const proposed = await next()
-      const registry = this.registry
-      if (registry === undefined) return proposed
-      const settings = readSettings(this.config)
-      let result = proposed
-      const presetRoute = settings.presetRoutes.find(route => route.preset === presetOf(registry, agent.session))
-      const own = registry.stateOf(agent.session, 'modelRouting')
-      if (presetRoute !== undefined && own?.explicitSelection !== true) {
-        // The effort belongs to the route the proposal came from, and a tier never
-        // chose it, so it is dropped rather than forwarded.
-        const { reasoningEffort: _dropped, ...rest } = proposed
-        result = { ...rest, provider: this.config.routeName, model: presetRoute.model }
-      }
-      const parentId = agent.session.header.parentSession
-      const parent = parentId === undefined ? undefined : ctx.get('sessions')?.get(parentId)
-      const override = parent === undefined
-        ? undefined
-        : registry.stateOf(parent, 'modelRouting')?.overrides[agent.id]
-      if (override !== undefined && result.provider === this.config.routeName && result.model !== override) {
-        result = { ...result, model: override }
-      }
-      return result
+  /**
+   * The route decision for one Agent: the preset's tier route when the Session
+   * has not explicitly selected, plus a Thread's tier override on top.
+   * @param ctx - context resolving the preset registry and Session lookup.
+   * @param handle - this service's projection reader for routing state.
+   * @param agent - the Agent whose route is decided.
+   * @returns the selection to record, or undefined to leave the Agent's own choice.
+   */
+  private decideRoute(
+    ctx: Context,
+    handle: ProjectionHandle<ModelRoutingState>,
+    agent: Agent,
+  ): ModelSelection | undefined {
+    const settings = readSettings(this.config)
+    const own = handle.stateOf(agent.session)
+    const presetRoute = settings.presetRoutes.find(route => route.preset === presetOf(ctx, agent.session))
+    let decided: ModelSelection | undefined
+    if (presetRoute !== undefined && !own.explicitSelection) {
+      // The effort belongs to the route the proposal came from, and a tier never
+      // chose it, so none is recorded rather than forwarded.
+      decided = { provider: this.config.routeName, model: presetRoute.model }
+    }
+    const parentId = agent.session.header.parentSession
+    const parent = parentId === undefined ? undefined : ctx.get('sessions')?.get(parentId)
+    const override = parent === undefined
+      ? undefined
+      : handle.stateOf(parent).overrides[agent.id]
+    if (override === undefined) return decided
+    // A Thread's tier override applies only while the route already serves from
+    // this service: either this decision names the tiers route, or the Agent's
+    // current selection is already on it (a recorded selection survives without
+    // a preset route).
+    const onTiers = decided?.provider === this.config.routeName
+      || agent.model.current()?.provider === this.config.routeName
+    return onTiers ? { ...(decided ?? { provider: this.config.routeName }), model: override } : decided
+  }
+
+  /**
+   * Record tier routing through the durable selection: the preset's tier route
+   * at Agent creation, and per-step decisions (a Thread's tier override, a
+   * preset switch) from the following step on. `agent/request` cannot change
+   * the route since session-model-selection fixed routes at step preparation;
+   * `model/selection` events apply at the next step's preparation, the same
+   * one-step application an ACP model change has.
+   * @param ctx - context owning the listeners.
+   * @returns the listeners' disposer.
+   */
+  private selections(ctx: Context): () => void {
+    const select = (agent: Agent): void => {
+      const modelRoutingHandle = this.modelRoutingHandle
+      if (modelRoutingHandle === undefined) return
+      const decided = this.decideRoute(ctx, modelRoutingHandle, agent)
+      if (decided === undefined) return
+      const current = agent.model.current()
+      if (current?.provider === decided.provider && current.model === decided.model) return
+      agent.model.select(decided)
+    }
+    const disposeCreated = ctx.on('agent/created', ({ agent }) => { select(agent) })
+    const disposePreStep = ctx.on('agent/pre-step', async ({ agent }, next): Promise<PreStepDecision> => {
+      select(agent)
+      return next()
     })
+    return () => { disposeCreated(); disposePreStep() }
   }
 
   /** One warning per mount when the model list cannot be described. */
@@ -328,14 +368,10 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
 }
 
 /** The preset a Session effectively runs, or `undefined` when the preset registry is absent. */
-function presetOf(registry: SessionProjectionRegistry, session: Session): string | undefined {
-  try {
-    return registry.stateOf(session, 'agentPreset') ?? undefined
-  } catch {
-    // A composition without the preset package leaves the key unregistered; that
-    // is capability absence, not a fault to propagate into every request.
-    return undefined
-  }
+function presetOf(ctx: Context, session: Session): string | undefined {
+  // A composition without the preset package leaves the service unregistered;
+  // that is capability absence, not a fault to propagate into every request.
+  return ctx.get('agentPresets')?.presetForSession(session) ?? undefined
 }
 
 /**

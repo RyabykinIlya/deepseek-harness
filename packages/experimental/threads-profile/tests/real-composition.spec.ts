@@ -30,6 +30,7 @@ import * as ThreadsPreset from '@deepseek-ai/dsh-experimental-threads-preset'
 import * as ThreadsTool from '@deepseek-ai/dsh-experimental-threads-tool'
 import { createUserMessage, LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -132,7 +133,6 @@ function standardPlugins(): { id: string; name: string; config?: object }[] {
   return [
     { id: 'tool-todo', name: source('todo/tool-todo/src/index.ts'), config: { allowParallelInProgress: true } },
     { id: 'tool-subagent-control', name: source('subagent/tool-subagent-control/src/index.ts') },
-    { id: 'tool-subagent-list-agents', name: source('subagent/tool-subagent-control/src/list-agents.ts') },
     {
       id: 'tool-subagent',
       name: source('subagent/tool-subagent/src/index.ts'),
@@ -157,7 +157,7 @@ async function compose(withBundle: boolean): Promise<Composition> {
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await ctx.plugin(JsonlSessionPersistence, { root: join(dir, 'sessions') })
   await ctx.plugin(Storage)
   const backend = new MemoryStorageBackend(new MemoryMediaPool())
@@ -345,7 +345,7 @@ describe('Threads bundle on its real rows', { timeout: 120_000 }, () => {
     for (const comp of [{ comp: without, agent: plain }, { comp: withBundle, agent: bundled }]) {
       const started: string[] = []
       comp.comp.ctx.on('subagent/start', (info) => { started.push(info.provider) })
-      const result = await comp.comp.ctx.tools.execute({
+      const result = await executeModelToolFixture(comp.comp.ctx, {
         signal: new AbortController().signal,
         callId: ToolCallId(`delegate-${comp.agent.id}`),
         name: 'subagent',

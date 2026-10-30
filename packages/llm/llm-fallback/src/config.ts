@@ -34,9 +34,9 @@ const chainInputSchema = z.object({
 /**
  * Plugin configuration schema: chains keyed by intent.
  */
-export const Config = z.object({
+export const Config: z<FallbackConfig> = z.object({
   chains: z.dict(chainInputSchema),
-}) as unknown as z<FallbackConfig>
+})
 
 /**
  * Validate and resolve a fallback configuration into a Map of validated chains.

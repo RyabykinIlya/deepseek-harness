@@ -13,9 +13,14 @@
   cursor: pointer;
 }
 
-.action:hover,
 .action:focus-visible {
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .action:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .action:disabled {

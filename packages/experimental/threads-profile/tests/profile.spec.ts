@@ -25,6 +25,7 @@ import * as ThreadsPreset from '@deepseek-ai/dsh-experimental-threads-preset'
 import { THREADS_CONTEXT_NAME, THREAD_WORKER_CONTEXT_NAME } from '@deepseek-ai/dsh-experimental-threads-preset'
 import * as ThreadsTool from '@deepseek-ai/dsh-experimental-threads-tool'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -149,7 +150,6 @@ function source(path: string): string {
 const STANDARD_PLUGINS = [
   { id: 'tool-todo', name: source('todo/tool-todo/src/index.ts'), config: { allowParallelInProgress: true } },
   { id: 'tool-subagent-control', name: source('subagent/tool-subagent-control/src/index.ts') },
-  { id: 'tool-subagent-list-agents', name: source('subagent/tool-subagent-control/src/list-agents.ts') },
   {
     id: 'tool-subagent',
     name: source('subagent/tool-subagent/src/index.ts'),
@@ -181,6 +181,7 @@ const ThreadProviderStandIn = {
 
 const WorktreeManagerStandIn = { name: 'worktree-manager', apply(): void {} }
 const ProjectMemoryStandIn = { name: 'project-memory', apply(): void {} }
+const ClientUiSettingsThreadsStandIn = { name: 'ui-settings-threads', apply(): void {} }
 
 /**
  * Boot one composition through the Loader.
@@ -195,7 +196,7 @@ async function compose(withBundle: boolean): Promise<{ ctx: Context; providers: 
   ctx.baseUrl = pathToFileURL(dir).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.group = Group
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   await ctx.plugin(JsonlSessionPersistence, { root: dir })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(AgentLoop, { agents: [] })
@@ -225,6 +226,7 @@ async function compose(withBundle: boolean): Promise<{ ctx: Context; providers: 
     ['@deepseek-ai/dsh-subagent-thread-worktree', ThreadProviderStandIn],
     ['@deepseek-ai/dsh-experimental-client-ui-threads', ClientUiThreads],
     ['@deepseek-ai/dsh-experimental-client-ui-project-memory', ClientUiProjectMemory],
+    ['@deepseek-ai/dsh-client-ui-settings-threads', ClientUiSettingsThreadsStandIn],
     ['@deepseek-ai/dsh-experimental-threads-preset', ThreadsPreset],
     ['@deepseek-ai/dsh-experimental-threads-tool', ThreadsTool],
   ])
@@ -283,7 +285,7 @@ async function surface(ctx: Context, agent: Agent): Promise<{ tools: string[]; c
 
 /** Start a child with the `subagent` tool as `agent`. */
 async function delegate(ctx: Context, agent: Agent): Promise<Agent> {
-  const result = await ctx.tools.execute({
+  const result = await executeModelToolFixture(ctx, {
     signal: SIGNAL,
     callId: ToolCallId(`delegate-${agent.id}`),
     name: 'subagent',
@@ -336,7 +338,8 @@ describe('real Loader composition', { timeout: 60_000 }, () => {
     expect(tools).toEqual(expect.arrayContaining([
       'subagent', 'thread_status', 'thread_diff', 'send_message', 'interrupt_agent', 'todo_write',
     ]))
-    expect(tools).not.toContain('list_agents')
+    // The merged control row also carries `list_agents` (upstream folded the
+    // standalone row in); `thread_status` stays the bounded Thread view.
     expect(texts.map(entry => entry.name)).toContain(THREADS_CONTEXT_NAME)
     const child = await delegate(ctx, project)
     expect(providers).toEqual(['thread'])

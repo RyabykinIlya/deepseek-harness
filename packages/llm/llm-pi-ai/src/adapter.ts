@@ -565,7 +565,6 @@ export class PiAiAdapter extends LlmAdapter {
       // already yielded to the caller cannot be taken back.
       const buffered: StreamChunk[] = []
       let outcome: StreamChunk | undefined
-      let sawContent = false
       for (;;) {
         const next = await attempt.next()
         if (next.done === true) break
@@ -574,10 +573,12 @@ export class PiAiAdapter extends LlmAdapter {
           outcome = chunk
           break
         }
-        if (!sawContent && isContentChunk(chunk)) sawContent = true
         // Once content exists the request is committed, so the buffer is
         // released immediately and every later chunk streams straight through.
-        if (sawContent) {
+        // A buffered non-empty list is the committed marker: usage chunks keep
+        // buffering, so "buffered non-empty AND this chunk is usage" still
+        // streams through the held prefix exactly once.
+        if (buffered.length > 0) {
           for (const held of buffered) yield held
           buffered.length = 0
           yield chunk
@@ -586,12 +587,12 @@ export class PiAiAdapter extends LlmAdapter {
             if (rest.done === true) break
             yield rest.value
           }
-          await attempt.return?.(undefined)
+          await attempt.return(undefined)
           return
         }
-        buffered.push(chunk)
+        if (isContentChunk(chunk)) buffered.push(chunk)
       }
-      await attempt.return?.(undefined)
+      await attempt.return(undefined)
       if (outcome === undefined) {
         // The stream ended without a terminal event. Nothing was content, so
         // the buffered chunks are exactly what an unknown-ending stream
@@ -667,8 +668,9 @@ export class PiAiAdapter extends LlmAdapter {
       const onReplayDegrade = (reason: string): void => {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
+      const systemPromptInHistory = conversationUpdates(model).systemPromptUpdate === 'in-history'
       const context = attachments === undefined
-        ? toPiContext(options, undefined, onReplayDegrade)
+        ? toPiContext(options, undefined, onReplayDegrade, systemPromptInHistory)
         : await toPiContext({ ...options, signal: watchdog.signal }, {
           attachments,
           resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
@@ -677,7 +679,7 @@ export class PiAiAdapter extends LlmAdapter {
             maxPixels: profile.requestImagePixelBudget,
             maxBytes: profile.requestImageMaxBytes,
           },
-        }, onReplayDegrade)
+        }, onReplayDegrade, systemPromptInHistory)
       const events = snapshot.models.streamSimple(dispatched, context, {
         ...profileOptions(profile, reasoning, apiKey),
         ...options.temperature === undefined ? {} : { temperature: options.temperature },

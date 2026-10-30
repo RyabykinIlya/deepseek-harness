@@ -20,9 +20,14 @@
   cursor: pointer;
 }
 
-.trigger:hover,
 .trigger:focus-visible {
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .trigger svg {
@@ -106,9 +111,14 @@
   outline: none;
 }
 
-.row:hover > .clickarea,
 .row:focus-visible > .clickarea {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@media (hover: hover) {
+  .row:hover > .clickarea {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .clickarea {
@@ -192,10 +202,16 @@
   cursor: pointer;
 }
 
-.rowButton:hover,
 .rowButton:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+@media (hover: hover) {
+  .rowButton:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .rowButton:disabled {
@@ -243,9 +259,14 @@
   cursor: pointer;
 }
 
-.start:hover,
 .start:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@media (hover: hover) {
+  .start:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .start svg {
@@ -279,8 +300,10 @@
   height: 12px;
 }
 
-.refresh:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .refresh:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .note {
@@ -333,8 +356,10 @@
   line-height: 17px;
 }
 
-.memoryItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .memoryItem:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .memoryBody {

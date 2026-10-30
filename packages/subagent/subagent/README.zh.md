@@ -31,7 +31,7 @@ kind: "package-reference"
 
 ### 启用委派
 
-挂载服务、提供方与委派工具。提供方按配置名称注册，每个工具行选择一个提供方。最小配置如下：
+一起挂载本服务、`@deepseek-ai/dsh-session-projection`、提供方与委派工具；本服务等待投影注册表可用后才初始化。提供方按配置名称注册，每个工具行选择一个提供方。最小配置如下：
 
 ```yaml
 - name: '@deepseek-ai/dsh-subagent'
@@ -122,7 +122,7 @@ kind: "package-reference"
 
 continuable provider 的 `prepareContinuable` 可在可选 `seed` 之外返回 `cwd`、`agentPreset` 和 `handles`。管理器要求 `cwd` 是绝对路径、已存在且可进入的目录，并要求 `agentPreset` 指向 agent preset 注册表中可用的 preset；否则启动会在 child 创建前以 `INVALID_PROVIDER_CWD` 或 `UNKNOWN_AGENT_PRESET` 失败。两个值都写入 child 的 session header：child 在该目录运行，并按该 preset（而非 parent 的 preset）组合；冷恢复从 header 还原它们，不会再次调用 provider。`handles` 的方向相反：它们是 provider 命名的事实，从准备阶段原样复制进启动结果，让委派方引用 provider 自有的值，而不是从 child id 推导它们；任何持久化记录都不取自它们。当 child 的 cwd 与 parent 不同时，其初始提示词会说明它在自己独立的 checkout 中工作，parent 在检查该 checkout 之前看不到它在其中改动的文件，并要求其 `send_message` 结果写明改了什么、在哪里、如何验证；与 parent 共享 cwd 的 child 保留共享工作区的原有措辞。带字符串 `code` 的 provider 错误（例如 worktree provider 的 `NOT_A_GIT_REPO`）会以 `subagent/provider-rejected` 和 `{ code, message }` 到达 Remote 调用方；本包自身的 `SubagentError` code 保持原有映射，不带 code 的错误仍为 `gateway/internal`。
 
-本地创建成功后，无论结果交付给谁，都会向父 Session 追加 `subagent/catalog` 事实。外部创建仅在使用 `delivery: 'parent'` 时追加目录事实；调用方拥有的外部执行保留调用方自己的成员记录。外部条目以 `mode: 'external'` 标记没有本地 Session 的子级。目录仅在创建时记录一次成员关系，不携带执行状态。完整结果交给调用方或父级完成通知。投影排除继承事实。直接列表读取一个父级投影，因此已完成的本地工作流子级仍可被发现、打开或继续。Catalog 载荷 v0 记录本地模式，v1 还接受未知模式，v2 记录外部执行，读取器支持三版。历史迁移在 descriptor 不可用时根据可读子 header 追加 v1 `subagent/catalog`；本地创建保留 v0。其 `mode: 'unknown'` 投影让子会话保持可见，但不表示支持继续执行；已有完整条目仍具有权威性。
+本地创建成功后，无论结果交付给谁，都会向父 Session 追加 `subagent/catalog` 事实。外部创建仅在使用 `delivery: 'parent'` 时追加目录事实；调用方拥有的外部执行保留调用方自己的成员记录。外部条目以 `mode: 'external'` 标记没有本地 Session 的子级。目录仅在创建时记录一次成员关系，不携带执行状态。完整结果交给调用方或父级完成通知。`subagentCatalog` 投影排除 fork 继承的事实，并通过 Session observation 与客户端快照中的 `projections.values.subagentCatalog` 暴露一份直接子级列表；直接列表读取一个父级投影，因此已完成的本地工作流子级仍可被发现、打开或继续。每个子级自己的 `subagentTiming` 投影累计 descriptor 之后的时长，并记录其最近一次已关闭回合是否以 `completed` 结束，另一回合开启时清除该完成状态。无效的自有 catalog 载荷（包括不支持的版本）会拒绝投影恢复。投影 state-version 变化会从持久化日志重新折叠缓存行。该目录视图以 D 条事实的 O(D) 时间保留父事件顺序，其不可变存储与 checkpoint 校验使用 [`dsh-chunked-list`](../../util/chunked-list/README.zh.md)。[父级目录决策](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.zh.md) 负责顺序、持久化成本与备选方案。Catalog 载荷 v0 记录本地模式，v1 还接受未知模式，v2 记录外部执行，读取器支持三版。历史迁移在 descriptor 不可用时根据可读子 header 追加 v1 `subagent/catalog`；本地创建保留 v0。其 `mode: 'unknown'` 投影让子会话保持可见，但不表示支持继续执行；已有完整条目仍具有权威性。
 
 <a id="restoring-child-composition"></a>
 ### 恢复子级组装
@@ -166,7 +166,7 @@ continuable provider 的 `prepareContinuable` 可在可选 `seed` 之外返回 `
 
 #### 模型看到什么
 
-父级投递发送包含子级最终输出中非空文本块的 user-role 状态通知，不受 `send_message` 是否可用或是否调用影响。外部通知还说明不支持后续消息。推理及其他非文本块被排除。每条父级通知都会以 `Structured result: <JSON>` 附带可用的结构化输出，并以独立文本块附带提供方安全诊断。收尾文本为空时，通知使用 `It left no closing message.`。调用方投递不发送通知；清理成功时 SDK 生命周期通知保留完整子级输出。
+父级投递发送包含子级最终输出中非空文本块的 user-role 状态通知。若子级在该文本之前的最后一个动作是向父级发送消息，且此后既未领取输入也未记录任何工具调用，通知会以 `It sent you a message just before finishing, so its closing message is omitted.` 替代这些文本块；父级只有再次向子级发送消息才能取回被省略的收尾文本。外部通知还说明不支持后续消息。推理及其他非文本块被排除。每条父级通知都会以 `Structured result: <JSON>` 附带可用的结构化输出，并以独立文本块附带提供方安全诊断。收尾文本为空时，通知使用 `It left no closing message.`。调用方投递不发送通知；清理成功时 SDK 生命周期通知保留完整子级输出。
 
 #### Token 影响
 

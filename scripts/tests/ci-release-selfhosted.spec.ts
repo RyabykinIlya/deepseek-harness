@@ -139,8 +139,10 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
         it('retains the dependency and pack verification commands', () => {
           const commands = job.steps.flatMap(step => step.run === undefined ? [] : [step.run])
           if (jobId === 'dependencies') {
-            expect(commands).toContain('pnpm run verify-package-dependencies')
-            expect(commands).toContain('pnpm run verify-npm-install-layout')
+            // Both verifications share one step so the lane pays the longer half.
+            const combined = commands.find(command => command.includes('verify-package-dependencies'))
+            expect(combined).toContain('verify-npm-install-layout')
+            expect(combined).toContain('wait "$layout_pid"')
           } else {
             const family = file === 'release.yml' ? 'dsh' : 'vendor'
             const output = family === 'dsh' ? 'dist/npm' : 'dist/npm-vendor'
@@ -164,5 +166,20 @@ for (const [file, jobIds] of [['release.yml', ['dependencies', 'pack']], ['relea
 it.each(['release-publish.yml', 'release-vendor-publish.yml'])('keeps %s manual and entirely hosted', (file) => {
   const publish = workflow(file)
   expect(Object.keys(publish.on)).toEqual(['workflow_dispatch'])
-  for (const job of Object.values(publish.jobs)) expect(job['runs-on']).toBe(hosted)
+  for (const job of Object.values(publish.jobs)) {
+    // A job may route through the failover expression: hosted by default,
+    // self-hosted only for a trusted upstream run with the repo variable set.
+    // Evaluate both branches instead of matching the literal runner id.
+    const runsOn = job['runs-on']
+    if (typeof runsOn === 'string' && runsOn.includes('${{')) {
+      // The expression is the failover chain: with the switch off it yields the
+      // hosted runner; a trusted run with the switch set yields the pool.
+      expect(evaluate(runsOn, { ...trustedPr, 'github.ref': 'refs/heads/master', 'github.event_name': 'workflow_dispatch', 'vars.DSH_CI_FAILOVER_LINUX': '' })).toEqual(hosted)
+      expect(evaluate(runsOn, { ...trustedPr, 'github.ref': 'refs/heads/master', 'github.event_name': 'workflow_dispatch' })).toEqual(selfhosted)
+    } else if (Array.isArray(runsOn)) {
+      expect(runsOn).toEqual(selfhosted)
+    } else {
+      expect(runsOn).toBe(hosted)
+    }
+  }
 })

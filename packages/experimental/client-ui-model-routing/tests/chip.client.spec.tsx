@@ -3,7 +3,8 @@
 
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelectionProjection } from '@deepseek-ai/dsh-agent/types'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { allowAllAccess } from '@deepseek-ai/dsh-client-test-runtime'
 import type { ModelRoutingView } from '@deepseek-ai/dsh-experimental-model-routing/client'
 import { ModelRoutingChip, pendingModel, shortModel } from '../src/client/ModelRoutingChip.tsx'
@@ -32,6 +33,7 @@ const unusedHook = (): never => { throw new Error('ModelRoutingChip does not con
 const unusedActions: ModelRoutingChipProps['inputActions'] = {
   captureInsertion: unusedHook,
   insertText: unusedHook,
+  insertQuote: unusedHook,
   setDraft: unusedHook,
   persistDraft: unusedHook,
   addAttachments: unusedHook,
@@ -83,7 +85,7 @@ const DECIDED: ModelRoutingView = {
 /** A selection projection whose next request would ask for a different model. */
 const WAITING: ModelSelectionProjection = {
   lastUsed: { provider: 'tiers', model: 'auto' },
-  next: { provider: 'tiers', model: 'deepseek/deepseek-v4.1-flash', reasoningEffort: 'high' },
+  next: { provider: 'tiers', model: 'deepseek/deepseek-v4.1-flash', reasoningEffort: ReasoningEffortId('high') },
 }
 
 describe('ModelRoutingChip', () => {

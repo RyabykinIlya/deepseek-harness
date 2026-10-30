@@ -65,9 +65,16 @@ class FakeWorktrees {
  */
 function threadScript(...replies: string[]): ConstructorParameters<typeof MockAdapter>[0] {
   const queue = [...replies]
+  // The loop appends a trailing runtime-context snapshot after the notice, so the
+  // settlement marker is searched across the whole history, not just the last message.
+  function isSettlementReaction(options: GenerateOptions): boolean {
+    return options.messages.some((message) => {
+      const text = JSON.stringify(message)
+      return text.includes('subagent-settled') || text.includes('Background subagent ')
+    })
+  }
   return Array.from({ length: replies.length * 3 + 4 }, () => (options: GenerateOptions) => {
-    const last = JSON.stringify(options.messages.at(-1))
-    return textResponse(last.includes('subagent-settled') ? 'ack' : queue.shift() ?? 'exhausted')
+    return textResponse(isSettlementReaction(options) ? 'ack' : queue.shift() ?? 'exhausted')
   })
 }
 
@@ -87,7 +94,7 @@ async function harness(
 ): Promise<Harness> {
   const ctx = new Context()
   const root = mkdtempSync(join(tmpdir(), 'dsh-threads-lifecycle-'))
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
   const persistence = await ctx.plugin(JsonlSessionPersistence, { root })
   cleanups.push(async () => {
     await ctx.fiber.dispose()

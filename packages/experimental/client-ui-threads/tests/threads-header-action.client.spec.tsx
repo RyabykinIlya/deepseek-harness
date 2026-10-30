@@ -125,6 +125,7 @@ function props(
     inputActions: {
       captureInsertion: vi.fn(() => EMPTY_SPAN),
       insertText: vi.fn(() => true),
+      insertQuote: vi.fn(() => false),
       setDraft: unused,
       persistDraft: unused,
       addAttachments: unused,

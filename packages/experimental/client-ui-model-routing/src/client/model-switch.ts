@@ -110,14 +110,14 @@ export const modelSwitchDefinition: ConversationNodeDefinition<ModelSwitchState>
   start: (_context, match, reader) => {
     const event = match.event
     if (event.type !== 'model-routing/decision') throw new Error('model-switch start requires a routing decision')
-    const decision = event.data as RoutingDecision
+    const decision = event.data
     const serving = servingOf(decision)
     const before = reader.previous<ModelSwitchState>('model-switch')?.state.serving
     const moved = serving === undefined || before === undefined || sameServing(before, serving)
       ? undefined
       : { from: before, to: serving, boundary: decision.boundary }
     return {
-      seq: event.seq as number,
+      seq: event.seq,
       time: event.time,
       serving,
       ...moved === undefined ? {} : { moved },

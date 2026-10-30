@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/web/web-search-profile/README.md
 /:
-  en: c85f5d46d01408a1
-  zh: 8ffad434bbf07e8c
+  en: 2b364c2bdabe4ca4
+  zh: 629cc842bc200dee
 /deepseek-ai-dsh-web-search-profile:
   en: 99a7b1267f28c220
   zh: 722f3b3b051040ed
 /deepseek-ai-dsh-web-search-profile/summary:
-  en: 389450139ce4d12e
-  zh: 14d127b90b090fe5
+  en: 40e3ed1514823a0c
+  zh: c6b2864318af56b0
 /deepseek-ai-dsh-web-search-profile/table-of-contents:
   en: d152484eb41ac6b4
   zh: f14f34fce35a8d90
@@ -21,17 +21,17 @@
   en: a5ffb24ea238a319
   zh: 6c5f5bea1183a123
 /deepseek-ai-dsh-web-search-profile/use-this-package/what-you-get:
-  en: cb4401906b585674
-  zh: 91ab14dac7dcb05a
+  en: 5614b3ea5082e97d
+  zh: 69bc466b2fd9c6c2
 /deepseek-ai-dsh-web-search-profile/understand-the-implementation:
   en: 12e50a47625c8dff
   zh: fd9082a3b0b787a0
 /deepseek-ai-dsh-web-search-profile/understand-the-implementation/patch-document:
-  en: 501033efdd4f926f
-  zh: c264a8c46ba6a3fa
+  en: d3cab00985541c66
+  zh: c253a371c9600379
 /deepseek-ai-dsh-web-search-profile/further-exploration:
-  en: 4b347e04718df050
-  zh: 2be89a3666474d2a
+  en: c1bb125b5ea81495
+  zh: 916b87d398583a70
 /deepseek-ai-dsh-web-search-profile/model-experience:
   en: 676b99baa9e8b630
   zh: f2dd9e7f2b1518de
@@ -39,8 +39,8 @@
   en: 5e8eacfb1f3e6f1e
   zh: 303cb0aa496e9181
 /deepseek-ai-dsh-web-search-profile/known-limitations-and-deferred-work:
-  en: c522afaa00fc8074
-  zh: 96944e7e1d393880
+  en: c7fa2e8f26e0b711
+  zh: e1d8f0492190fd3f
 /deepseek-ai-dsh-web-search-profile/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 9c6918ce849f6c93

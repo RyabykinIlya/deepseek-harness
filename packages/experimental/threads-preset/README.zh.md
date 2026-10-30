@@ -83,10 +83,10 @@ await ctx.agents.create({ sessionId, meta: { agentPreset: PROJECT_PRESET_ID }, s
 | `thread-contract` | 本包的 `./threads-contract` 子路径 | 协调者为 `threads:contract`，worker 为 `threads:worker-contract` |
 | `tool-subagent` | `@deepseek-ai/dsh-tool-subagent` | 普通委派工具，改指向 `thread` 提供方并采用 continuable 后台模式 |
 | `tool-threads` | `@deepseek-ai/dsh-experimental-threads-tool` | `thread_status` 与 `thread_diff`，Thread 状态的有界读取 |
-| `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` | `send_message` 与 `interrupt_agent`，运行中 Thread 的唯一把手 |
+| `tool-subagent-control` | `@deepseek-ai/dsh-tool-subagent-control` | `send_message`、`interrupt_agent` 与 `list_agents`，运行中 Thread 的把手 |
 | `project-memory-tools` | `@deepseek-ai/dsh-experimental-project-memory/tools` | Project 记忆上的 `memory_read` 与 `memory_write`，两个预设都挂载 |
 
-协调者保留 base 配置行中未被它替换的那些：`tool-subagent`（改指向）、`tool-subagent-fork`（fork 子代理会运行在 Project 检出目录里、没有 worktree）与 `tool-subagent-list-agents`（`thread_status` 是它的有界替代）。只有当 base 配置行本身不含 `tool-subagent-control` 时，协调者才自己挂载它。worker 原样保留每一条 base 配置行，因此它的 `subagent` 仍绑定出厂的 `spawn` 提供方。
+协调者保留 base 配置行中未被它替换的那些：`tool-subagent`（改指向）与 `tool-subagent-fork`（fork 子代理会运行在 Project 检出目录里、没有 worktree）。原先独立的 `tool-subagent-list-agents` 行被上游并入 control 行，因此协调者同样能看到 `list_agents`；`thread_status` 仍是旁边的有界 Thread 视图。只有当 base 配置行本身不含 `tool-subagent-control` 时，协调者才自己挂载它。worker 原样保留每一条 base 配置行，因此它的 `subagent` 仍绑定出厂的 `spawn` 提供方。
 
 -----
 

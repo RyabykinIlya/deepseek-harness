@@ -1,5 +1,5 @@
 ---
-description: "The keyless search default, two keyed search providers, and the transparent-proxy fetch range as one profile layer."
+description: "The keyless search default and two keyed search providers as one profile layer."
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-web-search-profile` is the installable bundle of the web search and fetch rows a deployment without a DeepSeek credential needs: it repoints the `web` row to the keyless `duckduckgo` provider, mounts the Brave and Tavily providers for a deployment that stores their keys, and declares the `198.18.0.0/15` range a transparent-proxy host needs for fetch. A profile lists it after `@deepseek-ai/dsh-base`, which contributes every row it addresses. Nothing is mounted by default, so the layer is inert until a profile names it.
+`dsh-web-search-profile` is the installable bundle of the web search and fetch rows a deployment without a DeepSeek credential needs: it repoints the `web` row to the keyless `duckduckgo` provider and mounts the Brave and Tavily providers for a deployment that stores their keys. Fetch needs no configuration here: since dsh-v0.2.2-alpha.2 the HTTP fetch provider connects behind a transparent proxy in `fake-ip`/TUN mode without a range declaration. A profile lists it after `@deepseek-ai/dsh-base`, which contributes every row it addresses. Nothing is mounted by default, so the layer is inert until a profile names it.
 
 ## Table of Contents
 
@@ -55,7 +55,6 @@ The layer overrides two rows the base ships and inserts three provider rows:
 | `web-search-duckduckgo` | Mounts the keyless search provider the `web` row selects |
 | `web-search-brave` | Mounts the Brave provider; selected only when `searchProvider` names `brave` |
 | `web-search-tavily` | Mounts the Tavily provider; selected only when `searchProvider` names `tavily` |
-| `web-fetch-http` | Declares `trustedProxyAddressRanges: [198.18.0.0/15]` for a fake-IP transparent-proxy host |
 
 The `web-search-deepseek` row stays mounted and configured by the base layer, so a deployment that later stores `DEEPSEEK_API_KEY` can point `searchProvider` back at `deepseek-official` without this bundle changing.
 
@@ -71,9 +70,9 @@ The observable behavior is fully covered in [Use this package](#use-this-package
 
 ### Patch document
 
-`cordis.patch.yml` holds three entries: the `web` override, one `insert` list carrying the three provider rows, and the `web-fetch-http` override. Both overrides address rows the base layer inserted and name no plugin of their own; the provider rows are the only rows this bundle loads, and each resolves from the bundle's own `dependencies`.
+`cordis.patch.yml` holds two entries: the `web` override and one `insert` list carrying the three provider rows. The override addresses a row the base layer inserted and names no plugin of its own; the provider rows are the only rows this bundle loads, and each resolves from the bundle's own `dependencies`.
 
-A patch replaces the targeted row's whole `config` rather than merging into it, so the `web` override restates `fetchProvider: http` alongside the provider it changes, and the `web-fetch-http` override states the complete range list. A profile that needs a wider list — LAN hosts, loopback — overrides the same row in its own `cordis.patch.yml`, which applies after every bundle layer.
+A patch replaces the targeted row's whole `config` rather than merging into it, so the `web` override restates `fetchProvider: http` alongside the provider it changes.
 
 An id-targeted override needs its row to exist. A profile that lists this bundle without `@deepseek-ai/dsh-base` gets a skipped-patch warning for both overrides and mounts only the three insert rows.
 
@@ -85,7 +84,7 @@ An id-targeted override needs its row to exist. A profile that lists this bundle
 ## Further Exploration
 
 - [Web subsystem](../../../docs/subsystems/web.md) — the search/fetch requests and results, provider availability, and public-address enforcement.
-- [`web-fetch-http`](../web-fetch-http/README.md) — the guard that reads `trustedProxyAddressRanges`.
+- [`web-fetch-http`](../web-fetch-http/README.md) — the provider the `web` row keeps selected; it connects through a transparent proxy without configuration.
 - [`packages/bundle/base`](../../bundle/base/README.md) — the layer that ships the rows this bundle repoints.
 - [Package and install a plugin](../../../docs/user/develop/basic/publish.md) — the layer order and patch semantics this bundle relies on.
 
@@ -105,7 +104,6 @@ None. The bundle contributes no prompt text and no tool schema of its own; which
 <a id="known-limitations-and-deferred-work"></a>
 
 - The bundle carries no credential. A deployment that selects `brave` or `tavily` stores the key through the Web Search settings page, and one that selects `deepseek-official` stores `DEEPSEEK_API_KEY`; until then the configured provider is registered but unavailable, and a search fails with `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` rather than falling back to the mounted keyless provider.
-- `trustedProxyAddressRanges` states the range only; this bundle cannot detect that the host really is behind a transparent proxy, so a deployment whose DNS resolves normally must override the row to omit the range.
 - A verification pass that boots the real Loader over this bundle beside `@deepseek-ai/dsh-base` has not been written; the bundle test covers the patch document, not a live composition.
 
 <a id="dev-note"></a>

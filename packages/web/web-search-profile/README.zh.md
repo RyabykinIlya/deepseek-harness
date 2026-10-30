@@ -1,5 +1,5 @@
 ---
-description: "无密钥的搜索默认值、两个带密钥的搜索提供者，以及透明代理抓取范围，合成一个 profile 层。"
+description: "无密钥的搜索默认值与两个带密钥的搜索提供者，合成一个 profile 层。"
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-web-search-profile` 是一个可安装的组合包，承载没有 DeepSeek 凭据的部署所需的 web 搜索与抓取行：它把 `web` 行改指到无密钥的 `duckduckgo` 提供者，挂载 Brave 与 Tavily 两个提供者供已存有密钥的部署使用，并声明透明代理主机抓取所需的 `198.18.0.0/15` 范围。profile 在 `@deepseek-ai/dsh-base` 之后列出它，后者提供它改写的每一行。默认不挂载任何内容，因此在 profile 指名它之前该层是惰性的。
+`dsh-web-search-profile` 是一个可安装的组合包，承载没有 DeepSeek 凭据的部署所需的 web 搜索与抓取行：它把 `web` 行改指到无密钥的 `duckduckgo` 提供者，并挂载 Brave 与 Tavily 两个提供者供已存有密钥的部署使用。抓取在此无需配置：自 dsh-v0.2.2-alpha.2 起，HTTP 抓取提供者可以直接连接 `fake-ip`/TUN 模式透明代理之后的地址，无需声明范围。profile 在 `@deepseek-ai/dsh-base` 之后列出它，后者提供它改写的每一行。默认不挂载任何内容，因此在 profile 指名它之前该层是惰性的。
 
 ## 目录
 
@@ -55,7 +55,6 @@ dsh plugin --profile web add @deepseek-ai/dsh-web-search-profile
 | `web-search-duckduckgo` | 挂载 `web` 行所选的无密钥搜索提供者 |
 | `web-search-brave` | 挂载 Brave 提供者；仅当 `searchProvider` 指名 `brave` 时才被选中 |
 | `web-search-tavily` | 挂载 Tavily 提供者；仅当 `searchProvider` 指名 `tavily` 时才被选中 |
-| `web-fetch-http` | 为 fake-IP 透明代理主机声明 `trustedProxyAddressRanges: [198.18.0.0/15]` |
 
 `web-search-deepseek` 行仍由 base 层挂载并配置，因此日后存有 `DEEPSEEK_API_KEY` 的部署可以把 `searchProvider` 指回 `deepseek-official`，而无需改动本组合包。
 
@@ -71,9 +70,9 @@ dsh plugin --profile web add @deepseek-ai/dsh-web-search-profile
 
 ### patch 文档
 
-`cordis.patch.yml` 含三个条目：`web` 改写、一个承载三个提供者行的 `insert` 列表，以及 `web-fetch-http` 改写。两个改写都只针对 base 层插入的行，自身不指名任何插件；提供者行是本组合包唯一加载的行，每一行都从该组合包自己的 `dependencies` 解析。
+`cordis.patch.yml` 含两个条目：`web` 改写与一个承载三个提供者行的 `insert` 列表。改写只针对 base 层插入的行，自身不指名任何插件；提供者行是本组合包唯一加载的行，每一行都从该组合包自己的 `dependencies` 解析。
 
-patch 是**整体替换**目标行的 `config`，而不是合入，因此 `web` 改写在改动的提供者旁重申 `fetchProvider: http`，`web-fetch-http` 改写则给出完整的范围列表。需要更宽列表的 profile（LAN 主机、loopback）在自己的 `cordis.patch.yml` 中改写同一行，那个文件在所有组合包层之后应用。
+patch 是**整体替换**目标行的 `config`，而不是合入，因此 `web` 改写在改动的提供者旁重申 `fetchProvider: http`。
 
 按 id 改写的条目要求目标行已经存在。若 profile 列出本组合包却没有 `@deepseek-ai/dsh-base`，两个改写都会得到「补丁被跳过」的警告，只挂载三个 insert 行。
 
@@ -85,7 +84,7 @@ patch 是**整体替换**目标行的 `config`，而不是合入，因此 `web` 
 ## 延伸阅读
 
 - [Web 子系统](../../../docs/subsystems/web.zh.md) —— 搜索/抓取的请求与结果、提供者可用性，以及公网地址校验。
-- [`web-fetch-http`](../web-fetch-http/README.zh.md) —— 读取 `trustedProxyAddressRanges` 的守卫。
+- [`web-fetch-http`](../web-fetch-http/README.zh.md) —— `web` 行保持选用的提供者；它无需配置即可穿过透明代理连接。
 - [`packages/bundle/base`](../../bundle/base/README.zh.md) —— 提供本组合包所改写行的那一层。
 - [打包并安装插件](../../../docs/user/develop/basic/publish.zh.md) —— 本组合包依赖的层顺序与 patch 语义。
 
@@ -105,7 +104,6 @@ patch 是**整体替换**目标行的 `config`，而不是合入，因此 `web` 
 <a id="known-limitations-and-deferred-work"></a>
 
 - 本组合包不携带凭据。选择 `brave` 或 `tavily` 的部署通过 Web Search 设置页存入密钥，选择 `deepseek-official` 的部署存入 `DEEPSEEK_API_KEY`；在此之前被配置的提供者虽已注册但不可用，搜索以 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 失败，而不是回退到已挂载的无密钥提供者。
-- `trustedProxyAddressRanges` 只声明范围；本组合包无法检测主机是否真的位于透明代理之后，因此 DNS 正常解析的部署必须改写该行以去掉这个范围。
 - 尚未编写在真实 Loader 中把本组合包与 `@deepseek-ai/dsh-base` 一起启动的验证；组合包测试覆盖的是 patch 文档，不是真实的组合。
 
 <a id="dev-note"></a>
