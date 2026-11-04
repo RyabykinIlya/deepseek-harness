@@ -729,7 +729,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-compaction-basic`
 
 - `inject`: `llm` · `tokenMeter` · `sessions`
-- `source`: [`packages/compaction/compaction-basic/src/types.ts:40`](../packages/compaction/compaction-basic/src/types.ts)
+- `source`: [`packages/compaction/compaction-basic/src/types.ts:46`](../packages/compaction/compaction-basic/src/types.ts)
 
 ```ts config-catalog
 /** Basic compaction configuration with an optional exact-target policy table. */
@@ -1113,11 +1113,14 @@ export interface Config {
 
 - `inject`: `computerUse` · `tools` · `systemPrompt` · `subprocess` · `agents`
 - `refs`: [`CuaConfig`](../packages/experimental/cua/src/index.ts)
-- `source`: [`packages/experimental/cua-macos/src/index.ts:16`](../packages/experimental/cua-macos/src/index.ts)
+- `source`: [`packages/experimental/cua-macos/src/index.ts:18`](../packages/experimental/cua-macos/src/index.ts)
 
 ```ts config-catalog
 /** Native preparation, operation bounds, and profile-local application grants. */
-export type Config = CuaConfig
+export interface Config extends CuaConfig {
+  /** Interval in milliseconds between permission and position checks while the native guide is open. */
+  permissionPollIntervalMs: number
+}
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-cua-macos -->
 
@@ -1126,7 +1129,7 @@ export type Config = CuaConfig
 
 ## `@deepseek-ai/dsh-experimental-forge`
 
-- `source`: [`packages/experimental/forge/src/types.ts:205`](../packages/experimental/forge/src/types.ts)
+- `source`: [`packages/experimental/forge/src/types.ts:232`](../packages/experimental/forge/src/types.ts)
 
 ```ts config-catalog
 /** Poll cadence and fetch deadline for watched change requests. */
@@ -1160,7 +1163,7 @@ export interface Config {
   hosts?: string[]
   /** Deadline in milliseconds for one `gh` invocation. */
   timeoutMs?: number
-  /** Maximum captured bytes per `gh` output stream. */
+  /** Maximum captured bytes per `gh` output stream and combined JSON bytes of one complete check read. */
   maxOutputBytes?: number
 }
 ```
@@ -1251,38 +1254,6 @@ export interface InspectorOptions {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-inspector -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-project-memory -->
-<a id="deepseek-aidsh-experimental-project-memory"></a>
-
-## `@deepseek-ai/dsh-experimental-project-memory`
-
-- `inject`: `storageDomain` · `sessions`
-- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/experimental/project-memory/src/index.ts:77`](../packages/experimental/project-memory/src/index.ts)
-
-```ts config-catalog
-/**
- * Validated configuration of the Project memory service.
- *
- * The two caps are live: the settings form edits them, and the next write reads
- * the stored value, so a Project coordinator that outgrew a bound can widen it
- * without restarting the Host. The Project-identity fields stay boot composition
- * — which presets are coordinators and how far lineage is followed are decided
- * when the Profile is composed, not by a person mid-session.
- */
-export interface Config {
-  /** Entries kept per Project; adding beyond it fails until one is removed. */
-  maxEntries?: Volatile<number>
-  /** Longest entry text in Unicode code points. */
-  maxEntryChars?: Volatile<number>
-  /** Agent preset ids whose Sessions are Project coordinators. */
-  projectPresets?: string[]
-  /** Parent hops followed from a calling Session while looking for its Project. */
-  maxLineageDepth?: number
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-project-memory -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-ptc-runtime-python -->
 <a id="deepseek-aidsh-experimental-ptc-runtime-python"></a>
@@ -1462,180 +1433,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-subagent-oar -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads -->
-<a id="deepseek-aidsh-experimental-threads"></a>
-
-## `@deepseek-ai/dsh-experimental-threads`
-
-- `source`: [`packages/experimental/threads/src/index.ts:55`](../packages/experimental/threads/src/index.ts)
-
-```ts config-catalog
-/** Plugin configuration. */
-export interface Config {
-  /** Subagent provider name whose children are Threads (default `thread`). */
-  providerName: string
-  /** Maximum UTF-8 size of the note recorded from a Thread's closing message (default 600). */
-  noteMaxBytes: number
-  /** How long `archive` waits for a running Thread to stop after interrupting it (default 30000). */
-  archiveStopTimeoutMs: number
-  /** Agent preset ids whose Sessions are Projects and may be read by `library` (default `['project']`). */
-  projectPresets: string[]
-  /** Maximum attachments listed by `library` (default 200). */
-  libraryMaxAttachments: number
-  /** Maximum presented files listed by `library` (default 200). */
-  libraryMaxPresented: number
-  /** Maximum newest Threads whose logs and worktrees `library` reads (default 50). */
-  libraryMaxThreads: number
-  /** Maximum changed files listed per Thread by `library` (default 100). */
-  libraryMaxFiles: number
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-preset -->
-<a id="deepseek-aidsh-experimental-threads-preset"></a>
-
-## `@deepseek-ai/dsh-experimental-threads-preset`
-
-- `inject`: `agentPresets`
-- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/experimental/threads-preset/src/index.ts:78`](../packages/experimental/threads-preset/src/index.ts)
-
-```ts config-catalog
-/**
- * Config: identities, display fields, and behaviour of both presets.
- *
- * Every field but `basePreset`, `workerMaxDepth`, and the four thread model
- * options has a schema default, so the class reads them as resolved values
- * rather than defaulting again at use.
- *
- * The three coordinator knobs and the four thread model options are declared
- * `volatile`: `SettingsForms.describe()` projects only volatile fields, so a
- * field that is not one is neither shown nor writable from the harness settings
- * surface, and a write to it is refused outright. They are references rather
- * than plain values, so a consumer reads one through `.get()` at the moment it
- * uses it instead of capturing the value the Loader happened to resolve at
- * mount. The presets themselves are registered once, in `[Service.init]`, so a
- * changed value is read by the next registration rather than by the rows
- * already mounted.
- */
-export interface Config {
-  /** Coordinator preset id recorded in `SessionHeader.agentPreset` (default `project`). */
-  readonly id: string
-  /** Coordinator roster display name (default `Project`). */
-  readonly name: string
-  /** Coordinator roster display description. */
-  readonly description: string
-  /** Coordinator roster sort position (default `20`). */
-  readonly order: number
-  /** Worker preset id; the `thread` provider's `childAgentPreset` must name it (default `project-thread`). */
-  readonly workerId: string
-  /** Worker roster display name (default `Project Thread (internal)`). */
-  readonly workerName: string
-  /** Worker roster display description. */
-  readonly workerDescription: string
-  /** Worker roster sort position (default `1000`, after every preset meant for a person). */
-  readonly workerOrder: number
-  /** Subagent provider the coordinator delegates to (default `thread`). */
-  readonly provider: string
-  /**
-   * Id of an already registered preset whose rows both presets extend (for
-   * example `standard` in the Web profile). Unset when the deployment's tools
-   * are global rather than preset rows. An unknown id fails the load.
-   */
-  readonly basePreset?: string
-  /**
-   * Delegation depth cap for the `subagent` row a Thread inherits from the base
-   * preset. A Thread sits one level below its Project, so helpers a Thread starts
-   * need a cap of at least 2. Unset keeps the base row's cap (the Host default).
-   */
-  readonly workerMaxDepth?: number
-  /** Coordinator contract: progress reporting cadence (default `milestones`). */
-  readonly checkIn: Volatile<CheckInPolicy>
-  /** Coordinator contract: approval before starting Threads (default `ask`). */
-  readonly spawn: Volatile<SpawnPolicy>
-  /** Coordinator contract: approval before merging a Thread (default `ask`). */
-  readonly mergePolicy: Volatile<MergePolicy>
-  /** Config of the `thread_status` / `thread_diff` row; the tool plugin validates every key. */
-  readonly tools: Record<string, number>
-  /** LLM provider for every Thread; set together with the three fields below or not at all. */
-  readonly threadProvider?: Volatile<string>
-  /** Model for every Thread. */
-  readonly threadModel?: Volatile<string>
-  /** Reasoning effort for every Thread. */
-  readonly threadReasoningEffort?: Volatile<string>
-  /** Output token ceiling for every Thread. */
-  readonly threadMaxTokens?: Volatile<number>
-  /** Exact routes the coordinator may choose for a Thread (default `[]`). */
-  readonly threadModels: Volatile<readonly AllowedThreadModel[]>
-  /** Whether the tier sentences join the contracts (default `none`). */
-  readonly tierContract: Volatile<TierContract>
-}
-
-/** How often the coordinator tells the user about Thread progress. */
-export type CheckInPolicy = 'milestones' | 'each-thread' | 'quiet'
-
-/** Whether the coordinator needs user approval before starting Threads. */
-export type SpawnPolicy = 'ask' | 'auto'
-
-/** Whether the coordinator needs user approval before merging a Thread. */
-export type MergePolicy = 'ask' | 'auto'
-
-/** One exact child LLM route the coordinator may choose for a Thread. */
-export interface AllowedThreadModel {
-  /** LLM provider id, for example `tiers`. */
-  readonly provider: string
-  /** Model id on that provider, for example `flash`. */
-  readonly model: string
-}
-
-/**
- * Whether the role statements about model tiers are part of the contract.
- *
- * `none` is the shipped posture: a deployment without a model-routing plugin has
- * no tiers to name, and a coordinator told to pick `tiers/flash` it cannot
- * choose would make up the call. `tiers` adds the two sentences below, and the
- * preset row refuses to select it unless the delegation row really offers both.
- */
-export type TierContract = 'none' | 'tiers'
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-preset -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-tool -->
-<a id="deepseek-aidsh-experimental-threads-tool"></a>
-
-## `@deepseek-ai/dsh-experimental-threads-tool`
-
-- `inject`: `tools`
-- `source`: [`packages/experimental/tool-threads/src/index.ts:60`](../packages/experimental/tool-threads/src/index.ts)
-
-```ts config-catalog
-/** Configuration: what one call may spend. */
-export interface Config {
-  /** `thread_status` rows when the model omits `limit` (default 20). */
-  readonly defaultLimit?: number
-  /** Largest `limit` the model may request (default 100, ceiling 100). */
-  readonly maxLimit?: number
-  /** Byte bound over the complete rendered result of either tool (default 8192, 1024 through 32768). */
-  readonly maxResultBytes?: number
-  /** Commits `thread_diff` lists (default 30, ceiling 100). */
-  readonly maxCommits?: number
-  /** Changed files `thread_diff` lists (default 100, ceiling 500). */
-  readonly maxFiles?: number
-  /** Bytes of one file patch `thread_diff` returns (default 16384, 256 through 65536). */
-  readonly maxPatchBytes?: number
-  /** Threads the `thread_diff` overview reads (default 20, ceiling 100); each costs git calls. */
-  readonly maxOverviewThreads?: number
-  /** Overlapping Thread pairs the overview runs a merge check on (default 50, ceiling 200). */
-  readonly maxPairChecks?: number
-  /** `library_list` entries per shown section when the model omits `limit` (default 20). */
-  readonly libraryDefaultLimit?: number
-  /** Largest per-section `limit` the model may request from `library_list` (default 100, ceiling 100). */
-  readonly libraryMaxLimit?: number
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-experimental-threads-tool -->
-
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-experimental-tool-agent-team -->
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
@@ -1770,7 +1567,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-fs-local`
 
-- `source`: [`packages/fs/fs-local/src/index.ts:46`](../packages/fs/fs-local/src/index.ts)
+- `source`: [`packages/fs/fs-local/src/index.ts:51`](../packages/fs/fs-local/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for the local filesystem backend. */
@@ -2166,7 +1963,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:285`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:251`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2183,29 +1980,6 @@ export interface Config {
 export interface PiAiProviderProfile {
   /** Credential reference (environment-variable name) resolved per request through `ctx.credentials`. */
   apiKeyEnv?: string
-  /**
-   * Credential references this route may authenticate one request with, in
-   * declared order. A request starts at the first one and moves to the next
-   * when the provider reports that key's own usage ceiling (`KEY_QUOTA`); the
-   * caller sees one attempt either way.
-   *
-   * With both this and {@link apiKeyEnv} set, these entries are tried first in
-   * the order declared and `apiKeyEnv` is appended last when it is not already
-   * one of them. Naming the same reference twice within this list is refused;
-   * naming it here and in `apiKeyEnv` is one credential attempted once.
-   *
-   * An empty list is indistinguishable from an omitted one after defaulting,
-   * and a profile naming no credential through either field keeps the
-   * keyless posture: pi-ai's own provider-native ambient discovery.
-   */
-  apiKeys?: string[]
-  /**
-   * How long a key stays out of rotation after the provider reported it
-   * exhausted. Required when the route names more than one credential and
-   * refused when it names fewer, because a route can only skip a key when it
-   * has another one to try instead.
-   */
-  keyCooldownMs?: number
   /** Name shown by configuration surfaces; defaults to the route key. */
   displayName?: string
   /**
@@ -2264,34 +2038,6 @@ export interface PiAiProviderProfile {
   defaultInput?: PiAiModality[]
   /** Provider request headers, validated against Fetch when the profile resolves; Harness attribution wins reserved names. */
   headers?: Record<string, string>
-  /**
-   * Explicit deployment override for the `user-agent` this route sends on
-   * every model request and on model discovery. Off by default: a request
-   * carries the Harness attribution `user-agent`, and nothing else can
-   * suppress or replace it — attribution is sent on every provider HTTP
-   * request except for this one, deliberately narrow, profile-level
-   * exception, which exists for gateways that gate on client identity and
-   * reject a request whose `user-agent` does not match their expected client.
-   * When set, the value replaces the attribution `user-agent` verbatim for
-   * this route only, on model requests and on model discovery; it is
-   * validated as a value Fetch can send as one header, and every route that
-   * omits it keeps the attribution value unchanged. A `user-agent` entry in
-   * {@link headers} cannot set this: it is stripped in favor of attribution
-   * exactly as before.
-   */
-  userAgentOverride?: string
-  /**
-   * Explicit `metadata.user_id` value this route sends on every model
-   * request. Off by default: a request carries no request metadata. Gateways
-   * that gate on client identity can require the client-identifying
-   * `metadata.user_id` field of the Anthropic Messages protocol — Claude
-   * Code sends one on every request — and answer a request without it as a
-   * client anomaly even when the request itself is valid. When set, the value
-   * is sent verbatim as `metadata.user_id` for this route only; an empty
-   * value is refused, and every route that omits the field keeps sending no
-   * metadata.
-   */
-  metadataUserId?: string
   /** Provider-neutral pi-ai reasoning level. */
   reasoning?: ModelThinkingLevel
   /** Token budgets used by reasoning providers that support them. */
@@ -2313,6 +2059,18 @@ export interface PiAiProviderProfile {
    * requests instead of being rejected by a request-size cap.
    */
   maxRequestImageBytes?: number
+  /**
+   * Maximum retained image occurrences per request. A request carrying more
+   * fails with `IMAGE_OFFLOAD_REQUIRED` naming how many of the oldest
+   * occurrences to offload.
+   */
+  maxRequestImages?: number
+  /**
+   * Oldest occurrences offloaded per count overflow (default 10, capped at
+   * {@link maxRequestImages}); an explicit value must not exceed it. Larger
+   * steps rewrite the request prefix less often.
+   */
+  imageOffloadCountQuantum?: number
   /** Total-pixel budget for each deterministic inline request version. */
   requestImagePixelBudget?: number
   /**
@@ -2446,13 +2204,6 @@ export interface PiAiCompatProfile {
   /** Prompt-cache marker convention; `openai-completions`. */
   cacheControlFormat?: NonNullable<OpenAICompletionsCompat['cacheControlFormat']>
   /**
-   * OpenRouter upstream-provider routing, sent as the request's `provider` field;
-   * `openai-completions` on an OpenRouter route. `sort`, `max_price` and the
-   * throughput/latency floors are enforced by OpenRouter itself; `only`, `order`
-   * and `ignore` pin upstream providers by slug. Omitted unless configured.
-   */
-  openRouterRouting?: NonNullable<OpenAICompletionsCompat['openRouterRouting']>
-  /**
    * Whether the endpoint accepts long prompt-cache retention;
    * `openai-completions`, the three Responses protocols, `anthropic-messages`.
    */
@@ -2581,7 +2332,7 @@ export interface ReplayModelConfig {
 ## `@deepseek-ai/dsh-llm-retry`
 
 - `inject`: `agents` · `sessionProjections`
-- `source`: [`packages/llm/llm-retry/src/index.ts:26`](../packages/llm/llm-retry/src/index.ts)
+- `source`: [`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
 
 ```ts config-catalog
 /** This policy executor has no config; providers own `retryPolicy`. */
@@ -3194,7 +2945,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-schedule`
 
 - `inject`: `agents` · `sessions` · `storageDomain` · `sessionPersistence`
-- `source`: [`packages/schedule/schedule/src/index.ts:83`](../packages/schedule/schedule/src/index.ts)
+- `source`: [`packages/schedule/schedule/src/index.ts:80`](../packages/schedule/schedule/src/index.ts)
 
 ```ts config-catalog
 /** Configuration for the Host Schedule domain. */
@@ -3209,6 +2960,11 @@ export interface Config {
    * cap and the window wins, and the newest records survive.
    */
   deliveryHistoryRecords?: number
+  /**
+   * Shortest spacing, in seconds, from the occurrence of one delivery to the next delivery of one task whose target
+   * creates a Session at every delivery; omission defaults to 60. Timed and manual deliveries both wait for it.
+   */
+  newSessionIntervalSeconds?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-schedule -->
@@ -3261,7 +3017,7 @@ export interface JsonRpcConfig {
 
 - `inject`: `deepseekLlmApiExtensions` · `sessions`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/session/session-log-deepseek/src/index.ts:39`](../packages/session/session-log-deepseek/src/index.ts)
+- `source`: [`packages/session/session-log-deepseek/src/index.ts:47`](../packages/session/session-log-deepseek/src/index.ts)
 
 ```ts config-catalog
 /** Session-log request contribution configuration. */
@@ -3816,7 +3572,7 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 - `inject`: `workingDirectory` · `sessionProjections`
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/subagent/subagent/src/index.ts:188`](../packages/subagent/subagent/src/index.ts)
+- `source`: [`packages/subagent/subagent/src/index.ts:186`](../packages/subagent/subagent/src/index.ts)
 
 ```ts config-catalog
 /** Host configuration for continuable subagent capacity. */
@@ -4027,50 +3783,12 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-subagent-spawn-in-process -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-subagent-thread-worktree -->
-<a id="deepseek-aidsh-subagent-thread-worktree"></a>
-
-## `@deepseek-ai/dsh-subagent-thread-worktree`
-
-- `inject`: `subagents` · `worktrees`
-- `refs`: [`WorktreeBasePolicy`](../packages/subagent/worktree-manager/src/index.ts)
-- `source`: [`packages/subagent/subagent-thread-worktree/src/index.ts:63`](../packages/subagent/subagent-thread-worktree/src/index.ts)
-
-```ts config-catalog
-/** Config: the registry name plus the worktree layout policy. */
-export interface Config {
-  /** Provider name on `ctx.subagents` (default `thread`). */
-  providerName: string
-  /**
-   * Whether each Thread gets its own branch. When false, the worktree is detached
-   * at the current base ref and `WorktreeRecord.branch` stays empty.
-   */
-  branchPerThread: boolean
-  /** Branch name template; `{{id}}` is replaced by the Thread's slug (see `threadSlug`). */
-  branchTemplate: string
-  /** Agent preset id the Thread is composed from; absent means the child inherits the parent's preset. */
-  childAgentPreset?: string
-  /**
-   * Which base the service resolves (default `head`).
-   *
-   * The service owns the policy — including the `git stash create` that captures
-   * the parent's uncommitted state. This provider used to run that snapshot
-   * itself and hand the service a commit sha under the name `baseRef`, which
-   * now means "the ref the request named" while the snapshot lands in
-   * `baseSha`. Naming the field after the service's own vocabulary keeps the two
-   * from colliding.
-   */
-  base: WorktreeBasePolicy
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-subagent-thread-worktree -->
-
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-system-prompt -->
 <a id="deepseek-aidsh-system-prompt"></a>
 
 ## `@deepseek-ai/dsh-system-prompt`
 
-- `source`: [`packages/core/system-prompt/src/index.ts:263`](../packages/core/system-prompt/src/index.ts)
+- `source`: [`packages/core/system-prompt/src/index.ts:265`](../packages/core/system-prompt/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
@@ -4304,7 +4022,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-fs`
 
 - `inject`: `tools` · `fs` · `systemPrompt` · `workingDirectory`
-- `source`: [`packages/fs/tool-fs/src/index.ts:26`](../packages/fs/tool-fs/src/index.ts)
+- `source`: [`packages/fs/tool-fs/src/index.ts:27`](../packages/fs/tool-fs/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config (all optional — `Config` supplies the defaults). */
@@ -4317,6 +4035,8 @@ export interface Config {
   write?: boolean
   /** Register `edit` and its guidance. Defaults to true. */
   edit?: boolean
+  /** Register `apply_patch` and its guidance beside `edit`. Defaults to false; shipped compositions set it on their `tool-fs` rows. */
+  applyPatch?: boolean
   /** Default and maximum number of lines returned by one `read` call. */
   readLimit?: number
   /** Maximum characters returned for a single line before truncation. */
@@ -4602,7 +4322,7 @@ export interface Config {
 
 - `inject`: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
 - `refs`: [`AgentOptions`](subsystems/core.md)
-- `source`: [`packages/subagent/tool-subagent/src/index.ts:60`](../packages/subagent/tool-subagent/src/index.ts)
+- `source`: [`packages/subagent/tool-subagent/src/index.ts:46`](../packages/subagent/tool-subagent/src/index.ts)
 
 ```ts config-catalog
 /** Config: which registered provider this tool delegates to, plus child defaults. */
@@ -4618,38 +4338,14 @@ export interface Config extends PresetSelectionConfig {
    * Expose optional child `provider`, `model`, and `reasoning_effort` fields.
    * Requires provider `agentOptions` support. Execution enforces the Session
    * policy, or restricts explicit selection to the current parent route.
-   * Mutually exclusive with `allowedModels`.
    */
   modelSelection?: boolean
   /**
    * Register the shared `list_subagent_models` tool for this scope.
    * Enable on only one instance per scope; defaults to false and does not
    * enable model selection. Discovery is removed when this instance unloads.
-   * Ignored (and unnecessary) when `allowedModels` is set: a fixed route list
-   * already mounts its own discovery over the same routes.
    */
   modelDiscovery?: boolean
-  /**
-   * Fixed child LLM routes this tool instance offers, independent of the Host
-   * `subagent-model-selection` setting. Non-empty: every Session gets these exact
-   * routes as its selection policy — the tool exposes `provider`, `model` and
-   * `reasoning_effort`, mounts `list_subagent_models`, and records no
-   * `subagent/model-selection-policy`. Absent or empty: no effect.
-   * Requires provider `agentOptions` support; mutually exclusive with `modelSelection`.
-   */
-  allowedModels?: AllowedModelRoute[]
-  /**
-   * Expose `run_in_background` (default true). Disabled instances omit the
-   * parameter and reject forced background calls.
-   */
-  enableRunInBackground?: boolean
-  /**
-   * Background execution policy (default `one-shot`). `one-shot` defaults calls
-   * to foreground; `continuable` defaults them to background, requires a provider
-   * with the `prepareContinuable` capability, and returns the durable child id.
-   * Follow-up adapters remain independently optional.
-   */
-  backgroundMode?: 'one-shot' | 'continuable'
   /**
    * Agent options applied to every child; omitted fields use child-loop defaults.
    */
@@ -4673,14 +4369,6 @@ export interface PresetSelectionConfig {
   agentPreset?: string
   /** Non-empty allowlist exposing agent_preset to the model; omission disables model selection. */
   allowedAgentPresets?: string[] | undefined
-}
-
-/** One exact child LLM route authorized by a user setting. */
-export interface AllowedModelRoute {
-  /** Registered LLM provider id. */
-  readonly provider: string
-  /** Provider-owned exact model id. */
-  readonly model: string
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-subagent -->
@@ -4865,7 +4553,7 @@ export type ApprovalPolicy = 'ask' | 'never'
 ## `@deepseek-ai/dsh-web`
 
 - `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/web/web/src/index.ts:87`](../packages/web/web/src/index.ts)
+- `source`: [`packages/web/web/src/index.ts:57`](../packages/web/web/src/index.ts)
 
 ```ts config-catalog
 /**
@@ -4968,32 +4656,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-fetch-http -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-brave -->
-<a id="deepseek-aidsh-web-search-brave"></a>
-
-## `@deepseek-ai/dsh-web-search-brave`
-
-- `inject`: `web`
-- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/web/web-search-brave/src/index.ts:60`](../packages/web/web-search-brave/src/index.ts)
-
-```ts config-catalog
-/** Plugin config (all optional — the schema supplies defaults, `apply` the env fallback). */
-export interface Config {
-  /** Literal Brave subscription token; prefer {@link apiKeyEnv} so no secret enters configuration files. */
-  apiKey: Volatile<string | undefined>
-  /** Credential reference resolved for each search; defaults to `BRAVE_API_KEY`. */
-  apiKeyEnv: Volatile<string>
-  /** Brave API base; `/res/v1/web/search` is appended. Defaults to Brave's public API. */
-  baseURL: Volatile<string | undefined>
-  /** Result count sent as Brave's `count` when a request carries no `maxResults`. Defaults to 8. */
-  maxResults: Volatile<number>
-  /** Request timeout in milliseconds. Defaults to 15000. */
-  timeoutMs: Volatile<number>
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-brave -->
-
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-deepseek -->
 <a id="deepseek-aidsh-web-search-deepseek"></a>
 
@@ -5023,39 +4685,6 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-deepseek -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-duckduckgo -->
-<a id="deepseek-aidsh-web-search-duckduckgo"></a>
-
-## `@deepseek-ai/dsh-web-search-duckduckgo`
-
-- `inject`: `web`
-- `source`: [`packages/web/web-search-duckduckgo/src/index.ts:41`](../packages/web/web-search-duckduckgo/src/index.ts)
-
-```ts config-catalog
-/**
- * Plugin config (every field optional — `apply` fills the constant defaults).
- * There is no credential field because DuckDuckGo's HTML endpoint is keyless;
- * `available()` therefore reports the provider usable unless one of these
- * settings is itself unusable.
- */
-export interface Config {
-  /** HTML endpoint the query is POSTed to. Defaults to DuckDuckGo's HTML endpoint. */
-  endpoint?: string
-  /**
-   * `User-Agent` sent on every request. Defaults to a browser identity, which
-   * the endpoint requires to answer with results rather than a challenge page.
-   */
-  userAgent?: string
-  /** Default result count when a request carries no `maxResults`. Omitted = none. */
-  numResults?: number
-  /** Request timeout in milliseconds. */
-  timeoutMs?: number
-  /** Byte cap on the response body this provider will read. */
-  maxResponseBytes?: number
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-duckduckgo -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-exa -->
 <a id="deepseek-aidsh-web-search-exa"></a>
@@ -5106,34 +4735,6 @@ export interface Config {
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-perplexity -->
-
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-web-search-tavily -->
-<a id="deepseek-aidsh-web-search-tavily"></a>
-
-## `@deepseek-ai/dsh-web-search-tavily`
-
-- `inject`: `web`
-- `refs`: `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/web/web-search-tavily/src/index.ts:64`](../packages/web/web-search-tavily/src/index.ts)
-
-```ts config-catalog
-/** Plugin config (every field optional — the schema carries the defaults). */
-export interface Config {
-  /** Literal Tavily API key; prefer {@link apiKeyEnv} so no secret enters configuration files. */
-  apiKey: Volatile<string | undefined>
-  /** Credential reference resolved for each search; defaults to `TAVILY_API_KEY`. */
-  apiKeyEnv: Volatile<string>
-  /** Full search endpoint, path included. Defaults to `https://api.tavily.com/search`. */
-  baseURL: Volatile<string>
-  /** Result count requested when a search carries no bound of its own. Defaults to 5. */
-  numResults: Volatile<number>
-  /** Request timeout in milliseconds. Defaults to 15000. */
-  timeoutMs: Volatile<number>
-  /** Character cap on one result's snippet; Tavily's extracted page text can be long. Defaults to 2000. */
-  maxContentChars: Volatile<number>
-}
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-web-search-tavily -->
 
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-webhook-github -->
 <a id="deepseek-aidsh-webhook-github"></a>
@@ -5228,98 +4829,6 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-workspace-changes -->
 
-<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-worktree-manager -->
-<a id="deepseek-aidsh-worktree-manager"></a>
-
-## `@deepseek-ai/dsh-worktree-manager`
-
-- `source`: [`packages/subagent/worktree-manager/src/index.ts:89`](../packages/subagent/worktree-manager/src/index.ts)
-
-```ts config-catalog
-/**
- * Host configuration for the worktree service. Every field is validated ONCE,
- * at plugin load — never per Thread — following the `validateConfiguredCwd`
- * pattern: a deployment that misconfigures the root fails to mount instead of
- * scattering worktrees and discovering it later.
- */
-export interface Config {
-  /**
-   * Absolute directory holding the intent sidecar and every managed worktree
-   * (default `~/.dsh/worktrees`). It must NOT sit inside a registered checkout:
-   * a worktree inside the repository pollutes the user's `git status` and
-   * recurses on clone.
-   */
-  worktreeRoot?: string
-  /** Where `repoRoot` comes from when a {@link WorktreeSpec} leaves it empty (default `explicit`). */
-  repoRootResolution?: RepoRootResolution
-  /**
-   * What a new Thread's worktree is created from (default `head`).
-   *
-   * `head` is the committed `HEAD` a caller gets today. `head-with-uncommitted` snapshots the
-   * parent's tracked uncommitted changes with `git stash create`, so a Thread started while a
-   * coordinator is mid-edit sees the work in progress rather than the last commit — the failure
-   * mode where the Thread cannot see an edit the parent never committed, and a later merge
-   * conflicts on those exact lines. Untracked files are not part of the snapshot.
-   *
-   * {@link WorktreeSpec.base} overrides this per call. The default is `head`, not
-   * `head-with-uncommitted`: switching it by default would silently move the base of every
-   * existing deployment's Threads, and the snapshot also commits the parent's working state onto
-   * the Thread branch, which is a policy each deployment should choose on purpose.
-   */
-  base?: WorktreeBasePolicy
-  /** Run {@link WorktreeService.reconcile} when the service loads (default `true`). */
-  pruneOnStart?: boolean
-  /**
-   * Maximum active (non-terminal) worktrees per repository (default `32`). Creation beyond it fails with
-   * `WORKTREE_LIMIT_REACHED`; archive a Thread (remove its worktree) to free a slot. Running-Thread
-   * concurrency is limited separately by `dsh-subagent`'s `maxActiveSubagents`.
-   */
-  maxWorktreesPerRepo?: number
-  /**
-   * Minimum age in milliseconds before {@link WorktreeService.reconcile} treats a worktree without a
-   * persisted session as an orphan (default `600000`). It covers the window between worktree creation and
-   * session publication. Records without a `createdAt` stamp count as older than any grace period.
-   */
-  adoptionGraceMs?: number
-  /**
-   * Longest wait in milliseconds for the registry lock shared by processes using one `worktreeRoot`
-   * (default `10000`). Past it the operation fails with `WORKTREE_REGISTRY_LOCKED`.
-   */
-  lockTimeoutMs?: number
-  /** Pause in milliseconds between registry lock attempts (default `50`). */
-  lockRetryIntervalMs?: number
-  /**
-   * Age in milliseconds after which a registry lock whose holder stopped refreshing it (a crashed
-   * process) may be taken over (default `30000`, minimum `5000`).
-   */
-  lockStaleMs?: number
-}
-
-/** Where `repoRoot` comes from when a spec does not carry one. */
-export type RepoRootResolution =
-  /** Every {@link WorktreeService.create} call must name its own repository (default). */
-  | 'explicit'
-  /** An empty `repoRoot` resolves to the checkout the harness process was launched in. */
-  | 'parent-cwd'
-
-/**
- * What a new Thread's worktree is created from.
- *
- * - `head` — the repository's committed state: `spec.baseRef` resolved with
- *   `git rev-parse --verify <baseRef>^{commit}`, and nothing else.
- * - `head-with-uncommitted` — that same commit *plus the parent's tracked uncommitted changes*,
- *   captured as a commit object with `git stash create`. A Thread started while its coordinator is
- *   mid-edit therefore sees the work in progress instead of the last commit, and a later merge
- *   cannot collide on lines the parent never committed.
- *
- * Untracked files are NOT part of the snapshot: git cannot represent them in a stash without `-u`,
- * which is deliberately not used (see the README). A clean working tree is not a failure — git
- * answers with empty output and the committed base is the whole story.
- */
-export type WorktreeBasePolicy = 'head' | 'head-with-uncommitted'
-```
-<!-- END GENERATED config-catalog:@deepseek-ai/dsh-worktree-manager -->
-
 ## Loadable plugins with no config
 
 These load from a `cordis.yml` entry with no `config:` block; they declare no configuration API.
@@ -5345,6 +4854,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-brand-official` | — | [`packages/client/ui-brand-official/src/index.ts`](../packages/client/ui-brand-official/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-chat` | — | [`packages/client/ui-chat/src/index.ts`](../packages/client/ui-chat/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-commands` | — | [`packages/client/ui-commands/src/index.ts`](../packages/client/ui-commands/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-context-menu` | — | [`packages/client/ui-context-menu/src/index.ts`](../packages/client/ui-context-menu/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-conversation` | — | [`packages/client/ui-conversation/src/index.ts`](../packages/client/ui-conversation/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-cordis` | — | [`packages/extensions/ui-cordis/src/index.ts`](../packages/extensions/ui-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-creation-recommendations` | — | [`packages/experimental/client-ui-creation-recommendations/src/index.ts`](../packages/experimental/client-ui-creation-recommendations/src/index.ts) |
@@ -5352,6 +4862,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-directory-picker-browse` | — | [`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-directory-picker-native` | — | [`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-entry-customization` | — | [`packages/client/ui-entry-customization/src/index.ts`](../packages/client/ui-entry-customization/src/index.ts) |
+| `@deepseek-ai/dsh-client-ui-file-actions` | — | [`packages/client/ui-file-actions/src/index.ts`](../packages/client/ui-file-actions/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-file-drag` | — | [`packages/client/ui-file-drag/src/index.ts`](../packages/client/ui-file-drag/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-goal` | — | [`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-input-trigger` | — | [`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts) |
@@ -5377,7 +4888,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-client-ui-settings-session-log` | — | [`packages/client/ui-settings-session-log/src/index.ts`](../packages/client/ui-settings-session-log/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-shell` | — | [`packages/client/ui-settings-shell/src/index.ts`](../packages/client/ui-settings-shell/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-subagent` | — | [`packages/client/ui-settings-subagent/src/index.ts`](../packages/client/ui-settings-subagent/src/index.ts) |
-| `@deepseek-ai/dsh-client-ui-settings-threads` | — | [`packages/client/ui-settings-threads/src/index.ts`](../packages/client/ui-settings-threads/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-settings-web-search` | — | [`packages/client/ui-settings-web-search/src/index.ts`](../packages/client/ui-settings-web-search/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-shortcuts` | — | [`packages/client/ui-shortcuts/src/index.ts`](../packages/client/ui-shortcuts/src/index.ts) |
 | `@deepseek-ai/dsh-client-ui-sidebar` | — | [`packages/client/ui-sidebar/src/index.ts`](../packages/client/ui-sidebar/src/index.ts) |
@@ -5406,10 +4916,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-experimental-auto-review` | `approval` · `llm` · `permissionPresets` · `sessions` · `tools` · `workingDirectory` | [`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-agent-team` | — | [`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | — | [`packages/experimental/client-ui-claude-code-mods/src/index.ts`](../packages/experimental/client-ui-claude-code-mods/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-client-ui-model-routing` | — | [`packages/experimental/client-ui-model-routing/src/index.ts`](../packages/experimental/client-ui-model-routing/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-client-ui-project-memory` | — | [`packages/experimental/client-ui-project-memory/src/index.ts`](../packages/experimental/client-ui-project-memory/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-stats` | — | [`packages/experimental/client-ui-stats/src/index.ts`](../packages/experimental/client-ui-stats/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-client-ui-threads` | — | [`packages/experimental/client-ui-threads/src/index.ts`](../packages/experimental/client-ui-threads/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-client-ui-voice-input` | — | [`packages/experimental/client-ui-voice-input/src/index.ts`](../packages/experimental/client-ui-voice-input/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` | `computerUse` · `tools` · `systemPrompt` | [`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-inspector` | — | [`packages/experimental/session-inspector/src/index.ts`](../packages/experimental/session-inspector/src/index.ts) |
@@ -5442,7 +4949,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | `tools` | [`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts) |
 | `@deepseek-ai/dsh-tool-cordis` | `tools` · `cordisInspect` | [`packages/extensions/tool-cordis/src/index.ts`](../packages/extensions/tool-cordis/src/index.ts) |
 | `@deepseek-ai/dsh-tool-executor-native` | `tools` | [`packages/core/tool-executor-native/src/index.ts`](../packages/core/tool-executor-native/src/index.ts) |
-| `@deepseek-ai/dsh-tool-schedule` | `tools` | [`packages/schedule/tool-schedule/src/index.ts`](../packages/schedule/tool-schedule/src/index.ts) |
+| `@deepseek-ai/dsh-tool-schedule` | `tools` · `systemPrompt` | [`packages/schedule/tool-schedule/src/index.ts`](../packages/schedule/tool-schedule/src/index.ts) |
 | `@deepseek-ai/dsh-tool-subagent-control` | `tools` · `subagents` · `agents` | [`packages/subagent/tool-subagent-control/src/index.ts`](../packages/subagent/tool-subagent-control/src/index.ts) |
 | `@deepseek-ai/dsh-tool-working-directory` | `tools` · `workingDirectory` | [`packages/session/tool-working-directory/src/index.ts`](../packages/session/tool-working-directory/src/index.ts) |
 | `@deepseek-ai/dsh-tools` | `systemPrompt` | [`packages/core/tools/src/index.ts`](../packages/core/tools/src/index.ts) |
@@ -5507,24 +5014,21 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-experimental-inspector-profile` | — | [`packages/experimental/inspector-profile/src/index.ts`](../packages/experimental/inspector-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-liveshare` | — | [`packages/experimental/liveshare/src/index.ts`](../packages/experimental/liveshare/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-liveshare-protocol` | — | [`packages/experimental/liveshare-protocol/src/index.ts`](../packages/experimental/liveshare-protocol/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-model-routing` | — | [`packages/experimental/model-routing/src/index.ts`](../packages/experimental/model-routing/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-model-routing-profile` | — | [`packages/experimental/model-routing-profile/src/index.ts`](../packages/experimental/model-routing-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-plugin-market-bundle` | — | [`packages/experimental/plugin-market-bundle/src/index.ts`](../packages/experimental/plugin-market-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-ralph-bundle` | — | [`packages/experimental/ralph-bundle/src/index.ts`](../packages/experimental/ralph-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-search` | — | [`packages/experimental/session-search/src/index.ts`](../packages/experimental/session-search/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-session-titles-bundle` | — | [`packages/experimental/session-titles-bundle/src/index.ts`](../packages/experimental/session-titles-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-terminal-bundle` | — | [`packages/experimental/terminal-bundle/src/index.ts`](../packages/experimental/terminal-bundle/src/index.ts) |
-| `@deepseek-ai/dsh-experimental-threads-profile` | — | [`packages/experimental/threads-profile/src/index.ts`](../packages/experimental/threads-profile/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-voice-input-bundle` | — | [`packages/experimental/voice-input-bundle/src/index.ts`](../packages/experimental/voice-input-bundle/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-packer` | — | [`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts) |
 | `@deepseek-ai/dsh-experimental-webworker-runtime` | — | [`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts) |
+| `@deepseek-ai/dsh-fs-patch` | — | [`packages/fs/fs-patch/src/index.ts`](../packages/fs/fs-patch/src/index.ts) |
 | `@deepseek-ai/dsh-home-paths` | — | [`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts) |
 | `@deepseek-ai/dsh-hook-protocol` | — | [`packages/experimental/hook-protocol/src/index.ts`](../packages/experimental/hook-protocol/src/index.ts) |
 | `@deepseek-ai/dsh-http-proxy` | — | [`packages/util/http-proxy/src/index.ts`](../packages/util/http-proxy/src/index.ts) |
 | `@deepseek-ai/dsh-launch-environment` | — | [`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts) |
 | `@deepseek-ai/dsh-lazy-require` | — | [`packages/util/lazy-require/src/index.ts`](../packages/util/lazy-require/src/index.ts) |
 | `@deepseek-ai/dsh-llm-deepseek` | — | [`packages/llm/llm-deepseek/src/index.ts`](../packages/llm/llm-deepseek/src/index.ts) |
-| `@deepseek-ai/dsh-llm-fallback` | — | [`packages/llm/llm-fallback/src/index.ts`](../packages/llm/llm-fallback/src/index.ts) |
 | `@deepseek-ai/dsh-llm-mock-server` | — | [`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts) |
 | `@deepseek-ai/dsh-loader-smoke` | — | [`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts) |
 | `@deepseek-ai/dsh-native-command` | — | [`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts) |
@@ -5561,6 +5065,5 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 | `@deepseek-ai/dsh-util-time` | — | [`packages/util/time/src/index.ts`](../packages/util/time/src/index.ts) |
 | `@deepseek-ai/dsh-util-values` | — | [`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts) |
 | `@deepseek-ai/dsh-util-workspace-path` | — | [`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts) |
-| `@deepseek-ai/dsh-web-search-profile` | — | [`packages/web/web-search-profile/src/index.ts`](../packages/web/web-search-profile/src/index.ts) |
 | `@deepseek-ai/dsh-win32-process` | — | [`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts) |
 <!-- END GENERATED config-catalog:library -->
