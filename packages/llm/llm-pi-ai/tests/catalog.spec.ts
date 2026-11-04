@@ -358,7 +358,8 @@ describe('hand-declared providers', () => {
       'acme-gateway': { baseURL: 'https://acme.test', models: [{ id: '111' }] },
     }, 'deferred').get('acme-gateway')!
     const failure = 'llm-pi-ai: provider "acme-gateway" model "111" needs an api; '
-      + 'the installed catalog does not describe it, so set the route\'s api to the wire protocol its endpoint speaks'
+      + 'the installed catalog does not describe it, so set the route\'s api or the entry\'s api'
+      + ' to the wire protocol its endpoint speaks'
 
     expect(profile.catalogError).toBe(failure)
     expect(profile.modelErrors.get('111')).toBe(failure)
@@ -852,7 +853,7 @@ describe('modelOverrides', () => {
         models: [{ id: 'm' }],
         modelOverrides: { m: { name: 'renamed' } },
       },
-    })).toThrow(/a declared route spells every model out/)
+    })).toThrow(/models already replaces the served catalog/)
     const declaredOnly = deepseekModel()
     expect(() => resolveProfiles({
       deepseek: {
@@ -871,6 +872,32 @@ describe('modelOverrides', () => {
     expect(() => resolveProfiles({
       deepseek: { modelOverrides: { [deepseekModel().id]: smuggled } },
     })).toThrow(/sets "id", which is the dict key/)
+  })
+
+  it('adds a catalog-unknown id when the override names its api, and refuses one without', () => {
+    // OpenRouter publishes a release before the pinned pi-ai catalog learns
+    // it; an override carrying the wire protocol is the admission that keeps
+    // the id servable until the dependency bumps. The same entry without an
+    // api has nothing to dispatch through and is refused with the remedy.
+    const catalogSize = getBuiltinModels('deepseek').length
+    const profile = resolveProfiles({
+      deepseek: { modelOverrides: { 'brand-new/model': { api: 'openai-completions', name: 'Fresh' } } },
+    }).get('deepseek')!
+    expect(profile.catalogError).toBeUndefined()
+    expect(profile.modelErrors.has('brand-new/model')).toBe(false)
+    const models = profile.piProvider?.getModels() ?? []
+    expect(models.map(model => model.id)).toHaveLength(catalogSize + 1)
+    const added = models.at(-1)!
+    expect(added.id).toBe('brand-new/model')
+    expect(added.name).toBe('Fresh')
+    expect(added.api).toBe('openai-completions')
+    expect(added.provider).toBe('deepseek')
+    expect(() => resolveProfiles({
+      deepseek: { modelOverrides: { 'brand-new/model': { name: 'fresh' } } },
+    })).toThrow(/which the installed catalog does not describe/)
+    expect(() => resolveProfiles({
+      deepseek: { modelOverrides: { 'brand-new/model': { api: 'quantum-telepathy', name: 'fresh' } } },
+    })).toThrow(/names api "quantum-telepathy", which no installed catalog entry of route "deepseek" declares/)
   })
 })
 

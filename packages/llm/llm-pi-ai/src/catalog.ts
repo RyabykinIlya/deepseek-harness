@@ -649,6 +649,16 @@ export interface PiAiModelProfile {
   id: string
   /** Display name for selectors; defaults to the catalog name, then the id. */
   name?: string
+  /**
+   * Wire protocol this one model speaks. Absent keeps the installed catalog
+   * entry's protocol, then the route's `api`. Only a model the installed
+   * catalog does not describe must declare one here (or the route must declare
+   * it), because that fallback chain has nothing else to read: this is the
+   * field that lets a `modelOverrides` entry name a model published after the
+   * installed catalog was generated — the case where the rest of the route is
+   * the catalog and repointing it would drop every other model.
+   */
+  api?: string
   /** Maximum combined request and response context in tokens. */
   contextWindow?: number
   /**
@@ -688,6 +698,15 @@ export interface PiAiModelProfile {
  * with the id living in the key. Unlike a `models` list, overrides leave the
  * rest of the catalog serving untouched, which is what makes "correct one
  * model, keep the other thirty-seven" a three-line edit.
+ *
+ * An override may also *add* a model: OpenRouter publishes releases before the
+ * pinned `@earendil-works/pi-ai` catalog learns them, and until the dependency
+ * bumps, such an id dispatches nowhere — every request for it fails
+ * `UNKNOWN_MODEL`. Naming the new id here with an explicit `api` (the
+ * installed catalog's protocol for the route, `openai-completions` on
+ * OpenRouter unless the vendor entry says otherwise) serves it at once; when a
+ * later dependency bump teaches the catalog the same id, the entry degrades to
+ * an ordinary override and may be deleted.
  */
 export type PiAiModelOverride = Omit<PiAiModelProfile, 'id'>
 
@@ -912,21 +931,31 @@ export function resolveRouteModels(
   const overrides = request.modelOverrides ?? {}
   const modelErrors = new Map<string, string>()
   // Writes reject missing referents. Stored overrides retain a diagnostic
-  // after catalog removal rather than silently disappearing.
+  // after catalog removal rather than silently disappearing — except an
+  // override that adds an unknown id with its own `api`: that is the admission
+  // of a release published after this dependency's catalog was generated, not
+  // a typo against an existing entry, and the route it lands on serves chat
+  // through one protocol.
+  const additions = new Set<string>()
   for (const [id, override] of Object.entries(overrides)) {
     if (id.length === 0) invalid(provider, 'has a modelOverrides entry with an empty model id')
-    if (defaults.size === 0) {
-      invalid(provider, `sets modelOverrides for "${id}", but the installed catalog does not describe this route;`
-        + ' a declared route spells every model out in its models list')
-    }
     if (configured.length > 0) {
       invalid(provider, `sets modelOverrides for "${id}" beside a models list; models already replaces the served`
         + ' catalog, so declare the fields on its entries')
     }
     if (!defaults.has(id)) {
-      const message = `modelOverrides names "${id}", which the installed catalog does not describe`
-      if (validation === 'strict') invalid(provider, message)
-      modelErrors.set(id, `llm-pi-ai: provider "${provider}" ${message}`)
+      if (defaults.size === 0) {
+        invalid(provider, `sets modelOverrides for "${id}", but the installed catalog does not describe this route;`
+          + ' a declared route spells every model out in its models list')
+      }
+      if (override.api === undefined) {
+        const message = `modelOverrides names "${id}", which the installed catalog does not describe;`
+          + ' set the entry\'s api to the wire protocol its endpoint speaks to add the model anyway'
+        if (validation === 'strict') invalid(provider, message)
+        modelErrors.set(id, `llm-pi-ai: provider "${provider}" ${message}`)
+        continue
+      }
+      additions.add(id)
     }
     // The id lives in the dict key; a value carrying its own would quietly
     // rename the model it meant to customize. The static shape already omits
@@ -938,14 +967,25 @@ export function resolveRouteModels(
   // An override becomes the catalog entry's configuration, so everything a
   // models entry may declare — capacities, efforts, compat — resolves through
   // the same path with the same diagnostics and request-default semantics.
+  // Additions keep catalog order first so the served list stays stable, then
+  // each added id in its own key order.
   const entries: readonly PiAiModelProfile[] = configured.length > 0
     ? configured
-    : [...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] }))
+    : [
+      ...[...defaults.values()].map(model => ({ id: model.id, ...overrides[model.id] })),
+      ...[...additions].map(id => ({ id, ...overrides[id] })),
+    ]
   if (entries.length === 0) {
     invalid(provider, 'resolves no models; the installed catalog does not describe this route, so its models'
       + ' must be listed in configuration')
   }
   const routeApi = sharedCatalogApi(defaults)
+  // Every protocol the route's installed catalog declares, for the entry-level
+  // `api` check in `resolveEntry`. A declared route (no catalog) answers from
+  // the route-level `api` alone, so its additions are checked by the union of
+  // that value when present.
+  const catalogApis = new Set([...defaults.values()].map(model => model.api))
+  if (request.api !== undefined) catalogApis.add(request.api)
   // Vocabulary before protocols: a withheld or undeclared switch is refused
   // wherever it is written, so it cannot look applied on a route whose models
   // never reach the protocol that would have taken it.
@@ -958,10 +998,19 @@ export function resolveRouteModels(
     if (seen.has(entry.id)) invalid(provider, `lists model "${entry.id}" more than once`)
     seen.add(entry.id)
     const base = defaults.get(entry.id)
-    const api = request.api ?? base?.api ?? routeApi
+    const api = entry.api ?? request.api ?? base?.api ?? routeApi
     if (api === undefined) {
       invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the`
-        + ' route\'s api to the wire protocol its endpoint speaks')
+        + ' route\'s api or the entry\'s api to the wire protocol its endpoint speaks')
+    }
+    // A hand-named protocol is checked at load, not at the first stream: the
+    // route's own provider serves each entry by its `api` key, and a name no
+    // catalog entry on this route ever declared has no implementation behind
+    // it. The check reads the route's own catalog, so a catalog provider that
+    // ships another protocol's implementation still accepts it.
+    if (entry.api !== undefined && !catalogApis.has(entry.api)) {
+      invalid(provider, `model "${entry.id}" names api "${entry.api}", which no installed catalog entry of`
+        + ` route "${provider}" declares; the route serves ${catalogApis.size === 0 ? 'no other protocol' : [...catalogApis].join(', ')}`)
     }
     const baseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl
     if (baseUrl === undefined) {

@@ -78,6 +78,19 @@ export const MODEL_ROUTING_NO_ENDPOINT_CODE = 'MODEL_ROUTING_NO_ENDPOINT'
 export const MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE = 'MODEL_ROUTING_SUBSCRIPTION_LIMIT'
 
 /**
+ * Machine code for a model id the inner route cannot dispatch at all.
+ *
+ * Distinct from {@link MODEL_ROUTING_NO_ENDPOINT_CODE} because the ranking was
+ * not the problem: the OpenRouter catalog lists endpoints for the id, but the
+ * pinned `pi-ai` dependency's static catalog does not know it yet, so no
+ * decision could ever serve it. The message names the one-line
+ * `modelOverrides` remedy; the failure is deliberately not reroutable, because
+ * every candidate of that id is equally undispatchable and rerouting would
+ * silently leave the model the caller asked for.
+ */
+export const MODEL_ROUTING_UNKNOWN_MODEL_CODE = 'MODEL_ROUTING_UNKNOWN_MODEL'
+
+/**
  * Failure codes that mean a subscription source has spent its quota.
  *
  * `QUOTA` is the account's own ceiling and `KEY_QUOTA` one key's usage limit;
@@ -944,6 +957,13 @@ export class TiersAdapter extends LlmAdapter {
    * a tier lists and picking `deepseek/deepseek-v4-pro` there means the pro
    * model, not one release of it. A deployment that wants a tier to stay on an
    * exact release says so with `snapshotPolicy: 'pinned'`.
+   *
+   * Every surviving id is then checked against the inner route, configured or
+   * family-resolved alike: the OpenRouter catalog endpoint list and the pinned
+   * `pi-ai` dependency's static catalog are two publications, and a release the
+   * first lists before the second learns it dispatches nowhere. Leaving such an
+   * id in the ranking would pin a request to a `UNKNOWN_MODEL` the reroute can
+   * only answer by leaving the model the caller asked for.
    * @param settings - the whole settings value.
    * @param target - what this request asked for.
    * @param tier - the tier the decision landed on.
@@ -957,7 +977,7 @@ export class TiersAdapter extends LlmAdapter {
     signal: AbortSignal,
   ): Promise<string[]> {
     const configured = target.kind === 'fixed' ? [target.model] : [...tier.models]
-    if (settings.snapshotPolicy !== 'latest') return configured
+    if (settings.snapshotPolicy !== 'latest') return this.dispatchableConfigured(configured, target, signal)
     // Resolve exactly the ids this request ranks over — `configured`, not the
     // whole tier. A request that named one model of the tier means that model:
     // resolving `tier.models` here would hand the ranking every other family of
@@ -973,14 +993,52 @@ export class TiersAdapter extends LlmAdapter {
         'model-routing: the OpenRouter model catalog could not be read, so tiers are deciding under'
         + ' their configured model ids',
       )
-      return configured
+      return this.dispatchableConfigured(configured, target, signal)
     }
-    for (const [index, resolution] of batch.resolutions.entries()) {
-      if (resolution.resolved === resolution.configured) continue
-      if (await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)) this.announce(resolution)
-      else this.warnUndispatchable(resolution, configured[index] ?? resolution.resolved)
+    for (const resolution of batch.resolutions) {
+      if (resolution.moved && await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)) {
+        this.announce(resolution)
+      }
     }
-    return this.dispatchableModels(batch.resolutions, configured, signal)
+    return this.dispatchableModels(batch.resolutions, configured, target, signal)
+  }
+
+  /**
+   * Drop configured ids the inner route cannot dispatch, reporting each once.
+   *
+   * A fixed request that loses its only candidate this way fails here with the
+   * remedy in the message instead of failing later as a dispatch the reroute
+   * must abandon the choice for. The probe answers once per adapter lifetime,
+   * so a tier decision costs one lookup per unknown id rather than one per
+   * boundary.
+   * @param configured - the ids about to be ranked, in tier order.
+   * @param target - what this request asked for.
+   * @param signal - the request's cancellation.
+   * @returns the ids the inner route knows, in the order given.
+   */
+  private async dispatchableConfigured(
+    configured: readonly string[],
+    target: RequestedTarget,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    const ranked: string[] = []
+    for (const model of configured) {
+      if (await this.innerKnows(model, this.route.innerRoute, signal)) {
+        ranked.push(model)
+        continue
+      }
+      this.warnUndispatchableConfigured(model)
+      if (target.kind === 'fixed') {
+        throw new LlmError(
+          `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${model}" yet:`
+          + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
+          + ` for "${model}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
+          + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
+          MODEL_ROUTING_UNKNOWN_MODEL_CODE,
+        )
+      }
+    }
+    return ranked
   }
 
   /** Whether one route can dispatch one id, answered once per decision. */
@@ -1011,23 +1069,6 @@ export class TiersAdapter extends LlmAdapter {
   }
 
   /**
-   * Report an id that `latest` resolved to but the inner route cannot dispatch.
-   *
-   * One line per model, not per boundary: the same resolution recurs on every
-   * decision of every turn until a dependency bump changes it.
-   * @param resolution - the configured id and the undispatchable release it resolved to.
-   * @param configured - the id the configuration named, which the route does know.
-   */
-  private warnUndispatchable(resolution: FamilyResolution, configured: string): void {
-    this.warnOnce(
-      `inner-unknown:${resolution.resolved}`,
-      `model-routing: "${resolution.configured}" resolves to "${resolution.resolved}", which`
-      + ` the inner route "${this.route.innerRoute}" cannot dispatch, so the tier keeps "${configured}"`
-      + ' — @deepseek-ai/dsh-llm-pi-ai has not learned that release yet',
-    )
-  }
-
-  /**
    * Restrict a catalog resolution to ids the inner route can actually dispatch.
    *
    * OpenRouter publishes a release to its catalog before the pinned `pi-ai`
@@ -1036,26 +1077,65 @@ export class TiersAdapter extends LlmAdapter {
    * every endpoint of that model is equally unknown. A resolution the inner
    * route cannot serve falls back to the id the configuration named, which the
    * route knows by construction, so the tier keeps working and stays on the
-   * release it can serve until a dependency bump moves the ceiling.
+   * release it can serve until a dependency bump moves the ceiling. A fixed
+   * request has no such fallback id — it named the resolved id itself — so its
+   * undispatchable resolution fails with {@link dispatchableConfigured}'s
+   * remedy instead of ranking an id nothing can serve.
    * @param resolutions - what `latest` resolved each configured id to.
    * @param configured - the ids the configuration named, in tier order.
+   * @param target - what this request asked for.
    * @param signal - the request's cancellation.
    * @returns the ids to rank, in tier order.
    */
   private async dispatchableModels(
     resolutions: readonly FamilyResolution[],
     configured: readonly string[],
+    target: RequestedTarget,
     signal: AbortSignal,
   ): Promise<string[]> {
     const ranked: string[] = []
     for (const [index, resolution] of resolutions.entries()) {
-      const dispatchable = resolution.resolved === resolution.configured
-        || await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)
+      const dispatchable = await this.innerKnows(resolution.resolved, this.route.innerRoute, signal)
       // `resolutions` is derived one-for-one from `configured`, so the index is
       // always present; `resolved` is the total fallback if that ever changed.
-      ranked.push(dispatchable ? resolution.resolved : configured[index] ?? resolution.resolved)
+      if (dispatchable) {
+        ranked.push(resolution.resolved)
+        continue
+      }
+      const configuredId = configured[index] ?? resolution.resolved
+      if (target.kind === 'fixed' && resolution.resolved === target.model) {
+        // The fallback id IS the undispatchable id: a fixed request resolved to
+        // itself, so keeping it would rank an id the route cannot serve. The
+        // same failure as the pinned policy, so the same remedy applies.
+        throw new LlmError(
+          `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${resolution.resolved}" yet:`
+          + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
+          + ` for "${resolution.resolved}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
+          + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
+          MODEL_ROUTING_UNKNOWN_MODEL_CODE,
+        )
+      }
+      this.warnUndispatchableConfigured(resolution.resolved)
+      ranked.push(configuredId)
     }
     return ranked
+  }
+
+  /**
+   * Report a configured id the inner route cannot dispatch.
+   *
+   * One line per model, not per boundary: the same configuration recurs on
+   * every decision of every turn until a dependency bump or a `modelOverrides`
+   * entry changes it.
+   * @param model - the configured id the route does not know.
+   */
+  private warnUndispatchableConfigured(model: string): void {
+    this.warnOnce(
+      `inner-unknown-configured:${model}`,
+      `model-routing: configured model "${model}" is not dispatchable yet: the inner route`
+      + ` "${this.route.innerRoute}" (@deepseek-ai/dsh-llm-pi-ai's static catalog) has not learned`
+      + ' that id, so it ranks nowhere until a modelOverrides entry adds it or the dependency bumps',
+    )
   }
 
   /**

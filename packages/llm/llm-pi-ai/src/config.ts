@@ -408,6 +408,11 @@ const reasoningEfforts = z.dict(
 /** The fields a `models` entry and a `modelOverrides` value share; only the id's home differs. */
 const modelFields = {
   name: z.string(),
+  // No default: absent means "the installed catalog entry's protocol, then the
+  // route's `api`", which covers every catalog model and every route-level
+  // repoint. A value here is what admits a model the installed catalog does
+  // not describe onto a catalog route without naming an `api` for the route.
+  api: z.union(supportedProtocols()),
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
   // No explicit default, unlike the route's `defaultInput`: schemastery

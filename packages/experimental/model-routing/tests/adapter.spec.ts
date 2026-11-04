@@ -1238,9 +1238,9 @@ describe('TiersAdapter snapshot policy', () => {
     expect(h.events[0]).toMatchObject({ tier: 'pro', model: 'deepseek/deepseek-v4-pro' })
     expect(chunks.some(chunk => chunk.type === 'finish' && chunk.reason.kind === 'error')).toBe(false)
     expect(h.warnings).toEqual([
-      'model-routing: "deepseek/deepseek-v4-pro" resolves to "deepseek/deepseek-v4-pro-0813",'
-      + ' which the inner route "openrouter" cannot dispatch, so the tier keeps'
-      + ' "deepseek/deepseek-v4-pro" — @deepseek-ai/dsh-llm-pi-ai has not learned that release yet',
+      'model-routing: configured model "deepseek/deepseek-v4-pro-0813" is not dispatchable yet:'
+      + ' the inner route "openrouter" (@deepseek-ai/dsh-llm-pi-ai\'s static catalog) has not learned'
+      + ' that id, so it ranks nowhere until a modelOverrides entry adds it or the dependency bumps',
     ])
   })
 
@@ -1283,6 +1283,77 @@ describe('TiersAdapter snapshot policy', () => {
     await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
     expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
     expect(h.events[0]).toMatchObject({ tier: 'pro', model: 'deepseek/deepseek-v4-pro-0813' })
+  })
+
+  it('serves a request that named a brand-new release the catalog lists and the route knows', async () => {
+    // The not-broken case: a fixed request for an id that is its own family
+    // (no dated slug) and that the inner route has learned ranks and dispatches
+    // normally, never reaching the family resolution at all.
+    const h = await proTier({ policy: 'latest' })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.warnings.some(warning => warning.includes('cannot dispatch'))).toBe(false)
+  })
+
+  it('fails a fixed request naming an id the inner route has never learned, with the remedy', async () => {
+    // The reported failure: a just-published OpenRouter model (stealth/* in
+    // production) that the endpoints API serves but the pinned pi-ai catalog
+    // does not list. Its family does not move — the id is its own family — so
+    // the old dispatchability check skipped it, the ranking pinned it, and
+    // every turn failed UNKNOWN_MODEL before rerouting away to another model.
+    // The decision now refuses before ranking, with the modelOverrides remedy,
+    // and never sends a request out.
+    const h = await harness({
+      tiers: [{ ...PRO, models: ['deepseek/deepseek-v4-pro', 'deepseek/just-published'] }],
+      endpoints: { 'deepseek/deepseek-v4-pro': await endpointsOf('deepseek/deepseek-v4-pro') },
+      settings: { snapshotPolicy: 'latest' },
+      catalog: [...FAMILY, { id: 'deepseek/just-published', canonicalSlug: 'deepseek/just-published' }],
+      innerUnknown: ['openrouter:deepseek/just-published'],
+    })
+    await run(h.adapter, { model: 'deepseek/just-published' }).then(
+      () => { throw new Error('expected the model to fail') },
+      (error: unknown) => {
+        expect((error as LlmError).code).toBe('MODEL_ROUTING_UNKNOWN_MODEL')
+        expect((error as LlmError).message).toContain('cannot dispatch "deepseek/just-published" yet')
+        expect((error as LlmError).message).toContain('modelOverrides')
+      },
+    )
+    expect(h.sent).toEqual([])
+    expect(h.events).toEqual([])
+  })
+
+  it('drops a configured id the route has never learned from a tier ranking', async () => {
+    // A tier listing (not a request naming) the new id keeps working on the
+    // models it can serve: the unknown id leaves the ranking with one warning
+    // instead of pinning a turn to a UNKNOWN_MODEL. Its endpoint list is never
+    // read, and the decision records the surviving candidates only.
+    const h = await harness({
+      tiers: [{ ...PRO, models: ['deepseek/deepseek-v4-pro', 'stealth/never-heard'] }],
+      endpoints: { 'deepseek/deepseek-v4-pro': await endpointsOf('deepseek/deepseek-v4-pro') },
+      settings: { snapshotPolicy: 'latest' },
+      catalog: [...FAMILY, { id: 'stealth/never-heard', canonicalSlug: 'stealth/never-heard' }],
+      innerUnknown: ['openrouter:stealth/never-heard'],
+    })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.events[0]).toMatchObject({ tier: 'pro', model: 'deepseek/deepseek-v4-pro-0813' })
+    expect(h.warnings).toEqual([
+      'model-routing: "deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813",'
+      + ' the newest snapshot of its family',
+      'model-routing: configured model "stealth/never-heard" is not dispatchable yet: the inner route'
+      + ' "openrouter" (@deepseek-ai/dsh-llm-pi-ai\'s static catalog) has not learned that id, so it'
+      + ' ranks nowhere until a modelOverrides entry adds it or the dependency bumps',
+    ])
+  })
+
+  it('keeps a tier whole when every configured id is dispatchable', async () => {
+    // The dispatchability probe answers once per adapter lifetime and must not
+    // change what a working tier serves: the case guards the check itself
+    // against silently narrowing a healthy ranking.
+    const h = await proTier({ policy: 'latest' })
+    await run(h.adapter, { model: 'pro' })
+    expect(h.sent[0]?.options.model).toBe('deepseek/deepseek-v4-pro-0813')
+    expect(h.warnings.some(warning => warning.includes('not dispatchable'))).toBe(false)
   })
 })
 

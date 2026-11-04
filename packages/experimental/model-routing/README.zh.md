@@ -76,7 +76,7 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 
 在 `latest` 下，一个指名这些 id 本身的请求同样会被解析，因为模型选择器提供的正是各 tier 列出的 id，在那里选择 `deepseek/deepseek-v4-pro` 指的是 pro 这个模型，而不是它的某一个版本。同一个 tier 的两个配置 id 可能解析到同一个版本，而只有该版本参与排序。每次移动在日志中报告一次——`"deepseek/deepseek-v4-pro" now resolves to "deepseek/deepseek-v4-pro-0813"`——而每个 `model-routing/decision` 事件都记录真正作答的版本。目录读不出来不算路由失败：该 tier 按其配置 id 决策，并由日志说明目录不可用。
 
-解析出的版本只有在内部路由能够调度它时才会被采用。OpenRouter 会在其目录中发布一个版本，早于被固定版本的 `pi-ai` 依赖得知它；而对一个内部路由从未听说过的 id 的请求，会在每一轮都以 `UNKNOWN_MODEL` 失败——这是一个没有任何 reroute 会覆盖的错误，因为该版本的每一个 endpoint 都同样未知。解析出的版本尚不可调度的 tier 会停留在其配置所指名的 id 上，日志报告的是它够不到的那个版本，而不是它做不出的那次移动。
+每个候选 id 在排序之前都会对照内部路由检查一遍，配置指名的 id 与家族解析出的 id 一视同仁。OpenRouter 向其 endpoints API 发布一个模型的时间，早于被固定版本的 `pi-ai` 依赖的静态目录得知它；而对一个内部路由从未听说过的 id 的请求，会在每一轮都以 `UNKNOWN_MODEL` 失败——这是一个没有任何 reroute 会覆盖的错误，因为该版本的每一个 endpoint 都同样未知。候选尚不可调度的 tier 只对它能服务的模型排序，并对不能服务的那个报告一次（`model-routing: configured model "…" is not dispatchable yet …`）；指名这个尚不可调度 id 本身的请求则以 `MODEL_ROUTING_UNKNOWN_MODEL` 失败，消息中写明补救办法：在 `llm-pi-ai` 的 `openrouter` provider 下为该 id 添加一条 `modelOverrides` 条目并写明其 `api`（OpenRouter 的 chat 模型用 `openai-completions`，Anthropic 协议的条目用 `anthropic-messages`）——这样立刻就能服务这个全新 id，等到某次依赖升级让目录认识同一个 id 后，该条目退化为普通的 override，可以删掉。
 
 OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们在 chat-completions 路径上会重定向，但 `/endpoints` 对它们返回空列表，因此指名它们的 tier 没有任何可排序的东西。
 
