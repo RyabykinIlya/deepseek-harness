@@ -128,11 +128,11 @@ async function prepareRequestImages(
 }
 
 /** Convert a projected declaration without its harness-owned activation marker. */
-function piTool(tool: NonNullable<GenerateOptions['tools']>[number]): PiTool {
+function piTool(tool: NonNullable<GenerateOptions<string>['tools']>[number]): PiTool {
   return { name: tool.name, description: tool.description, parameters: tool.parameters }
 }
 
-function toolsOf(options: GenerateOptions): PiTool[] | undefined {
+function toolsOf(options: GenerateOptions<string>): PiTool[] | undefined {
   return options.tools?.filter(tool => !tool.deferLoading).map(piTool)
 }
 
@@ -145,7 +145,7 @@ interface SystemPromptSplit {
 }
 
 /** Combine request-level text and leading system history into the initial prompt. */
-function splitSystemPrompt(options: GenerateOptions): SystemPromptSplit {
+function splitSystemPrompt(options: GenerateOptions<string>): SystemPromptSplit {
   const text = [options.system]
   let end = 0
   for (const message of options.messages) {
@@ -158,7 +158,7 @@ function splitSystemPrompt(options: GenerateOptions): SystemPromptSplit {
 }
 
 /** Assemble the request-level pi-ai context envelope shared by both conversion paths. */
-function piContext(systemPrompt: string | undefined, options: GenerateOptions, messages: PiMessage[]): PiContext {
+function piContext(systemPrompt: string | undefined, options: GenerateOptions<string>, messages: PiMessage[]): PiContext {
   const tools = toolsOf(options)
   return {
     ...systemPrompt !== undefined ? { systemPrompt } : {},
@@ -168,7 +168,7 @@ function piContext(systemPrompt: string | undefined, options: GenerateOptions, m
 }
 
 /** Keep one developer event in one system update, resolving its projected tool declarations. */
-function appendDeveloper(message: Extract<Message, { role: 'developer' }>, options: GenerateOptions, messages: PiMessage[]): void {
+function appendDeveloper(message: Extract<Message, { role: 'developer' }>, options: GenerateOptions<string>, messages: PiMessage[]): void {
   const content: TextContent[] = []
   const toolsAdded: PiTool[] = []
   const toolsRemoved: NonNullable<SystemMessage['toolsRemoved']> = []
@@ -216,7 +216,7 @@ function appendAssistant(
 /** Append shared system, developer, and assistant roles; true when consumed. */
 function appendSharedHistory(
   message: RequestMessage,
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   messages: PiMessage[],
   toolNames: Map<ToolCallId, string>,
   supportsMidConvoSystemMessages: boolean,
@@ -246,7 +246,7 @@ function appendSharedHistory(
 }
 
 function textOnlyContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   supportsMidConvoSystemMessages: boolean,
   onReplayDegrade?: (reason: string) => void,
 ): PiContext {
@@ -313,7 +313,7 @@ export function requestImageTarget(ref: ImageAttachmentRef, budget: PiImageReque
  * @throws {LlmError} `UNSUPPORTED_CONTENT` for images in any history role, including a leading system message.
  */
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images?: undefined,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages?: boolean,
@@ -333,13 +333,13 @@ export function toPiContext(
  * @returns the asynchronously resolved pi-ai context.
  */
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages?: boolean,
 ): Promise<PiContext>
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images?: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages = false,
@@ -350,7 +350,7 @@ export function toPiContext(
 }
 
 async function toPiContextWithImages(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images: PiImageRequestContext,
   supportsMidConvoSystemMessages: boolean,
   onReplayDegrade?: (reason: string) => void,

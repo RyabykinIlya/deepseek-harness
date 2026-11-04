@@ -25,7 +25,7 @@ Give every background Thread its own self-contained local clone, so a Thread's c
 <a id="use-this-package"></a>
 ## Use this package
 
-Load it as a Host service; it registers `ctx.worktrees` and validates its configuration once, at load.
+Load it as a Host service; it registers `ctx.threadWorktrees` and validates its configuration once, at load.
 
 ```yaml
 - name: '@deepseek-ai/dsh-worktree-manager'
@@ -62,7 +62,7 @@ import type { WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
 
 declare const ctx: Context
 
-ctx.worktrees.sessionExists = async (threadId: string) => (await ctx.sessionPersistence.stat(brandString<SessionId>(threadId))) !== undefined
+ctx.threadWorktrees.sessionExists = async (threadId: string) => (await ctx.sessionPersistence.stat(brandString<SessionId>(threadId))) !== undefined
 ```
 
 `dsh-subagent-thread-worktree` installs this probe itself and removes it when it is disposed.

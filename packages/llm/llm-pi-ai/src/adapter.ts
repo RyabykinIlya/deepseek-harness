@@ -496,7 +496,7 @@ export class PiAiAdapter extends LlmAdapter {
     })
   }
 
-  stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+  stream(options: GenerateOptions<string>): AsyncIterable<StreamChunk> {
     return this.streamWithSnapshot(options, this.current(), {})
   }
 
@@ -512,12 +512,12 @@ export class PiAiAdapter extends LlmAdapter {
    * @param dispatch - per-call options.
    * @returns the chunk stream of one provider attempt.
    */
-  dispatch(options: GenerateOptions, dispatch: PiAiDispatchOptions): AsyncIterable<StreamChunk> {
+  dispatch(options: GenerateOptions<string>, dispatch: PiAiDispatchOptions): AsyncIterable<StreamChunk> {
     return this.streamWithSnapshot(options, this.current(), dispatch)
   }
 
   private async * streamWithSnapshot(
-    options: GenerateOptions,
+    options: GenerateOptions<string>,
     snapshot: PiAiSnapshot,
     dispatch: PiAiDispatchOptions,
   ): AsyncIterable<StreamChunk> {
@@ -663,7 +663,7 @@ export class PiAiAdapter extends LlmAdapter {
    * @returns this attempt's chunks, ending with a `finish` when the provider produced one.
    */
   private async * attemptStream(
-    options: GenerateOptions,
+    options: GenerateOptions<string>,
     snapshot: PiAiSnapshot,
     dispatch: PiAiDispatchOptions,
     profile: ResolvedPiAiProviderProfile,

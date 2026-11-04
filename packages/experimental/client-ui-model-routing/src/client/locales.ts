@@ -314,7 +314,7 @@ export const fr: LocaleDictOf<typeof NS> = {
   'unknown.trusted': 'faire confiance aux fournisseurs listés',
   'unknown.accept': 'accepter',
   trustedUnknownProviders: 'Fournisseurs de quantification inconnue de confiance',
-  judgeEnabled: "Choisir le palier automatiquement",
+  judgeEnabled: 'Choisir le palier automatiquement',
   defaultTier: 'Palier par défaut',
   cacheIdleMinutes: 'Redécider après inactivité (minutes)',
   freeForSubagents: 'Autoriser les endpoints gratuits dans les sous-agents',

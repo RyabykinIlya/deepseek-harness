@@ -832,8 +832,7 @@
     "612bd4047fa63f957ecb33d7fc7544c489301c3c0592e9a42dafe2cb85311165": 1
   },
   "packages/core/session/src/index.ts": {
-    "487a58a6269113d4cbfd31915a9abdbf016e672be9a2af2c6d5d57b087d0b011": 1,
-    "617d5fb3379f8603568546bd83b208f372616fda55fa23902ffacca293d1e841": 1
+    "487a58a6269113d4cbfd31915a9abdbf016e672be9a2af2c6d5d57b087d0b011": 1
   },
   "packages/core/session/tests/canonical-envelopes.spec.ts": {
     "23574fdfdba1d085e9d7aa52f76f723732597efdad04ca6b6742c3f5131376d6": 1,
@@ -1092,6 +1091,9 @@
   "packages/experimental/inspector/tests/plugin.client.spec.ts": {
     "148509a0193d8d3c16a606a15f5145770f454c2ebc70dd0ccaa51fc1a0f43e99": 1,
     "2066ad746457f15b6737d62124c4ec81f2140fc3fa425187eac8e3b1c3b6ab0b": 8
+  },
+  "packages/experimental/model-routing/tests/plugin.spec.ts": {
+    "c3b33d0593b0714c155b9b1891a416e1b829d98a33339c1806e6b1870e4c7ec9": 1
   },
   "packages/experimental/ptc-runtime-python/src/index.ts": {
     "b121cee14635b00f7891217013e4682493cf96f676710be60722fdf8b862aea3": 1

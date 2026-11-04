@@ -480,7 +480,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-subagent-thread-worktree` | yes | Worktree-isolated continuable subagent backend: every child runs in its own git worktree |
 | `@deepseek-ai/dsh-tool-subagent` | yes | Model-facing subagent delegation tool over the ctx.subagents seam |
 | `@deepseek-ai/dsh-tool-subagent-control` | no | Shared messaging, interruption, and child discovery tools for subagents |
-| `@deepseek-ai/dsh-worktree-manager` | yes | Host service that manages git worktrees for background Threads (ctx.worktrees) |
+| `@deepseek-ai/dsh-worktree-manager` | yes | Host service that manages git worktrees for background Threads (ctx.threadWorktrees) |
 
 ## subprocess
 

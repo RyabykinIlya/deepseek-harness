@@ -108,7 +108,7 @@ async function harness(
   await ctx.plugin(SubagentSpawn, { providerName: 'thread' })
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   const worktrees = new FakeWorktrees()
-  if (options.worktrees !== false) ctx.provide('worktrees', worktrees as never)
+  if (options.worktrees !== false) ctx.provide('threadWorktrees', worktrees as never)
   const threads = await ctx.plugin(ThreadsService, {
     providerName: 'thread', noteMaxBytes: 600, archiveStopTimeoutMs: 30_000, projectPresets: ['project'],
     libraryMaxAttachments: 200, libraryMaxPresented: 200, libraryMaxThreads: 50, libraryMaxFiles: 100,

@@ -4071,7 +4071,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-subagent-thread-worktree`
 
-- `inject`: `subagents` · `worktrees`
+- `inject`: `subagents` · `threadWorktrees`
 - `refs`: [`WorktreeBasePolicy`](../packages/subagent/worktree-manager/src/index.ts)
 - `source`: [`packages/subagent/subagent-thread-worktree/src/index.ts:63`](../packages/subagent/subagent-thread-worktree/src/index.ts)
 

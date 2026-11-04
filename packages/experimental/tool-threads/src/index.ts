@@ -430,7 +430,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       if (args.path !== undefined) assertRepoRelative(args.path)
       const rows = readCallerThreads(ctx, 'thread_diff', caller.session).rows
-      const worktrees = ctx.get('worktrees')
+      const worktrees = ctx.get('threadWorktrees')
       if (args.thread_id === undefined) {
         if (worktrees === undefined) {
           throw new Error('thread_diff cannot read Thread changes: @deepseek-ai/dsh-worktree-manager is not loaded')

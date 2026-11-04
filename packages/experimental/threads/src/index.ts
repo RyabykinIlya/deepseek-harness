@@ -176,7 +176,7 @@ export class ThreadsService extends TypertRemoteService {
     if (this.stateOf(project.session)?.threads.some(thread => thread.threadId === threadId) !== true) {
       throw new RemoteError('threads/not-found', `Unknown thread: ${threadId}`, { threadId })
     }
-    const worktrees = this.ctx.get('worktrees')
+    const worktrees = this.ctx.get('threadWorktrees')
     if (worktrees === undefined) throw new Error('threads: archiving a thread requires the worktrees service')
     const force = options?.force === true
     const record = await worktrees.get(threadId)
@@ -268,7 +268,7 @@ export class ThreadsService extends TypertRemoteService {
   }
 
   private async liveChanges(thread: LoggedThread): Promise<LibraryThreadChanges | undefined> {
-    const worktrees = this.ctx.get('worktrees')
+    const worktrees = this.ctx.get('threadWorktrees')
     const record = await worktrees?.get(thread.threadId)
     if (worktrees === undefined || record === undefined || record.state !== 'ready') return undefined
     const bounds = { maxCommits: 0, maxFiles: this.config.libraryMaxFiles }

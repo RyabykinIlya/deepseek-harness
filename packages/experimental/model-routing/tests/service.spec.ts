@@ -11,7 +11,6 @@ import { fileURLToPath } from 'node:url'
 import ModelRoutingService from '../src/index.ts'
 import type { Config } from '../src/config.ts'
 import type { RoutingDiagnosticsRecord } from '../src/types.ts'
-import type { ModelRoutingService as ModelRoutingServiceClass } from '../src/service.ts'
 
 const FLASH = {
   name: 'flash',
@@ -79,8 +78,18 @@ async function service(keyBody?: unknown, config: Record<string, unknown> = {}) 
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   ctx.llm.registerAdapter(['openrouter'], new EmptyAdapter())
-  const fiber = await ctx.plugin(ModelRoutingService, { tiers: [PRO, FLASH], ...config } as never)
-  return { ctx, fiber, service: ctx.get('modelRouting') as ModelRoutingServiceClass, fetch: fetchStub }
+  // rc.11 keeps `fiber.config` as the raw candidate; volatile writes target the
+  // resolved values, so capture them the way the plugin-market suite does.
+  let resolvedConfig: Config | undefined
+  class CapturingRouting extends ModelRoutingService {
+    constructor(inner: Context, resolved: Config) {
+      super(inner, resolved)
+      resolvedConfig = resolved
+    }
+  }
+  await ctx.plugin(CapturingRouting, { tiers: [PRO, FLASH], ...config } as never)
+  if (resolvedConfig === undefined) throw new Error('model-routing service did not mount')
+  return { ctx, config: resolvedConfig, service: ctx.get('modelRouting') as ModelRoutingService, fetch: fetchStub }
 }
 
 beforeEach(() => {
@@ -178,8 +187,7 @@ describe('Remote quote', () => {
     // real request would now throw, and `quote` must throw too, or the card
     // keeps showing prices for a tier that cannot actually be dispatched.
     const { updateVolatile, createVolatile } = await import('../../../../vendor/cosmokit/src/volatile.ts')
-    const { service: routing, fiber } = await service()
-    const config = fiber.config as Config
+    const { service: routing, config } = await service()
     updateVolatile(config.trustedUnknownProviders, createVolatile([]))
     await expect(routing.quote({ tier: 'flash', models: ['deepseek/deepseek-v4-flash'] }))
       .rejects.toMatchObject({ code: 'model-routing/invalid-settings' })

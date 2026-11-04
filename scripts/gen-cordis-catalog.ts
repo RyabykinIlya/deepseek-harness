@@ -121,6 +121,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   sessionProjections: 'session-projection.md',
   workingDirectory: 'working-directory.md',
   worktrees: 'worktrees.md',
+  threadWorktrees: 'threads.md',
   forge: 'forge.md',
   forgePanel: 'forge.md',
   forgeSession: 'forge.md',

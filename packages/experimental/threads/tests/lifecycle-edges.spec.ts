@@ -209,7 +209,7 @@ async function bench(options: {
   const agents = new FakeAgents()
   ctx.provide('agents', agents as never)
   const worktrees = new FakeWorktrees()
-  if (options.worktrees !== false) ctx.provide('worktrees', worktrees as never)
+  if (options.worktrees !== false) ctx.provide('threadWorktrees', worktrees as never)
   const parent = ctx.sessions.create(PROJECT, { meta: { cwd: '/repo' } })
   const child = ctx.sessions.create(CHILD, {
     meta: { cwd: '/wt/child-1', ...options.orphanChild === true ? {} : { parentSession: PROJECT } },
@@ -495,7 +495,7 @@ describe('ThreadsService.archive containment', () => {
     ctx.provide('agents', agents as never)
     const worktrees = new FakeWorktrees()
     worktrees.present = options.ownsWorktree ?? true
-    ctx.provide('worktrees', worktrees as never)
+    ctx.provide('threadWorktrees', worktrees as never)
     if (options.subagents === true) ctx.provide('subagents', { interrupt: (): void => {} } as never)
     const threads = await ctx.plugin(ThreadsService, {
       ...THREADS_CONFIG,

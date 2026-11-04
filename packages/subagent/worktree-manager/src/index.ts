@@ -412,7 +412,7 @@ export class WorktreeService extends Service {
   private sweepQueue: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, config: Config) {
-    super(ctx, 'worktrees')
+    super(ctx, 'threadWorktrees')
     // schemastery (static Config) already filled the defaulted fields; the casts
     // record that runtime fact for fields whose interface form is optional.
     this.repoRootResolution = config.repoRootResolution ?? 'explicit'

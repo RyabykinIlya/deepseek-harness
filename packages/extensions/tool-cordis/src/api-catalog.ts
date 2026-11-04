@@ -4124,6 +4124,111 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'threadWorktrees',
+    summary: 'The worktree service (`ctx.threadWorktrees`).',
+    description: 'The worktree service (`ctx.threadWorktrees`).\n\nOne worktree per Thread, placed under a configured root that survives restarts. The service owns creation, the durable intent log, explicit removal, status, and the startup reconciliation sweep; it owns nothing about sessions, which the continuation manager keeps.',
+    methods: [
+      {
+        signature: 'readonly worktreeRoot: string',
+        description: 'Absolute, checkout-guarded root holding the sidecar and every managed worktree.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly repoRootResolution: RepoRootResolution',
+        description: 'How an empty `spec.repoRoot` is resolved.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly base: WorktreeBasePolicy',
+        description: 'Base policy a spec falls back to when it names none; see Config.base.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly pruneOnStart: boolean',
+        description: 'Whether the startup sweep runs on load.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly maxWorktreesPerRepo: number',
+        description: 'Maximum active worktrees per repository.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly adoptionGraceMs: number',
+        description: 'Orphan grace period in milliseconds.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly registryLocking: WorktreeRegistryLocking',
+        description: 'Registry lock settings shared by every process on this root.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly parentCwd: string',
+        description: 'The launch checkout, captured at load. `repoRootResolution: \'parent-cwd\'` resolves empty specs here, and the `worktreeRoot` guard measures containment against it.',
+        parameters: [],
+      },
+      {
+        signature: 'sessionExists: SessionExistsProbe | undefined',
+        description: '"Does a persisted session still exist for this Thread?".\n\nSession persistence belongs to the continuation manager, so this service never guesses: install the predicate (for example against `ctx.sessionPersistence`) and WorktreeService.reconcile will sweep Threads whose session is gone and whose record is older than `adoptionGraceMs`. Left unset, a record is NEVER called an orphan on session grounds — the sweep then only repairs records whose worktree is missing from disk, which needs no knowledge of sessions at all.\n\nIt is a mutable property rather than a config field because a function cannot arrive through YAML; assign it right after mounting the service.',
+        parameters: [],
+      },
+      {
+        signature: 'create(spec: WorktreeSpec, signal: AbortSignal): Promise<WorktreeRecord>',
+        description: 'Create (or re-attach to) the worktree for one Thread.\n\nThe call is idempotent by `threadId`: a second `create` for a Thread whose worktree still exists returns the SAME record without a second clone. An abort is honored at every boundary — before any git process is spawned, and again after the checkout resolves — and either way the reserved intent is rolled back by deleting the half-created clone. Each call first runs WorktreeService.reconcile, so abandoned worktrees do not hold limit slots. The commit the Thread starts from is chosen by the base policy — `spec.base`, else the configured `base` — and `head-with-uncommitted` snapshots the parent\'s tracked uncommitted changes with `git stash create`, which leaves the parent\'s working tree untouched.',
+        parameters: [{ name: 'spec', description: 'the repository, Thread, base ref and policy, and optional branch or `detached`.' }, { name: 'signal', description: 'aborts the attempt; the worktree is rolled back, never left half-created.' }],
+        returns: 'the `ready` record whose `path` may be used as a session cwd.',
+      },
+      {
+        signature: 'async remove(record: WorktreeRecord, opts: WorktreeRemoveOptions = {}): Promise<void>',
+        description: 'Remove a Thread\'s worktree.\n\nRemoval is explicit and never automatic: a settled Thread\'s worktree holds its result, and deleting a turn\'s output silently is not acceptable. The order is NOT the mirror of creation — the durable record goes to `removing` first, then the branch import and the directory deletion, then `removed` — so a failed removal leaves a `removing` tombstone a later sweep can finish, instead of claiming a deletion that never happened.',
+        parameters: [{ name: 'record', description: 'the record to remove (may come from an earlier session).' }, { name: 'opts', description: '`force` discards local modifications; without it a dirty worktree is refused.' }],
+      },
+      {
+        signature: 'async list(repoRoot: string): Promise<WorktreeRecord[]>',
+        description: 'List the active worktrees of one repository.',
+        parameters: [{ name: 'repoRoot', description: 'any path inside the repository.' }],
+        returns: 'records in a live state, ordered by `threadId`; terminal records are history, not worktrees.',
+      },
+      {
+        signature: 'async get(threadId: string): Promise<WorktreeRecord | undefined>',
+        description: 'Latest record of a Thread in any state.',
+        parameters: [{ name: 'threadId', description: 'the Thread key.' }],
+        returns: 'the folded record (terminal states included), or `undefined` when the Thread never had one.',
+      },
+      {
+        signature: 'async status(record: WorktreeRecord): Promise<WorktreeStatus>',
+        description: 'Report whether a worktree is clean and how far it is ahead of its base.\n\nA record whose path is gone throws `WORKTREE_NOT_FOUND`. It NEVER reports `clean: true` for a missing directory: "nothing to report" and "nothing wrong" are different facts, and conflating them would let a crashed Thread look finished.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }],
+        returns: '`{ clean, changed, commitsAhead }` from `git status --porcelain` and `git rev-list --count`.',
+      },
+      {
+        signature: 'async changes(record: WorktreeRecord, opts: WorktreeChangesOptions): Promise<WorktreeChanges>',
+        description: 'Summarize the work a Thread did: commits and files since its base plus the uncommitted count.\n\nEvery list is bounded by the caller\'s limits; totals count what was not listed. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }, { name: 'opts', description: 'non-negative integer `maxCommits` and `maxFiles`.' }],
+        returns: 'the {@link WorktreeChanges} of `baseSha..HEAD`.',
+      },
+      {
+        signature: 'async mergeCheck(record: WorktreeRecord, options: WorktreeMergeCheckOptions, maxConflicts: number): Promise<WorktreeMergeCheck>',
+        description: 'Predict whether merging the worktree\'s HEAD into `target` would conflict.\n\n`target` is resolved in the main checkout (`repoRoot`), so `HEAD` names the main checkout\'s current commit and a branch name may be another Thread\'s branch, served from that Thread\'s clone. `merge-tree` compares two commits of one object store — the worktree\'s own clone — so a target commit the clone has not seen is fetched in first; that writes only objects and `FETCH_HEAD`, never a ref, index entry, or file. Uncommitted edits in either checkout are not part of the prediction. Same `WORKTREE_NOT_FOUND` rule as WorktreeService.status.',
+        parameters: [{ name: 'record', description: 'the worktree whose HEAD would be merged.' }, { name: 'options', description: 'the target ref.' }, { name: 'maxConflicts', description: 'non-negative bound on the listed conflicting paths.' }],
+        returns: 'the predicted result, or `{ supported: false }` when git lacks `merge-tree --write-tree`.',
+      },
+      {
+        signature: 'async filePatch(record: WorktreeRecord, path: string, maxBytes: number): Promise<{ patch: string; truncated: boolean }>',
+        description: 'Committed diff `baseSha..HEAD` of one file, cut at a byte bound.\n\nUncommitted edits are not included. The cut never splits a multibyte character, so the returned patch may be shorter than `maxBytes`; git is stopped as soon as the bound is exceeded.',
+        parameters: [{ name: 'record', description: 'the worktree to inspect.' }, { name: 'path', description: 'repository-relative path; absolute paths and `..` segments are rejected.' }, { name: 'maxBytes', description: 'non-negative byte bound of the returned patch.' }],
+        returns: 'the patch text and whether it was truncated.',
+      },
+      {
+        signature: 'async reconcile(): Promise<WorktreeRecord[]>',
+        description: 'Sweep records that no longer describe a live Thread.\n\nTwo independent rules, both of which only ever REMOVE worktrees that git already owns: 1. a `reserved`/`ready` record whose path is missing from disk — a crash between the intent write and the add; 2. a `reserved`/`ready` record whose Thread has no persisted session, judged by WorktreeService.sessionExists (skipped when no probe is installed, because session existence is not this service\'s knowledge) and whose record is older than `adoptionGraceMs`.\n\nIn-flight creations of this process are never swept. Each orphan is marked `orphaned`, deleted from disk (and its branch imported into the parent where one exists), and settled to `removed` (or `rolled-back` when nothing was ever on disk).',
+        parameters: [],
+        returns: 'the records classified as orphans, in their `orphaned` state.',
+      },
+    ],
+  },
+  {
     key: 'timer',
     summary: 'Disposable timer helpers mixed into Cordis contexts.',
     description: 'Disposable timer helpers mixed into Cordis contexts.',
@@ -8099,6 +8204,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
   {
+    name: 'RepoRootResolution',
+    declaration: 'export type RepoRootResolution = \'explicit\' | \'parent-cwd\';',
+  },
+  {
     name: 'RequestContext',
     declaration: 'export interface RequestContext {\n    provider: string;\n    model: string;\n    contextWindow?: number;\n    systemPromptUpdate?: SystemPromptUpdate;\n}',
   },
@@ -8557,6 +8666,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionEventWindow',
     declaration: 'export interface SessionEventWindow {\n    session: SessionHeader;\n    inheritedEventCount: SessionLogOffset;\n    target: SessionEvent;\n    events: SessionEvent[];\n    startSeq: SessionSeq;\n    endSeq: SessionSeq;\n}',
+  },
+  {
+    name: 'SessionExistsProbe',
+    declaration: 'export type SessionExistsProbe = (threadId: string) => boolean | Promise<boolean>;',
   },
   {
     name: 'SessionFeedbackRecordRequest',
@@ -10453,6 +10566,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceView',
     declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'WorktreeBasePolicy',
+    declaration: 'export type WorktreeBasePolicy = \'head\' | \'head-with-uncommitted\';',
+  },
+  {
+    name: 'WorktreeChanges',
+    declaration: 'export interface WorktreeChanges {\n    readonly baseSha: string;\n    readonly headSha: string;\n    readonly commits: readonly {\n        readonly sha: string;\n        readonly subject: string;\n    }[];\n    readonly commitsTotal: number;\n    readonly files: readonly WorktreeFileChange[];\n    readonly filesTotal: number;\n    readonly uncommitted: number;\n}',
+  },
+  {
+    name: 'WorktreeChangesOptions',
+    declaration: 'export interface WorktreeChangesOptions {\n    readonly maxCommits: number;\n    readonly maxFiles: number;\n}',
+  },
+  {
+    name: 'WorktreeFileChange',
+    declaration: 'export interface WorktreeFileChange {\n    readonly path: string;\n    readonly added?: number;\n    readonly removed?: number;\n    readonly binary?: boolean;\n}',
+  },
+  {
+    name: 'WorktreeMergeCheck',
+    declaration: 'export type WorktreeMergeCheck = {\n    readonly supported: false;\n} | {\n    readonly supported: true;\n    readonly targetSha: string;\n    readonly headSha: string;\n    readonly clean: boolean;\n    readonly conflicts: readonly string[];\n    readonly conflictsTotal: number;\n};',
+  },
+  {
+    name: 'WorktreeMergeCheckOptions',
+    declaration: 'export interface WorktreeMergeCheckOptions {\n    readonly target: string;\n}',
+  },
+  {
+    name: 'WorktreeRegistryLocking',
+    declaration: 'export interface WorktreeRegistryLocking {\n    readonly timeoutMs: number;\n    readonly retryIntervalMs: number;\n    readonly staleMs: number;\n}',
+  },
+  {
+    name: 'WorktreeRemoveOptions',
+    declaration: 'export interface WorktreeRemoveOptions {\n    readonly force?: boolean;\n}',
+  },
+  {
+    name: 'WorktreeSpec',
+    declaration: 'export interface WorktreeSpec {\n    readonly repoRoot: string;\n    readonly threadId: string;\n    readonly baseRef: string;\n    readonly detached?: boolean;\n    readonly base?: WorktreeBasePolicy;\n    readonly branch?: string;\n}',
+  },
+  {
+    name: 'WorktreeStatus',
+    declaration: 'export interface WorktreeStatus {\n    readonly clean: boolean;\n    readonly changed: number;\n    readonly commitsAhead: number;\n}',
   },
 ]
 

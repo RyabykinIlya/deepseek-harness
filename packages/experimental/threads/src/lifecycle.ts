@@ -75,7 +75,7 @@ export function installThreadLifecycle(ctx: Context, options: ThreadLifecycleOpt
     if (registry.stateOf(parent.session).threads.some(thread => thread.threadId === threadId)) return
     // The child's own descriptor carries the creation label the provider froze.
     const label = ctx.get('sessionProjections')?.snapshot(child.session, ['subagent']).values.subagent?.label ?? threadId
-    const record = await ctx.get('worktrees')?.get(threadId)
+    const record = await ctx.get('threadWorktrees')?.get(threadId)
     // The Project may have unloaded or archived while the record was read.
     const already = registry.stateOf(parent.session).threads
       .some(thread => thread.threadId === threadId)
@@ -139,7 +139,7 @@ export function installThreadLifecycle(ctx: Context, options: ThreadLifecycleOpt
   })
 
   const reportWorktree = async (parent: Agent, threadId: ThreadId): Promise<void> => {
-    const worktrees = ctx.get('worktrees')
+    const worktrees = ctx.get('threadWorktrees')
     if (worktrees === undefined) return
     const record = await worktrees.get(threadId)
     if (record === undefined || record.state !== 'ready') return
