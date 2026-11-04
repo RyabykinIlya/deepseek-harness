@@ -27,7 +27,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { MenuOpenState, WorkspaceBrowserProps } from '../contract/slots.ts'
+import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode, ThreadNode } from '../tree.ts'
 import css from './Rows.module.css'
 

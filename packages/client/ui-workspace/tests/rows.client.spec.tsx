@@ -10,6 +10,7 @@ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts
 import { HoverCardGroup, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import type { ThreadRowActionOwnerProps } from '../src/client/contract/slots.ts'
 import type { RowDragProps } from '../src/client/rows/Rows.tsx'
 import {
   ProjectRowItem as ProjectRowItemComponent, SearchResultItem, SessionNodeItem as SessionNodeItemComponent,
@@ -29,11 +30,11 @@ const tEn = makeTranslate(en, commonEn) as never
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 
-/** The row lists and child seats a Session row or a nested Thread row renders. */
+/** The row lists and child seats a Session row renders. */
 type RowSlotName =
+  | 'sidebar.workspaces.thread.row.action'
   | 'sidebar.workspaces.session.menu.item'
   | 'sidebar.workspaces.session.row.action'
-  | 'sidebar.workspaces.thread.row.action'
   | 'sidebar.session.row.trailing'
   | 'sidebar.session.row.leading'
   | 'sidebar.session.row.hover'
@@ -43,7 +44,11 @@ type ProjectRowItemProps = ComponentProps<typeof ProjectRowItemComponent>
 
 const renderNoRowEntries: RowRenderSlot = () => null
 
-/** Browser double-click: the second press carries detail 2 and must not disarm. */
+// Direct row specs use the real required Slot share, empty unless the case supplies entries.
+/**
+ * Browser double-click: the second press carries detail 2 and must not disarm.
+ * @param el - the double-clicked element.
+ */
 function realDoubleClick(el: Element): void {
   fireEvent.mouseDown(el, { detail: 1 }); fireEvent.mouseUp(el, { detail: 1 }); fireEvent.click(el, { detail: 1 })
   fireEvent.mouseDown(el, { detail: 2 }); fireEvent.mouseUp(el, { detail: 2 }); fireEvent.click(el, { detail: 2 })
@@ -58,6 +63,7 @@ function SessionNodeItem({ renderSlot = renderNoRowEntries, onRenameRequest = ()
     useContextMenu={props.useContextMenu ?? contextMenuHook((target, point) => { if (target.kind === 'session') openSessionMenu(target.value.sessionId, target.value.displayTitle, point) })} openSessionMenu={openSessionMenu} useContextMenuTarget={useContextMenuTarget} useSessionAccess={useSessionAccess} />
 }
 
+// Direct header specs hold every access answer unless the case refuses one.
 function ProjectRowItem({
   useRemoteAccess = allowAllAccess.useRemoteAccess, useWorkspaceAccess = allowAllAccess.useWorkspaceAccess,
   openWorkspaceMenu = vi.fn(), useContextMenuTarget = select => select(null), ...props
@@ -75,30 +81,70 @@ function stubRect(row: HTMLElement): void {
   })
 }
 
-function workspace(name: string, over: Partial<GroupNode> = {}): GroupNode {
+function dragProps(overrides: Partial<RowDragProps> = {}): RowDragProps {
   return {
-    key: wid(name), title: name, isCurrent: false, isBlank: false, isArchived: false,
-    sessions: [], ...over,
+    start: vi.fn(), active: false, marker: null,
+    hover: vi.fn(), drop: vi.fn(), end: vi.fn(),
+    ...overrides,
   }
 }
 
-function sessionNode(over: Partial<SessionNode> = {}): SessionNode {
-  return {
-    id: sid('session'), title: 'Session', blank: false, running: false,
-    runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
-    threads: [],
-    ...over,
+/** Install the async browser clipboard and restore its prior host shape. */
+function installClipboard(writeText: (text: string) => Promise<void>): () => void {
+  const prior = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  })
+  return () => {
+    if (prior === undefined) Reflect.deleteProperty(navigator, 'clipboard')
+    else Object.defineProperty(navigator, 'clipboard', prior)
   }
 }
 
-function projectSessionNode(over: Partial<SessionNode> = {}): SessionNode {
-  return {
-    id: sid('project'), title: 'Project', blank: false, running: false,
-    runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
-    threads: [],
-    ...over,
-  }
-}
+describe('Workspace and Session hover handoff', () => {
+  it.each(['workspace', 'session'] as const)('shares the first %s dwell across mixed rows and resets on list exit', (first) => {
+    vi.useFakeTimers()
+    try {
+      const workspace = (key: string): GroupNode => ({
+        key, workspaceId: wid(key), cwd: `/projects/${key}`, createdAt: 0, label: key,
+        sessionCount: 0, expanded: true, containsCurrent: false, sessions: [],
+      })
+      const session: SessionNode = {
+        id: sid('session'), title: 'Session', blank: false, running: false,
+        runningSubagentCount: 0, completed: false, updatedAt: 0, pinned: false, archived: false,
+      }
+      render(<HoverCardGroup>
+        <ProjectRowItem group={workspace('Workspace A')} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />
+        <SessionNodeItem node={session} currentId={undefined} now={0} onOpen={vi.fn()} t={t} />
+        <ProjectRowItem group={workspace('Workspace B')} onToggle={vi.fn()} onCreate={vi.fn()} t={t} />
+      </HoverCardGroup>)
+      const a = { anchor: screen.getByText('Workspace A'), copy: '/projects/Workspace A' }
+      const b = { anchor: screen.getByText('Workspace B'), copy: '/projects/Workspace B' }
+      const s = { anchor: screen.getByText('Session'), copy: 'Session' }
+      // jsdom lacks PointerEvent; MouseEvent carries physical relatedTarget across row wrappers.
+      const move = (from: Element, to: Element): void => {
+        fireEvent(from, new MouseEvent('pointerout', { bubbles: true, relatedTarget: to }))
+        fireEvent(to, new MouseEvent('pointerover', { bubbles: true, relatedTarget: from }))
+      }
+      const order = first === 'workspace' ? [a, s, b, a] : [s, a, b, s]
+      const initial = order[0]!
+      move(document.body, initial.anchor)
+      act(() => { vi.advanceTimersByTime(799) })
+      expect(screen.queryAllByRole('button', { name: /^复制:/ })).toHaveLength(0)
+      act(() => { vi.advanceTimersByTime(1) })
+      let previous = initial.anchor
+      for (const current of order) {
+        move(previous, current.anchor)
+        expect(screen.getAllByRole('button', { name: /^复制:/ })).toHaveLength(1)
+        expect(screen.getByRole('button', { name: `复制: ${current.copy}` })).toBeTruthy()
+        previous = current.anchor
+      }
+      move(previous, document.body)
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(screen.queryAllByRole('button', { name: /^复制:/ })).toHaveLength(0)
+      move(document.body, b.anchor)
+      act(() => { vi.advanceTimersByTime(799) })
       expect(screen.queryAllByRole('button', { name: /^复制:/ })).toHaveLength(0)
       act(() => { vi.advanceTimersByTime(1) })
       expect(screen.getByRole('button', { name: `复制: ${b.copy}` })).toBeTruthy()

@@ -505,8 +505,8 @@ function SessionTree({
     // against the default limit, keeping the toggle present while expanded.
     const sessionRows = sessions.map(node => ({
       node,
-      capped: collapsedThreadRows(node.threads),
-      threads: collapsedThreadRows(node.threads, threadLimits[node.id]),
+      capped: collapsedThreadRows(node.threads ?? []),
+      threads: collapsedThreadRows(node.threads ?? [], threadLimits[node.id]),
     }))
     for (const { node, capped, threads } of sessionRows) {
       rowKeys.push(`session:${node.id}`)
@@ -641,7 +641,7 @@ function SessionTree({
             },
           }
           return (
-<Fragment key={node.id}>
+            <Fragment key={node.id}>
               <SessionNodeItem
                 node={node}
                 currentId={current}

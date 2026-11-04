@@ -993,7 +993,7 @@ describe('Thread rows nested under their Project', () => {
       { id: running.id, label: 'Reviewer', running: true, updatedAt: 40 },
     ])
     expect(deriveFlat(sessions, visibleSessionIds(sessions, noArchive, 'default'), noRows, noAttention)
-      .map(node => [node.id, node.threads.length])).toEqual([[project.id, 2]])
+      .map(node => [node.id, node.threads!.length])).toEqual([[project.id, 2]])
   })
 
   it('prefers the unified UI status over the Thread summary and omits an unknown Thread time', () => {

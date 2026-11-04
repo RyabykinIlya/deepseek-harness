@@ -21,7 +21,7 @@ import type { ProjectionHandle, SessionProjectionRegistry } from '@deepseek-ai/d
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-subagent'
-import type { WorktreeRecord, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
+import type { WorktreeRecord, WorktreeService, WorktreeFileChange } from '@deepseek-ai/dsh-worktree-manager'
 import { installThreadLifecycle } from './lifecycle.ts'
 import { threadsProjectionDefinition } from './projection.ts'
 import type { ThreadsProjectionState } from './projection.ts'
@@ -278,7 +278,7 @@ export class ThreadsService extends TypertRemoteService {
       return undefined
     })
     if (changes === undefined) return undefined
-    const files: LibraryChangedFile[] = changes.files.map(file => ({
+    const files: LibraryChangedFile[] = changes.files.map((file: WorktreeFileChange) => ({
       path: file.path,
       ...file.added === undefined ? {} : { added: file.added },
       ...file.removed === undefined ? {} : { removed: file.removed },

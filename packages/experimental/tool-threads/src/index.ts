@@ -38,7 +38,7 @@ export const name = 'tool-threads'
 /**
  * Services required before the tools are registered.
  *
- * `ctx.threads` and `ctx.worktrees` are resolved at execution time so a
+ * `ctx.threads` and `ctx.threadWorktrees` are resolved at execution time so a
  * composition without them still shows the tools and the model learns which
  * capability is missing.
  */

@@ -61,10 +61,10 @@ export interface SessionNode {
   updatedAt: number
   /**
    * Threads this Project owns, in the projection's durable creation order.
-   * Empty for every ordinary Session and for a Project that has spawned none,
-   * which is what keeps ordinary subagent children hidden.
+   * Empty or absent for every ordinary Session and for a Project that has
+   * spawned none, which is what keeps ordinary subagent children hidden.
    */
-  threads: readonly ThreadNode[]
+  threads?: readonly ThreadNode[]
   /** Session working directory; absent when the Host reports none or an empty path. */
   cwd?: string
 }

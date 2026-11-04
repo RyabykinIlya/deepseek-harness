@@ -131,6 +131,7 @@ function cardProps(
     useSessionRetainInfo: unused,
     useResource: unused,
     useWorkspaces: unused,
+    useContextMenu: unused,
   }
 }
 

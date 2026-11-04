@@ -64,6 +64,7 @@ function chip(
     useSessionRetainInfo: unusedHook,
     useResource: unusedHook,
     useWorkspaces: unusedHook,
+    useContextMenu: unusedHook,
     t,
     setOpenRouterFallback,
   }

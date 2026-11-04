@@ -14,7 +14,7 @@ const ERROR_BYTES = 160
 const CONFLICT_PATHS = 5
 
 /** Worktree service as the overview reads it. */
-type Worktrees = NonNullable<Context['worktrees']>
+type Worktrees = NonNullable<Context['threadWorktrees']>
 
 /** Predicted outcome of one merge check. */
 export interface MergeOutcome {
