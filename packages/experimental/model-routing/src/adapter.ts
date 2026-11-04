@@ -708,7 +708,7 @@ export class TiersAdapter extends LlmAdapter {
     const tier = this.tierNamed(settings, tierName)
     const models = await this.candidateModels(settings, target, tier, signal)
     const lists = await this.deps.endpoints.read(models, settings.endpointsTtlMs, signal)
-    const allowFree = await this.freeAdmission({ settings, tier, session })
+    const allowFree = await this.freeAdmission({ settings, tier, target, session })
     const excluded = this.excludedTagsOf(key)
     const mix = mixFromUsage(
       session === undefined ? undefined : this.deps.usage(session),
@@ -1164,23 +1164,31 @@ export class TiersAdapter extends LlmAdapter {
    * takes a free endpoint only when the deployment opted in with
    * `freeForSoloSessions`. A tier whose `free` mode is `only` answers to
    * neither key: naming that tier is the explicit request for free models,
-   * and refusing them would leave the tier with no endpoint at all.
+   * and refusing them would leave the tier with no endpoint at all. A fixed
+   * request — the user picked one favorite by id rather than a tier — answers
+   * to neither key either, for the same reason: naming that model is the
+   * explicit request for it, whether or not the catalog happens to price its
+   * only endpoint at zero, and the gate exists to keep an unattended tier
+   * decision off free quality, not to refuse a model the user named on purpose.
    *
    * The account-wide daily budget is the one shared free limit: a budget
    * whose remainder is below `freeMinRemaining` answers false for every free
-   * endpoint of every tier. A single model's own cap is not decided here —
-   * that is what the per-model bench in `excludeEndpoint` records — so a
-   * model that spent its cap leaves the ranking while the tier's other free
+   * endpoint of every tier, fixed request included — the budget protects the
+   * account, not the caller's intent. A single model's own cap is not decided
+   * here — that is what the per-model bench in `excludeEndpoint` records — so
+   * a model that spent its cap leaves the ranking while the tier's other free
    * models stay in it.
    */
   private async freeAdmission(input: {
     settings: RoutingSettings
     tier: TierSettingsSnapshot
+    target: RequestedTarget
     session: Session | undefined
   }): Promise<boolean> {
-    const { settings, tier, session } = input
+    const { settings, tier, target, session } = input
     const delegated = session?.header.origin === 'subagent'
     let allowFree = tier.free === 'only'
+      || target.kind === 'fixed'
       || (delegated ? settings.freeForSubagents : settings.freeForSoloSessions)
     if (allowFree && tier.free !== 'off') {
       const usage = await this.deps.keyInfo.freeUsage(settings.keyInfoTtlMs, new AbortController().signal)

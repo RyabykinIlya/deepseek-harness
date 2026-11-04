@@ -853,6 +853,19 @@ describe('TiersAdapter free endpoints', () => {
     expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
   })
 
+  it('serves a solo session the free favorite it named directly, without opting in', async () => {
+    // A fixed request names one model by id, which is a deliberate choice —
+    // not the tier's own `prefer` ranking an unattended turn might land on —
+    // so the solo gate must not empty it just because the catalog happens to
+    // price that model's only endpoint at zero. Before this fix the request
+    // failed with MODEL_ROUTING_NO_ENDPOINT ("free=1") even though the model
+    // is a configured favorite of the tier.
+    const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }] })
+    await run(h.adapter, { model: 'stealth/space-bunny-alpha' })
+    expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
+    expect(blockOf(h.sent[0]!)).toEqual({ only: ['stealth'], allow_fallbacks: false })
+  })
+
   it('never spends a subagent on a free endpoint', async () => {
     const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }], settings: { freeForSubagents: false } })
     h.origin = 'subagent'
