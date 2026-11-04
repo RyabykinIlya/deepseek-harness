@@ -121,6 +121,8 @@ interface Pin {
   /** Whether this pin sends the request without the images it carries. */
   imagesOmitted?: true
   lastActivityAt?: number
+  /** What kind of target the original request named. */
+  targetKind: RequestedTarget['kind']
 }
 
 /** Everything the adapter reads from the host, injected so tests need no Cordis. */
@@ -482,6 +484,7 @@ export class TiersAdapter extends LlmAdapter {
   private restorePin(settings: RoutingSettings, decision: SessionEventMap['model-routing/decision']): Pin | undefined {
     const endpoint = decision.endpoint
     const source = decision.source
+    const targetKind = this.targetKindOf(settings, decision.requested)
     if (source !== undefined && source.kind !== 'openrouter') {
       const tier = settings.tiers.find(candidate => candidate.name === decision.tier)
       const direct = tier === undefined ? undefined : this.directCandidates(tier).get(decision.model)?.find(
@@ -495,6 +498,7 @@ export class TiersAdapter extends LlmAdapter {
         source: routingSourceOf(direct),
         block: EMPTY_BLOCK,
         ...decision.imagesOmitted === true ? { imagesOmitted: true as const } : {},
+        targetKind,
       }
     }
     if (endpoint === undefined) {
@@ -506,6 +510,7 @@ export class TiersAdapter extends LlmAdapter {
         model: decision.model,
         source: { kind: 'openrouter', tag: decision.model },
         block: unpinnedBlock(tier),
+        targetKind,
       }
 
     }
@@ -525,6 +530,7 @@ export class TiersAdapter extends LlmAdapter {
         ...endpoint.maxCompletionTokens === undefined ? {} : { maxCompletionTokens: endpoint.maxCompletionTokens },
       },
       block: { only: [endpoint.tag], allow_fallbacks: false },
+      targetKind,
     }
   }
 
@@ -683,6 +689,14 @@ export class TiersAdapter extends LlmAdapter {
     /* v8 ignore next -- every call site already validated `name` against these same settings. */
     if (tier === undefined) throw new LlmError(`model-routing: no configured tier named "${name}"`, 'INVALID_CONFIG')
     return tier
+  }
+
+  /** Infer the target kind from the requested string. */
+  private targetKindOf(settings: RoutingSettings, requested: string): RequestedTarget['kind'] {
+    if (requested === 'auto') return 'auto'
+    const tier = settings.tiers.find(candidate => candidate.name === requested)
+    if (tier !== undefined) return 'tier'
+    return 'fixed'
   }
 
   /** Take one decision at a boundary, and record it when the Session asked for one. */
@@ -943,6 +957,7 @@ export class TiersAdapter extends LlmAdapter {
       ...endpoint === undefined ? {} : { endpoint },
       block,
       ...imagesOmitted === undefined ? {} : { imagesOmitted },
+      targetKind: target.kind,
     }
     return { pin: next, payload }
   }
@@ -1588,6 +1603,11 @@ export class TiersAdapter extends LlmAdapter {
   private mayReroute(settings: RoutingSettings, pin: Pin, code: string, reroutes: number): boolean {
     if (settings.noRerouteCodes.includes(code)) return false
     if (pin.endpoint === undefined && pin.source.kind === 'openrouter') return false
+    // If the user explicitly chose a model (fixed target), surface the error
+    // instead of silently rerouting to another model. The user picked this
+    // specific model; they should see the actual failure, not get a different
+    // model without knowing. This applies to all failure codes for fixed targets.
+    if (pin.targetKind === 'fixed') return false
     return this.quotaSpent(pin, code) || reroutes < settings.maxReroutes
   }
 

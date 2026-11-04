@@ -1054,28 +1054,25 @@ describe('TiersAdapter when nothing works', () => {
     )
   })
 
-  it('says the requested model is benched when its only endpoint is excluded', async () => {
-    // One dispatch failure benches the model's sole endpoint (the harness pins
-    // benching to the first failure), and the reroute serves the tier instead.
-    // A later fixed request for the model then meets the bench, not an empty
-    // tier, and the message must say so.
+  it('fails explicitly on first failure when user chose a fixed model', async () => {
+    // Explicit model choice (fixed target) should NOT silently reroute.
+    // The user picked this specific model; they should see the actual failure
+    // as a finish/error chunk surfaced to the caller (agent loop turns it into an exception).
     const h = await harness({
       tiers: [{ ...FLASH, free: 'prefer' }],
-      // The pinned model's only endpoint is free, so the case opts the solo
-      // session in: what it exercises is the bench message, not free admission.
       settings: { freeForSoloSessions: true },
-      responses: [failureChunks('PROVIDER_ERROR'), normalChunks()],
+      responses: [failureChunks('PROVIDER_ERROR')],
       state: { ...priorDecision(), decision: null, compactedSinceDecision: true },
     })
-    await run(h.adapter, { model: 'stealth/space-bunny-alpha' })
-    await run(h.adapter, { model: 'stealth/space-bunny-alpha' }).then(
-      () => { throw new Error('expected the benched model to fail') },
-      (error: unknown) => {
-        expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
-        expect((error as LlmError).message).toContain('for model "stealth/space-bunny-alpha": excluded=1')
-        expect((error as LlmError).message).toContain('benched after recent failures')
-      },
+    const chunks = await run(h.adapter, { model: 'stealth/space-bunny-alpha' })
+    const failure = chunks.find(
+      (c): c is StreamChunk & { type: 'finish'; reason: { kind: 'error'; failure: { code: string; message: string } } } =>
+        c.type === 'finish' && c.reason.kind === 'error',
     )
+    expect(failure).toBeDefined()
+    expect(failure!.reason.failure.code).toBe('PROVIDER_ERROR')
+    // Verify no second dispatch was attempted (no reroute)
+    expect(h.sent).toHaveLength(1)
   })
 
   it('refuses a model the route does not offer', async () => {
