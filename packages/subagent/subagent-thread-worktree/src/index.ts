@@ -47,7 +47,7 @@ export const name = 'subagent-thread-worktree'
 // joins. `tools` is deliberately NOT injected, matching the other in-process backends:
 // the delegation tool's position in the model-visible tool list must not depend on
 // which backend is loaded. `sessionPersistence` is read lazily and optional.
-export const inject = ['subagents', 'worktrees']
+export const inject = ['subagents', 'threadWorktrees']
 
 /** What a new Thread's worktree is created from. */
 export type ThreadBase =
@@ -321,7 +321,7 @@ async function repositoryCandidates(dir: string): Promise<string> {
 }
 
 export function apply(ctx: Context, config: Config): void {
-  const worktrees = ctx.worktrees
+  const worktrees = ctx.threadWorktrees
   ctx.subagents.registerProvider(new ThreadWorktreeProvider(config.providerName, worktrees, config))
 
   let warned = false

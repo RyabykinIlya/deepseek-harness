@@ -21,7 +21,7 @@ import type { ProjectionHandle, SessionProjectionRegistry } from '@deepseek-ai/d
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-subagent'
-import type { WorktreeRecord, WorktreeService } from '@deepseek-ai/dsh-worktree-manager'
+import type { WorktreeRecord, WorktreeService, WorktreeFileChange } from '@deepseek-ai/dsh-worktree-manager'
 import { installThreadLifecycle } from './lifecycle.ts'
 import { threadsProjectionDefinition } from './projection.ts'
 import type { ThreadsProjectionState } from './projection.ts'
@@ -176,7 +176,7 @@ export class ThreadsService extends TypertRemoteService {
     if (this.stateOf(project.session)?.threads.some(thread => thread.threadId === threadId) !== true) {
       throw new RemoteError('threads/not-found', `Unknown thread: ${threadId}`, { threadId })
     }
-    const worktrees = this.ctx.get('worktrees')
+    const worktrees = this.ctx.get('threadWorktrees')
     if (worktrees === undefined) throw new Error('threads: archiving a thread requires the worktrees service')
     const force = options?.force === true
     const record = await worktrees.get(threadId)
@@ -268,7 +268,7 @@ export class ThreadsService extends TypertRemoteService {
   }
 
   private async liveChanges(thread: LoggedThread): Promise<LibraryThreadChanges | undefined> {
-    const worktrees = this.ctx.get('worktrees')
+    const worktrees = this.ctx.get('threadWorktrees')
     const record = await worktrees?.get(thread.threadId)
     if (worktrees === undefined || record === undefined || record.state !== 'ready') return undefined
     const bounds = { maxCommits: 0, maxFiles: this.config.libraryMaxFiles }
@@ -278,7 +278,7 @@ export class ThreadsService extends TypertRemoteService {
       return undefined
     })
     if (changes === undefined) return undefined
-    const files: LibraryChangedFile[] = changes.files.map(file => ({
+    const files: LibraryChangedFile[] = changes.files.map((file: WorktreeFileChange) => ({
       path: file.path,
       ...file.added === undefined ? {} : { added: file.added },
       ...file.removed === undefined ? {} : { removed: file.removed },

@@ -121,7 +121,7 @@ The adapter is built on three commitments:
 
 ### Registration shape
 
-The package-level `inject` is `['tools']`, so `thread_status`, `thread_diff`, and `library_list` are registered for as long as the package is loaded. `src/tier.ts` nests `ctx.inject(['modelRouting'], …)`, so `thread_tier` appears and disappears with that service. `ctx.threads`, `ctx.worktrees`, and `ctx.modelRouting` are read with `ctx.get` at execution time, so the schemas stay stable and a missing service produces an actionable message instead of an unknown-tool error.
+The package-level `inject` is `['tools']`, so `thread_status`, `thread_diff`, and `library_list` are registered for as long as the package is loaded. `src/tier.ts` nests `ctx.inject(['modelRouting'], …)`, so `thread_tier` appears and disappears with that service. `ctx.threads`, `ctx.threadWorktrees`, and `ctx.modelRouting` are read with `ctx.get` at execution time, so the schemas stay stable and a missing service produces an actionable message instead of an unknown-tool error.
 
 ### Source map
 

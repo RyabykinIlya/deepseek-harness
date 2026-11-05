@@ -128,11 +128,11 @@ async function prepareRequestImages(
 }
 
 /** Convert a projected declaration without its harness-owned activation marker. */
-function piTool(tool: NonNullable<GenerateOptions['tools']>[number]): PiTool {
+function piTool(tool: NonNullable<GenerateOptions<string>['tools']>[number]): PiTool {
   return { name: tool.name, description: tool.description, parameters: tool.parameters }
 }
 
-function toolsOf(options: GenerateOptions): PiTool[] | undefined {
+function toolsOf(options: GenerateOptions<string>): PiTool[] | undefined {
   return options.tools?.filter(tool => !tool.deferLoading).map(piTool)
 }
 
@@ -145,7 +145,7 @@ interface SystemPromptSplit {
 }
 
 /** Combine request-level text and leading system history into the initial prompt. */
-function splitSystemPrompt(options: GenerateOptions): SystemPromptSplit {
+function splitSystemPrompt(options: GenerateOptions<string>): SystemPromptSplit {
   const text = [options.system]
   let end = 0
   for (const message of options.messages) {
@@ -158,7 +158,7 @@ function splitSystemPrompt(options: GenerateOptions): SystemPromptSplit {
 }
 
 /** Assemble the request-level pi-ai context envelope shared by both conversion paths. */
-function piContext(systemPrompt: string | undefined, options: GenerateOptions, messages: PiMessage[]): PiContext {
+function piContext(systemPrompt: string | undefined, options: GenerateOptions<string>, messages: PiMessage[]): PiContext {
   const tools = toolsOf(options)
   return {
     ...systemPrompt !== undefined ? { systemPrompt } : {},
@@ -168,7 +168,7 @@ function piContext(systemPrompt: string | undefined, options: GenerateOptions, m
 }
 
 /** Keep one developer event in one system update, resolving its projected tool declarations. */
-function appendDeveloper(message: Extract<Message, { role: 'developer' }>, options: GenerateOptions, messages: PiMessage[]): void {
+function appendDeveloper(message: Extract<Message, { role: 'developer' }>, options: GenerateOptions<string>, messages: PiMessage[]): void {
   const content: TextContent[] = []
   const toolsAdded: PiTool[] = []
   const toolsRemoved: NonNullable<SystemMessage['toolsRemoved']> = []
@@ -216,7 +216,7 @@ function appendAssistant(
 /** Append shared system, developer, and assistant roles; true when consumed. */
 function appendSharedHistory(
   message: RequestMessage,
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   messages: PiMessage[],
   toolNames: Map<ToolCallId, string>,
   supportsMidConvoSystemMessages: boolean,
@@ -246,7 +246,7 @@ function appendSharedHistory(
 }
 
 function textOnlyContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   supportsMidConvoSystemMessages: boolean,
   onReplayDegrade?: (reason: string) => void,
 ): PiContext {
@@ -276,6 +276,10 @@ export interface PiImageRequestContext {
   resolveImageAccess: ImageAttachmentAccessResolver
   /** Request-level bound on the base64-encoded payload of retained images; omission leaves the bound unchecked. */
   maxRequestImageBytes?: number
+  /** Request-level bound on retained image occurrences; omission leaves the count unchecked. */
+  maxRequestImages?: number
+  /** Oldest occurrences offloaded per count overflow; omission offloads the minimum. */
+  imageOffloadCountQuantum?: number
   /** Route pixel and raw encoded-byte budgets. */
   requestImagePolicy?: PiImageRequestBudget
 }
@@ -309,7 +313,7 @@ export function requestImageTarget(ref: ImageAttachmentRef, budget: PiImageReque
  * @throws {LlmError} `UNSUPPORTED_CONTENT` for images in any history role, including a leading system message.
  */
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images?: undefined,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages?: boolean,
@@ -318,9 +322,10 @@ export function toPiContext(
  * Convert harness history to a pi-ai Context while resolving durable images.
  * Tool result names are recovered from preceding assistant tool calls. Image
  * occurrences the surface marks offloaded become text placeholders; when the
- * retained occurrences' exact base64 payload still exceeds
- * `maxRequestImageBytes`, the call fails with `IMAGE_OFFLOAD_REQUIRED` naming
- * how many more oldest occurrences must be offloaded.
+ * retained occurrences still exceed `maxRequestImages` or their exact base64
+ * payload exceeds `maxRequestImageBytes`, the call fails with
+ * `IMAGE_OFFLOAD_REQUIRED` naming how many more oldest occurrences must be
+ * offloaded, rounded up to `imageOffloadCountQuantum` for a count overflow.
  * @param options - projected request; one-shot system text precedes the leading history prompt.
  * @param images - attachment provider, current path resolver, and request limits.
  * @param onReplayDegrade - forwarded to {@link toPiAssistant} for each assistant message.
@@ -328,13 +333,13 @@ export function toPiContext(
  * @returns the asynchronously resolved pi-ai context.
  */
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages?: boolean,
 ): Promise<PiContext>
 export function toPiContext(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images?: PiImageRequestContext,
   onReplayDegrade?: (reason: string) => void,
   supportsMidConvoSystemMessages = false,
@@ -345,12 +350,12 @@ export function toPiContext(
 }
 
 async function toPiContextWithImages(
-  options: GenerateOptions,
+  options: GenerateOptions<string>,
   images: PiImageRequestContext,
   supportsMidConvoSystemMessages: boolean,
   onReplayDegrade?: (reason: string) => void,
 ): Promise<PiContext> {
-  const { attachments, resolveImageAccess, maxRequestImageBytes } = images
+  const { attachments, resolveImageAccess, maxRequestImageBytes, maxRequestImages, imageOffloadCountQuantum } = images
   const requestImagePolicy = images.requestImagePolicy ?? {
     maxPixels: DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
     maxBytes: DEFAULT_REQUEST_IMAGE_MAX_BYTES,
@@ -358,19 +363,22 @@ async function toPiContextWithImages(
   assertSupportedHistory(options.messages)
   const split = splitSystemPrompt(options)
   const requestImages = await prepareRequestImages(split.messages, attachments, requestImagePolicy, options.signal)
-  if (maxRequestImageBytes !== undefined) {
-    const offloadImages = requiredImageOffload(
-      split.messages,
-      { representation: 'base64', maxBytes: maxRequestImageBytes },
-      block => (requestImages.get(block.attachment.attachmentId) as RequestImageAttachment).bytes,
+  const offloadImages = requiredImageOffload(
+    split.messages,
+    {
+      representation: 'base64',
+      ...maxRequestImageBytes === undefined ? {} : { maxBytes: maxRequestImageBytes },
+      ...maxRequestImages === undefined ? {} : { maxImages: maxRequestImages },
+      ...imageOffloadCountQuantum === undefined ? {} : { countQuantum: imageOffloadCountQuantum },
+    },
+    block => (requestImages.get(block.attachment.attachmentId) as RequestImageAttachment).bytes,
+  )
+  if (offloadImages > 0) {
+    throw new LlmError(
+      `pi-ai request images exceed the route image budget; ${offloadImages} more oldest occurrence(s) must be offloaded.`,
+      IMAGE_OFFLOAD_REQUIRED_CODE,
+      { offloadImages },
     )
-    if (offloadImages > 0) {
-      throw new LlmError(
-        `pi-ai request images exceed the ${maxRequestImageBytes}-byte base64 bound; ${offloadImages} more oldest occurrence(s) must be offloaded.`,
-        IMAGE_OFFLOAD_REQUIRED_CODE,
-        { offloadImages },
-      )
-    }
   }
   const exactMessages = projectOffloadedImages(
     split.messages,

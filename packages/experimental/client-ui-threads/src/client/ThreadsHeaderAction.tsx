@@ -26,7 +26,7 @@ import type { ThreadStatusRow } from '@deepseek-ai/dsh-experimental-threads/clie
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   IconChevronDownOutlineRegular, IconChevronRightOutlineRegular, IconCopyOutlineRegular, IconDatabaseOutlineRegular,
-  IconFolderOpenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, StateDot, Tooltip,
+  IconFolderOpenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, MenuSurface, StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -413,7 +413,7 @@ function ThreadsRoster({
         <IconChevronDownOutlineRegular className={open ? css.triggerOpen : undefined} />
       </button>
       {open && createPortal((
-        <div
+        <MenuSurface
           ref={menuRef}
           className={css.menu}
           style={menuPosition}
@@ -505,7 +505,7 @@ function ThreadsRoster({
                 )}
               </>
             )}
-        </div>
+        </MenuSurface>
       ), document.body)}
     </div>
   )

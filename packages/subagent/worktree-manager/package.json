@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-worktree-manager",
-  "description": "Host service that manages git worktrees for background Threads (ctx.worktrees)",
+  "description": "Host service that manages git worktrees for background Threads (ctx.threadWorktrees)",
   "version": "0.2.1-alpha.2",
   "publishConfig": {
     "access": "public"
@@ -48,7 +48,7 @@
     "catalog": {
       "service": {
         "after": "cordisInspect",
-        "key": "worktrees",
+        "key": "threadWorktrees",
         "title": "Git worktree lifecycle and intent registry",
         "mode": "service",
         "consumers": [

@@ -68,9 +68,7 @@ function workspace(): { dir: string; alpha: string; beta: string } {
 async function realService(config: { adoptionGraceMs?: number } = {}): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { worktreeRoot: temporary('dsh-tw-root-'), pruneOnStart: false, ...config })
-  // `ctx.worktrees` is declared by the sibling experimental service as well, so
-  // the key's resolved type is not the manager this function mounts.
-  return ctx.worktrees as never
+  return ctx.threadWorktrees
 }
 
 interface CreateCall { repoRoot: string; threadId: string; baseRef: string; branch?: string; detached?: boolean }
@@ -473,7 +471,7 @@ describe('thread worktree provider wiring', { timeout: GIT_TIMEOUT_MS }, () => {
     const warns: string[] = []
     const disposers: (() => void)[] = []
     const ctx = {
-      worktrees: service,
+      threadWorktrees: service,
       subagents: { registerProvider: vi.fn() },
       get: (name: string) => (name === 'sessionPersistence' ? persistence : undefined),
       logger: { warn: (message: string) => { warns.push(message) } },

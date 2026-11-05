@@ -565,7 +565,7 @@ export class TiersAdapter extends LlmAdapter {
     throw new LlmError(`model-routing: route "${provider}" has no model "${model}"`, 'UNKNOWN_MODEL')
   }
 
-  async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+  async * stream(options: GenerateOptions<string>): AsyncIterable<StreamChunk> {
     const settings = this.deps.settings()
     const provider = options.provider
     const dispatch = this.deps.dispatch()
@@ -597,7 +597,7 @@ export class TiersAdapter extends LlmAdapter {
   private async * run(input: {
     settings: RoutingSettings
     dispatch: PiAiDispatch
-    options: GenerateOptions
+    options: GenerateOptions<string>
     target: RequestedTarget
     key: string
     main: boolean
@@ -705,7 +705,7 @@ export class TiersAdapter extends LlmAdapter {
     target: RequestedTarget
     pin: Pin | undefined
     session: Session | undefined
-    options: GenerateOptions
+    options: GenerateOptions<string>
     signal: AbortSignal
     persist: boolean
     key: string
@@ -1338,7 +1338,7 @@ export class TiersAdapter extends LlmAdapter {
   /** Ask the judge, or fall back to the default tier when it cannot be asked. */
   private async judgeTier(input: {
     settings: RoutingSettings
-    options: GenerateOptions
+    options: GenerateOptions<string>
     signal: AbortSignal
     current?: string
   }): Promise<{ tier: string; verdict: JudgeVerdict }> {
@@ -1382,7 +1382,7 @@ export class TiersAdapter extends LlmAdapter {
   private async * dispatchWithReroute(input: {
     settings: RoutingSettings
     dispatch: PiAiDispatch
-    options: GenerateOptions
+    options: GenerateOptions<string>
     pin: Pin
     key: string
     signal: AbortSignal
@@ -1416,7 +1416,7 @@ export class TiersAdapter extends LlmAdapter {
       const requestedMax = options.maxTokens ?? tier.maxTokens
       const endpointCap = pin.endpoint?.maxCompletionTokens ?? Number.POSITIVE_INFINITY
       const history = unwrapHistory(options.messages, this.route.routeName)
-      const inner: GenerateOptions = {
+      const inner: GenerateOptions<string> = {
         ...options,
         provider: pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
         model: pin.source.kind === 'openrouter' ? pin.model : pin.source.tag,
@@ -1538,7 +1538,7 @@ export class TiersAdapter extends LlmAdapter {
   }
 
   /** The Session this request belongs to, when it named one. */
-  private sessionOf(options: GenerateOptions): Session | undefined {
+  private sessionOf(options: GenerateOptions<string>): Session | undefined {
     return options.sessionId === undefined ? undefined : this.deps.session(options.sessionId)
   }
 
@@ -1551,7 +1551,7 @@ export class TiersAdapter extends LlmAdapter {
     target: RequestedTarget
     pin: Pin
     session: Session | undefined
-    options: GenerateOptions
+    options: GenerateOptions<string>
     signal: AbortSignal
     persist: boolean
     key: string

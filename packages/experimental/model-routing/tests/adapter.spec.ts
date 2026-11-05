@@ -68,7 +68,7 @@ const FREE = {
 
 /** One dispatch the fake pi-ai route observed. */
 interface Dispatched {
-  options: GenerateOptions
+  options: GenerateOptions<string>
   /** The per-call pi-ai options the adapter passed, including the absent block on a direct route. */
   dispatch: { openRouterRouting?: OpenRouterRoutingBlock } | undefined
 }

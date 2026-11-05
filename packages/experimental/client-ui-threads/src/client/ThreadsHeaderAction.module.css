@@ -238,7 +238,7 @@
   display: flex;
   flex: none;
   padding: 3px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .start {
@@ -329,7 +329,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 3px 3px 3px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   font-size: 12px;
 }
 
@@ -386,7 +386,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .memoryForm > :first-child {
@@ -416,7 +416,7 @@
 }
 
 .librarySection + .librarySection {
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .libraryHeading {

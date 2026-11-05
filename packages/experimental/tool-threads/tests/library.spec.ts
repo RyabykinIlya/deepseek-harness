@@ -103,7 +103,7 @@ function fakeWorktrees(ctx: Context, threadId: string, extra: Partial<WorktreeRe
     threadId, path: `/wt/${threadId}`, branch: `dsh/${threadId}`, baseRef: 'main', baseSha: 'b'.repeat(40),
     state: 'ready', repoRoot: '/repo', ...extra,
   }
-  ctx.provide('worktrees', {
+  ctx.provide('threadWorktrees', {
     get: () => Promise.resolve(record),
     changes: () => Promise.resolve({
       baseSha: 'b'.repeat(40), headSha: 'h'.repeat(40), commits: [], commitsTotal: 2, uncommitted: 1,

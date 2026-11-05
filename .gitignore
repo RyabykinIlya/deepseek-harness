@@ -57,3 +57,6 @@ native/system/test/bin/
 snapshots/**/workspace/.dsh/
 snapshots/session/threads-project-worktree/workspace/
 snapshots/session/threads-project-worktree-tiers/workspace/
+
+# Generated company-signed CUA release record.
+/packages/experimental/cua-macos/cua-helper.json

@@ -52,7 +52,7 @@ export interface PiAiDispatch {
    * @param dispatch - per-call options.
    * @returns the chunk stream of one provider attempt.
    */
-  stream(options: GenerateOptions, dispatch?: PiAiDispatchOptions): AsyncIterable<StreamChunk>
+  stream(options: GenerateOptions<string>, dispatch?: PiAiDispatchOptions): AsyncIterable<StreamChunk>
 }
 
 declare module '@deepseek-ai/cordis' {

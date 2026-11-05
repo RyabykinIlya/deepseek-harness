@@ -86,15 +86,9 @@ function present(session: Session, files: Array<{ path: string; description?: st
   session.append('deliverables/presented', { turn: 1, callId: 'call-1' as ToolCallId, files })
 }
 
-/**
- * The worktree service this suite mounts. `ctx.worktrees` is declared by the
- * sibling experimental service as well, so the key's resolved type is not the
- * manager this file mounts; the cast restores the mounted service's own type.
- */
+/** The worktree service this suite mounts. */
 function manager(ctx: Context): WorktreeService {
-  // ctx.worktrees merges the ambient declarations of both packages; this narrows
-  // to the manager's class, which owns the create/status/remove surface used here.
-  return ctx.worktrees as unknown as WorktreeService
+  return ctx.threadWorktrees
 }
 
 const ALPHA = ThreadId('alpha')
@@ -211,7 +205,7 @@ describe('threads.library', () => {
   it('maps worktree entries without branch or counts', async () => {
     const ctx = await mount()
     const record: WorktreeRecord = { threadId: 'alpha', path: '/wt/alpha', baseRef: 'HEAD', state: 'ready', repoRoot: '/repo' }
-    ctx.provide('worktrees', {
+    ctx.provide('threadWorktrees', {
       get: () => Promise.resolve(record),
       changes: () => Promise.resolve({
         baseSha: 'a', headSha: 'b', commits: [], commitsTotal: 0, filesTotal: 1, uncommitted: 0,

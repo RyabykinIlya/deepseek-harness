@@ -1,5 +1,5 @@
 /**
- * Public data shapes of the git-worktree service (`ctx.worktrees`).
+ * Public data shapes of the git-worktree service (`ctx.threadWorktrees`).
  *
  * Every record here is a *derived* view: the durable sidecar under the service's
  * configured `worktreeRoot` stores one append-only transition per operation, and

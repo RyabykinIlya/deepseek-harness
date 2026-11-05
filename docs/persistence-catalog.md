@@ -865,15 +865,15 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 ```ts persistence-catalog
 /**
- * Versioned Schedule mutation. The owning package validates the complete
- * session-local transition stream before accepting a candidate event.
+ * Historical version-1 Session-local reminder mutation. New tasks live in Host storage;
+ * these events remain inert and never populate the Host task store.
  */
 'schedule/change': ScheduleChange
 ```
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:371`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:625`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -938,7 +938,7 @@ Source: [`packages/session/session-title/src/index.ts:77`](../packages/session/s
 
 Types: [SessionTitleLlmRequestEventData](subsystems/session-title.md)
 
-Source: [`packages/session/session-title-llm/src/index.ts:57`](../packages/session/session-title-llm/src/index.ts)
+Source: [`packages/session/session-title-llm/src/index.ts:63`](../packages/session/session-title-llm/src/index.ts)
 
 ### `session-log-deepseek/*`
 
@@ -958,7 +958,7 @@ Source: [`packages/session/session-title-llm/src/index.ts:57`](../packages/sessi
 }
 ```
 
-Source: [`packages/session/session-log-deepseek/src/types.ts:81`](../packages/session/session-log-deepseek/src/types.ts)
+Source: [`packages/session/session-log-deepseek/src/types.ts:96`](../packages/session/session-log-deepseek/src/types.ts)
 
 ### `step/*`
 
@@ -2179,6 +2179,8 @@ SHA-256: `5d1232755d5e7e30429c37dda734e551289913b36bc9193a528887e2fdc2727e`
 
 <a id="persistence-type-sha256-fb8b6a2e53cb9cf44c551176de0fb77d1ddc60037b99a891ff8a860b6d5c29a0"></a>
 
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypesselectdtsrequiredinput"></a>
+
 <a id="persistence-type-packagesexperimentalmodel-routingsrcselecttsrequiredinput"></a>
 
 <a id="persistence-type-requiredinput"></a>
@@ -2187,7 +2189,7 @@ SHA-256: `5d1232755d5e7e30429c37dda734e551289913b36bc9193a528887e2fdc2727e`
 
 SHA-256: `fb8b6a2e53cb9cf44c551176de0fb77d1ddc60037b99a891ff8a860b6d5c29a0`
 
-Sources: [`packages/experimental/model-routing/src/select.ts:110`](../packages/experimental/model-routing/src/select.ts)
+Sources: [`packages/experimental/model-routing/lib/types/select.d.ts:91`](../packages/experimental/model-routing/lib/types/select.d.ts) · [`packages/experimental/model-routing/src/select.ts:110`](../packages/experimental/model-routing/src/select.ts)
 
 `"image"`
 
@@ -3973,7 +3975,7 @@ Sources: [`packages/core/session/src/types.ts:246`](../packages/core/session/src
 
 SHA-256: `e6063d0451dc02026fd9b54ad3f77c7b1b6392ad3e872a7737ac84e13ca72344`
 
-Sources: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:220`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4058,13 +4060,13 @@ Sources: [`packages/llm/llm/src/types.ts:172`](../packages/llm/llm/src/types.ts)
 
 <a id="persistence-type-freemode"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrcconfigtsfreemode"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypesconfigdtsfreemode"></a>
 
 ### `FreeMode`
 
 SHA-256: `9c90ec832cc1c0c03c4a31eea68835e00e617d593c8a8a3c17ca97ce1bafc3d6`
 
-Sources: [`packages/experimental/model-routing/src/config.ts:33`](../packages/experimental/model-routing/src/config.ts)
+Sources: [`packages/experimental/model-routing/lib/types/config.d.ts:26`](../packages/experimental/model-routing/lib/types/config.d.ts)
 
 One of:
 
@@ -4484,13 +4486,13 @@ Array of [`JsonValue`](#persistence-type-sha256-c592ce75aab73fcab19c1d7845684c72
 
 <a id="persistence-type-judgerule"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsjudgerule"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsjudgerule"></a>
 
 ### `JudgeRule`
 
 SHA-256: `68e6e4c13101addf50717bd0badadde804d0b03f6d407d591074a8e6de54c908`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:62`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:52`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 One of:
 
@@ -4508,13 +4510,13 @@ One of:
 
 <a id="persistence-type-judgeverdict"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsjudgeverdict"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsjudgeverdict"></a>
 
 ### `JudgeVerdict`
 
 SHA-256: `36f87503cdfb7487bcdcc1b66878db854420f68c230d914e0c21948e7d6c4642`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:74`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:54`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4732,13 +4734,13 @@ Sources: [`packages/llm/llm-retry/src/types.ts:43`](../packages/llm/llm-retry/sr
 
 <a id="persistence-type-measuredmix"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrcselecttsmeasuredmix"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypesselectdtsmeasuredmix"></a>
 
 ### `MeasuredMix`
 
 SHA-256: `e0d39b7fb4c2ef8d91fb1a6439a9fcc9957c01c70880fe50d6adb732e4b8e9e8`
 
-Sources: [`packages/experimental/model-routing/src/select.ts:97`](../packages/experimental/model-routing/src/select.ts)
+Sources: [`packages/experimental/model-routing/lib/types/select.d.ts:80`](../packages/experimental/model-routing/lib/types/select.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -4985,13 +4987,13 @@ Array of [`Message`](#persistence-type-sha256-c78b9097bfae83cd08f0a98a92730236ba
 
 <a id="persistence-type-mixsource"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrcselecttsmixsource"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypesselectdtsmixsource"></a>
 
 ### `MixSource`
 
 SHA-256: `45b20a8720a92bdd2307e1e1f9032667d6ae37af3a09e0f3d1379e875b7c61de`
 
-Sources: [`packages/experimental/model-routing/src/select.ts:94`](../packages/experimental/model-routing/src/select.ts)
+Sources: [`packages/experimental/model-routing/lib/types/select.d.ts:78`](../packages/experimental/model-routing/lib/types/select.d.ts)
 
 One of:
 
@@ -5045,7 +5047,7 @@ Sources: [`packages/core/agent/src/types.ts:79`](../packages/core/agent/src/type
 
 SHA-256: `8e8e91646a5cae3fc78f7532a0013ff2088ae47077642c2edd507a508209b8af`
 
-Sources: [`packages/schedule/schedule/src/types.ts:237`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:213`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5160,6 +5162,8 @@ Sources: [`packages/core/tool-executor-ptc/src/types.ts:12`](../packages/core/to
 
 <a id="persistence-type-sha256-2a845226538bfd7553397b67c0e168d60620067521d9004d52e2424fc3be0db4"></a>
 
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypesconfigdtsquantization"></a>
+
 <a id="persistence-type-packagesexperimentalmodel-routingsrcconfigtsquantization"></a>
 
 <a id="persistence-type-quantization"></a>
@@ -5168,7 +5172,7 @@ Sources: [`packages/core/tool-executor-ptc/src/types.ts:12`](../packages/core/to
 
 SHA-256: `2a845226538bfd7553397b67c0e168d60620067521d9004d52e2424fc3be0db4`
 
-Sources: [`packages/experimental/model-routing/src/config.ts:30`](../packages/experimental/model-routing/src/config.ts)
+Sources: [`packages/experimental/model-routing/lib/types/config.d.ts:24`](../packages/experimental/model-routing/lib/types/config.d.ts) · [`packages/experimental/model-routing/src/config.ts:30`](../packages/experimental/model-routing/src/config.ts)
 
 One of:
 
@@ -5258,7 +5262,7 @@ One of:
 
 <a id="persistence-type-sha256-f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingboundary"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingboundary"></a>
 
 <a id="persistence-type-routingboundary"></a>
 
@@ -5266,7 +5270,7 @@ One of:
 
 SHA-256: `f6d1d587c73fdcb63131770d0eecf9d0c4d65713f83d2937af7193eb23b6b7dc`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:23`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:16`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 One of:
 
@@ -5278,7 +5282,7 @@ One of:
 
 <a id="persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingcandidate"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingcandidate"></a>
 
 <a id="persistence-type-routingcandidate"></a>
 
@@ -5286,7 +5290,7 @@ One of:
 
 SHA-256: `4fc88eb8d1ef7cd2e01cef1a37eacb8604f5e7349f31316e93f711aee08214bc`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:90`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:69`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5317,7 +5321,7 @@ Array of [`RoutingCandidate`](#persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a3
 
 <a id="persistence-type-sha256-b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingdecision"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingdecision"></a>
 
 <a id="persistence-type-routingdecision"></a>
 
@@ -5325,7 +5329,7 @@ Array of [`RoutingCandidate`](#persistence-type-sha256-4fc88eb8d1ef7cd2e01cef1a3
 
 SHA-256: `b9a30c691887817a55468c9d5196ed4eead67f69b5d3e23e510dde487bad5d84`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:119`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5353,7 +5357,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/ex
 
 <a id="persistence-type-sha256-d28a3d487881b5a03f6662a90a3bc44f416cb204409f4bc96a8b7be85df6646f"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingendpoint"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingendpoint"></a>
 
 <a id="persistence-type-routingendpoint"></a>
 
@@ -5361,7 +5365,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:143`](../packages/ex
 
 SHA-256: `d28a3d487881b5a03f6662a90a3bc44f416cb204409f4bc96a8b7be85df6646f`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:48`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:39`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5377,7 +5381,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:48`](../packages/exp
 
 <a id="persistence-type-sha256-af8a21ffeb42b4986cb41127d286b302c6574928a08e86e11484ccb71b4aae4e"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingfilters"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingfilters"></a>
 
 <a id="persistence-type-routingfilters"></a>
 
@@ -5385,7 +5389,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:48`](../packages/exp
 
 SHA-256: `af8a21ffeb42b4986cb41127d286b302c6574928a08e86e11484ccb71b4aae4e`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:117`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:95`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5401,7 +5405,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:117`](../packages/ex
 
 <a id="persistence-type-sha256-650e173b8de4b7688ee9798b5c29a29f50d109abff9be43720b5da2bc62d402d"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingrunnerup"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingrunnerup"></a>
 
 <a id="persistence-type-routingrunnerup"></a>
 
@@ -5409,7 +5413,7 @@ Sources: [`packages/experimental/model-routing/src/types.ts:117`](../packages/ex
 
 SHA-256: `650e173b8de4b7688ee9798b5c29a29f50d109abff9be43720b5da2bc62d402d`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:133`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:110`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5429,7 +5433,7 @@ Array of [`RoutingRunnerUp`](#persistence-type-sha256-650e173b8de4b7688ee9798b5c
 
 <a id="persistence-type-sha256-1788ce43e8b773b25fd340d84ddceb7883ef2eda51c0ac3de6a0593f5e4156f6"></a>
 
-<a id="persistence-type-packagesexperimentalmodel-routingsrctypestsroutingsource"></a>
+<a id="persistence-type-packagesexperimentalmodel-routinglibtypestypesdtsroutingsource"></a>
 
 <a id="persistence-type-routingsource"></a>
 
@@ -5437,7 +5441,7 @@ Array of [`RoutingRunnerUp`](#persistence-type-sha256-650e173b8de4b7688ee9798b5c
 
 SHA-256: `1788ce43e8b773b25fd340d84ddceb7883ef2eda51c0ac3de6a0593f5e4156f6`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:31`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:23`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5472,7 +5476,7 @@ One of:
 
 SHA-256: `2e3523541e942ef6cc9fbc5b91f242e0ca4c6ada479b79b96025b797f6e41f3f`
 
-Sources: [`packages/schedule/schedule/src/types.ts:256`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:232`](../packages/schedule/schedule/src/types.ts)
 
 One of:
 
@@ -5491,7 +5495,7 @@ One of:
 
 SHA-256: `eea687d437880bd5f55fb447a561112800ca34334c0724d9cecb98493059d9e4`
 
-Sources: [`packages/schedule/schedule/src/types.ts:223`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:199`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5509,7 +5513,7 @@ Sources: [`packages/schedule/schedule/src/types.ts:223`](../packages/schedule/sc
 
 SHA-256: `18dc21f12bbac8ade8377e6fbb54179e20c3d955d73fba3244c57fb6bf001df0`
 
-Sources: [`packages/schedule/schedule/src/types.ts:230`](../packages/schedule/schedule/src/types.ts)
+Sources: [`packages/schedule/schedule/src/types.ts:206`](../packages/schedule/schedule/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -5588,7 +5592,7 @@ Sources: [`packages/session/session-title/src/types.ts:41`](../packages/session/
 
 SHA-256: `7ff62f6599c083ceb5a0d7a8940ff85ba80dc1d7ddd6ba9339903e93f74cba54`
 
-Sources: [`packages/session/session-title-llm/src/index.ts:37`](../packages/session/session-title-llm/src/index.ts)
+Sources: [`packages/session/session-title-llm/src/index.ts:43`](../packages/session/session-title-llm/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -6498,7 +6502,7 @@ Array of `number`.
 
 SHA-256: `4cd48f3e5108bd6ebedf7301c3638839b8b2b9db8dbd493974177fbdeb91a01b`
 
-Sources: [`packages/api/session-controller/src/types.ts:388`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:21`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:21`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:33`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:9`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/threads/src/types.ts:7`](../packages/experimental/threads/src/types.ts) · [`packages/experimental/webhook/src/brand.ts:12`](../packages/experimental/webhook/src/brand.ts) · [`packages/experimental/webhook/src/brand.ts:6`](../packages/experimental/webhook/src/brand.ts) · [`packages/experimental/webhook/src/brand.ts:9`](../packages/experimental/webhook/src/brand.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/jobs/jobs/src/brand.ts:19`](../packages/jobs/jobs/src/brand.ts) · [`packages/llm/llm-fallback/src/brand.ts:10`](../packages/llm/llm-fallback/src/brand.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:14`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
+Sources: [`packages/api/session-controller/src/types.ts:389`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:21`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:21`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:33`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:9`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/threads/src/types.ts:7`](../packages/experimental/threads/src/types.ts) · [`packages/experimental/webhook/src/brand.ts:12`](../packages/experimental/webhook/src/brand.ts) · [`packages/experimental/webhook/src/brand.ts:6`](../packages/experimental/webhook/src/brand.ts) · [`packages/experimental/webhook/src/brand.ts:9`](../packages/experimental/webhook/src/brand.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/jobs/jobs/src/brand.ts:19`](../packages/jobs/jobs/src/brand.ts) · [`packages/llm/llm-fallback/src/brand.ts:10`](../packages/llm/llm-fallback/src/brand.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:14`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
 
 `string`
 
@@ -7227,7 +7231,7 @@ Sources: [`packages/experimental/liveshare/src/host/viewer-principal.ts:29`](../
 
 SHA-256: `c2a13242efc3bea4b36a843ddf1524ff4d33c765a71b582fa1fdbfa4fa148434`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:227`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:207`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -8704,7 +8708,7 @@ Sources: [`packages/core/tools/src/index.ts:28`](../packages/core/tools/src/inde
 
 SHA-256: `a4afec59b75aad5d13ef82d6931f35cc2d98918503916cf069355b77c5e42302`
 
-Sources: [`packages/api/session-controller/src/types.ts:397`](../packages/api/session-controller/src/types.ts)
+Sources: [`packages/api/session-controller/src/types.ts:398`](../packages/api/session-controller/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -8978,7 +8982,7 @@ Sources: [`packages/web/web-search-deepseek/src/provider.ts:64`](../packages/web
 
 SHA-256: `8bb8c3751a6ce64b61aba1ec7ae798c00a5803c4d868a0430873216c6569ed52`
 
-Sources: [`packages/session/session-log-deepseek/src/types.ts:81`](../packages/session/session-log-deepseek/src/types.ts)
+Sources: [`packages/session/session-log-deepseek/src/types.ts:96`](../packages/session/session-log-deepseek/src/types.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -9071,7 +9075,7 @@ Sources: [`packages/experimental/threads/src/types.ts:203`](../packages/experime
 
 SHA-256: `c001c06435e797f9ce1d56238808681b2127568e2a6b00ca293bd1810d5abfce`
 
-Sources: [`packages/experimental/model-routing/src/types.ts:221`](../packages/experimental/model-routing/src/types.ts)
+Sources: [`packages/experimental/model-routing/lib/types/types.d.ts:198`](../packages/experimental/model-routing/lib/types/types.d.ts)
 
 | Property | Presence | Type |
 |---|---|---|

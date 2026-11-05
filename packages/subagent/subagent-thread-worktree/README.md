@@ -77,7 +77,7 @@ Every failure is loud and typed; this package never falls back to an unisolated 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The provider's whole participation in a continuable child is `prepareContinuable`: it resolves the repository the delegation names, creates the worktree through `ctx.worktrees`, returns `{ cwd, handles }` — where `handles` names the created worktree's path and branch — and compensates for its own failure. Identity reservation, composition, prompt delivery, cold resume, ownership, and disposal all belong to the continuation manager, so this package carries no lifecycle of its own.
+The provider's whole participation in a continuable child is `prepareContinuable`: it resolves the repository the delegation names, creates the worktree through `ctx.threadWorktrees`, returns `{ cwd, handles }` — where `handles` names the created worktree's path and branch — and compensates for its own failure. Identity reservation, composition, prompt delivery, cold resume, ownership, and disposal all belong to the continuation manager, so this package carries no lifecycle of its own.
 
 This provider implements no one-shot `start`: the worktree exists only as a `prepareContinuable` result, so a one-shot route has nothing to isolate the child with. The absence is structural, not a refusal, and it is what makes a Thread isolated by construction. It also declares `isolatesContinuableCwd`, so a caller that must not lose the isolation can refuse the one-shot route rather than fall into it.
 

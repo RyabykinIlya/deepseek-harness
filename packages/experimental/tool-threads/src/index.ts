@@ -38,7 +38,7 @@ export const name = 'tool-threads'
 /**
  * Services required before the tools are registered.
  *
- * `ctx.threads` and `ctx.worktrees` are resolved at execution time so a
+ * `ctx.threads` and `ctx.threadWorktrees` are resolved at execution time so a
  * composition without them still shows the tools and the model learns which
  * capability is missing.
  */
@@ -430,7 +430,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       }
       if (args.path !== undefined) assertRepoRelative(args.path)
       const rows = readCallerThreads(ctx, 'thread_diff', caller.session).rows
-      const worktrees = ctx.get('worktrees')
+      const worktrees = ctx.get('threadWorktrees')
       if (args.thread_id === undefined) {
         if (worktrees === undefined) {
           throw new Error('thread_diff cannot read Thread changes: @deepseek-ai/dsh-worktree-manager is not loaded')

@@ -4,7 +4,7 @@
  */
 
 import { execFile, execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,7 +54,7 @@ function repository(): string {
 async function mount(config: Config): Promise<WorktreeService> {
   const ctx = new Context()
   await ctx.plugin(WorktreeService, { pruneOnStart: false, ...config })
-  return ctx.worktrees as never
+  return ctx.threadWorktrees
 }
 
 const signal = () => new AbortController().signal
@@ -76,8 +76,20 @@ describe('shared worktreeRoot', { timeout: TEST_TIMEOUT_MS }, () => {
     const a = await mount({ worktreeRoot })
     const b = await mount({ worktreeRoot })
 
+    // Both attempts must observe the same fresh `reserved` record: the second
+    // instance's decide has to run INSIDE the first one's creation window, or
+    // it would legally reuse the finished worktree instead of colliding. Start
+    // the second attempt once the intent line is on disk (the file appears with
+    // that line before the clone begins), which is the cross-process ordering
+    // this contract is about; a pure microtask race is scheduling-dependent.
+    const first = a.create({ repoRoot, threadId: 'same', baseRef: 'HEAD' }, signal())
+    const sidecar = join(worktreeRoot, REGISTRY_FILE_NAME)
+    const deadline = Date.now() + TEST_TIMEOUT_MS
+    while (!existsSync(sidecar) && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
     const results = await Promise.allSettled([
-      a.create({ repoRoot, threadId: 'same', baseRef: 'HEAD' }, signal()),
+      first,
       b.create({ repoRoot, threadId: 'same', baseRef: 'HEAD' }, signal()),
     ])
 

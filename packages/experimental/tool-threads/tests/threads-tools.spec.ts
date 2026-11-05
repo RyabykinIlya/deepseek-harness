@@ -174,7 +174,7 @@ async function setup(
     Object.defineProperty(ctx.threads, 'isRunning', { configurable: true, value: (id: string) => running.has(id) })
   }
   if (worktrees) {
-    ctx.provide('worktrees', {
+    ctx.provide('threadWorktrees', {
       get: (threadId: string) => worktrees.get(threadId),
       changes: (rec: WorktreeRecord, opts: { maxCommits: number; maxFiles: number }) => worktrees.changesOf(rec, opts),
       filePatch: (rec: WorktreeRecord, path: string, max: number) => worktrees.filePatch(rec, path, max),

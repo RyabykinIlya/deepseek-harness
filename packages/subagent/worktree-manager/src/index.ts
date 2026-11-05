@@ -1,5 +1,5 @@
 /**
- * The worktree SERVICE home (`ctx.worktrees`): the owner of one git worktree per
+ * The worktree SERVICE home (`ctx.threadWorktrees`): the owner of one git worktree per
  * background Thread, and of the durable intent log that makes those worktrees
  * recoverable after a crash.
  *
@@ -69,7 +69,7 @@ export { WorktreeRegistry, REGISTRY_FILE_NAME, REGISTRY_LOCK_NAME, isLegalTransi
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    worktrees: WorktreeService
+    threadWorktrees: WorktreeService
   }
 }
 
@@ -345,7 +345,7 @@ function assertRepoRelativePath(path: string): void {
 }
 
 /**
- * The worktree service (`ctx.worktrees`).
+ * The worktree service (`ctx.threadWorktrees`).
  *
  * One worktree per Thread, placed under a configured root that survives restarts.
  * The service owns creation, the durable intent log, explicit removal, status, and
@@ -412,7 +412,7 @@ export class WorktreeService extends Service {
   private sweepQueue: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, config: Config) {
-    super(ctx, 'worktrees')
+    super(ctx, 'threadWorktrees')
     // schemastery (static Config) already filled the defaulted fields; the casts
     // record that runtime fact for fields whose interface form is optional.
     this.repoRootResolution = config.repoRootResolution ?? 'explicit'
