@@ -24,6 +24,7 @@ const TIERS: ModelRoutingSettings['tiers'] = [
     minQuantization: 'fp8',
     unknownQuantization: 'trusted',
     free: 'prefer',
+    unmeteredModels: [],
     extraSources: [],
   },
 ]

@@ -40,6 +40,7 @@ function tierRow(over: Partial<TierRow> = {}): TierRow {
     minQuantization: 'fp8',
     unknownQuantization: 'trusted',
     free: 'prefer',
+    unmeteredModels: [],
     extraSources: [],
     filter: '',
     dirty: false,

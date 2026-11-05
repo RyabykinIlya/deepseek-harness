@@ -1268,11 +1268,17 @@ export class TiersAdapter extends LlmAdapter {
    *
    * The account-wide daily budget is the one shared free limit: a budget
    * whose remainder is below `freeMinRemaining` answers false for every free
-   * endpoint of every tier, fixed request included — the budget protects the
-   * account, not the caller's intent. A single model's own cap is not decided
-   * here — that is what the per-model bench in `excludeEndpoint` records — so
-   * a model that spent its cap leaves the ranking while the tier's other free
-   * models stay in it.
+   * endpoint of every unattended tier decision — the gate exists to keep an
+   * `auto`/`tier` decision from silently spending down a shared account budget
+   * nobody chose to spend. A fixed request bypasses the budget gate entirely,
+   * for the same reason it bypasses the admission keys above: the user named
+   * one model on purpose, so the turn runs on it until the model's own
+   * endpoint actually refuses (`RATE_LIMIT`/`free_model_daily_requests`
+   * exhausted from the provider itself), not on a conservative local floor
+   * meant to protect an unattended decision from an account it does not own.
+   * A single model's own cap is not decided here — that is what the
+   * per-model bench in `excludeEndpoint` records — so a model that spent its
+   * cap leaves the ranking while the tier's other free models stay in it.
    */
   private async freeAdmission(input: {
     settings: RoutingSettings
@@ -1281,9 +1287,9 @@ export class TiersAdapter extends LlmAdapter {
     session: Session | undefined
   }): Promise<boolean> {
     const { settings, tier, target, session } = input
+    if (target.kind === 'fixed') return true
     const delegated = session?.header.origin === 'subagent'
     let allowFree = tier.free === 'only'
-      || target.kind === 'fixed'
       || (delegated ? settings.freeForSubagents : settings.freeForSoloSessions)
     if (allowFree && tier.free !== 'off') {
       const usage = await this.deps.keyInfo.freeUsage(settings.keyInfoTtlMs, new AbortController().signal)

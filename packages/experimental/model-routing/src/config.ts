@@ -150,6 +150,23 @@ export interface TierSettings {
   /** Free endpoints: `off` rejects them, `prefer` admits them (price 0 always wins), `only` admits only them (default `off`). */
   free: FreeMode
   /**
+   * Model ids from `models` that rank by price like any paid candidate,
+   * bypassing every free-specific gate: `free`, `freeForSubagents`/
+   * `freeForSoloSessions`, and the account-wide `free_model_daily_requests`
+   * budget (default `[]`).
+   *
+   * Some zero-priced OpenRouter endpoints are not drawn from that shared
+   * daily pool at all — an anonymous `stealth/*` model with no `:free`
+   * variant suffix is OpenRouter's own evidence of this, not a configured
+   * belief — so gating them behind the same admission as `nvidia/*:free`
+   * would refuse a candidate the budget was never meant to protect. Naming
+   * an id here that the provider does meter empties the shared budget for
+   * every other free model in every tier without the warning the budget
+   * exists to give; this field states a fact about the id's own billing,
+   * not a preference for serving it unconditionally.
+   */
+  unmeteredModels: string[]
+  /**
    * Non-OpenRouter candidate sources, ranked alongside the tier's OpenRouter
    * endpoints (default `[]`). Each entry names the pi-ai route that dispatches
    * its models, the model ids that route serves — under their own names, or
@@ -420,6 +437,7 @@ const tierSettings: z<TierSettings> = z.object({
   minQuantization: z.union(QUANTIZATIONS).default('fp8'),
   unknownQuantization: z.union(['reject', 'trusted', 'accept'] as const).default('trusted'),
   free: z.union(['off', 'prefer', 'only'] as const).default('off'),
+  unmeteredModels: z.array(z.string()).default([]),
   extraSources: z.array(extraSource).default([]),
 })
 
@@ -769,6 +787,9 @@ export function validateSettings(settings: RoutingSettings): void {
         invalid(`tier "${tier.name}" model "${model}" must be an OpenRouter id author/slug and appear once`)
       }
       models.add(model)
+    }
+    for (const model of tier.unmeteredModels) {
+      if (!models.has(model)) invalid(`tier "${tier.name}" unmeteredModels names "${model}", which is not in its models`)
     }
     if (!Number.isInteger(tier.contextWindow) || tier.contextWindow <= 0) {
       invalid(`tier "${tier.name}" contextWindow must be a positive integer`)

@@ -133,6 +133,12 @@ export interface SelectionPolicy {
   free: FreeMode
   /** Whether this caller may use free endpoints at all (subagent origins usually may not). */
   allowFree: boolean
+  /**
+   * Model ids that rank as a priced candidate regardless of `free`/`allowFree`:
+   * {@link TierSettings.unmeteredModels}. Checked by model id, so every
+   * endpoint and direct source of that id bypasses the free gate alike.
+   */
+  unmeteredModels?: ReadonlySet<string>
   minUptime: number
   requireNormalStatus: boolean
   /** Endpoint tags excluded after recent failures. */
@@ -419,9 +425,10 @@ export function subscriptionServesRequest(
  * `supportedParameters`.
  * @param endpoint - the candidate to check.
  * @param policy - the tier's filters.
+ * @param model - the canonical model id this candidate serves, for {@link SelectionPolicy.unmeteredModels}.
  * @returns the first failing reason, or `undefined` when the candidate is admissible.
  */
-export function rejectionOf(endpoint: Candidate, policy: SelectionPolicy): EndpointRejection | undefined {
+export function rejectionOf(endpoint: Candidate, policy: SelectionPolicy, model?: string): EndpointRejection | undefined {
   const direct = isDirect(endpoint)
   const tag = direct ? endpoint.id : endpoint.slug
   if (policy.excludedTags.has(tag)) return 'excluded'
@@ -450,6 +457,10 @@ export function rejectionOf(endpoint: Candidate, policy: SelectionPolicy): Endpo
   }
   const prices = pricesOf(endpoint)
   if (prices === undefined) return 'unpriced'
+  // An unmetered model's price is a fact about that id's own billing, not an
+  // admission the free-specific gates get to override: it ranks like any
+  // priced candidate whether or not it happens to be free right now.
+  if (model !== undefined && policy.unmeteredModels?.has(model) === true) return undefined
   if (isFree(endpoint)) {
     if (policy.free === 'off' || !policy.allowFree) return 'free'
   } else if (policy.free === 'only') {
@@ -488,10 +499,12 @@ function tagOf(candidate: Candidate): string {
  * then the model's direct sources in `extraSources` order — and the ranking
  * itself is price-only across every model: no rule can override the blended
  * price, which is what lets a failure move the turn to another model's live
- * subscription. Ties break on measured uptime, then on model and tag,
- * so the same fixture list always produces the same decision; a direct source
- * states no uptime and therefore sorts behind an equally priced endpoint that
- * measures one.
+ * subscription. When the blended price ties — notably two free endpoints at
+ * zero — the tier order breaks the tie, so a deployment can state the preferred
+ * free model by listing it first; only after order do measured uptime, then
+ * model and tag, break remaining ties, so the same fixture list always
+ * produces the same decision. A direct source states no uptime and therefore
+ * sorts behind an equally priced endpoint that measures one.
  * @param lists - candidate list per model, or the failure that model reported.
  * @param models - candidate model ids, in tier order.
  * @param policy - the tier's filters and this request's requirements.
@@ -526,7 +539,7 @@ export function rankEndpoints(
       // explains why a cheaper endpoint is absent from a ranking that did read it.
       const rejection = subscriptionOnly && !isDirect(endpoint)
         ? 'subscription-only' as const
-        : modelRejection ?? rejectionOf(endpoint, policy)
+        : modelRejection ?? rejectionOf(endpoint, policy, model)
       if (rejection !== undefined) {
         rejections[rejection] += 1
         rejected.push({ model, endpoint, reason: rejection })
@@ -544,9 +557,20 @@ export function rankEndpoints(
       ranked.push({ model, endpoint, blendedUsdPerToken: price, free: isFree(endpoint) })
     }
   }
+  const orderOf = new Map(models.map((model, index) => [model, index]))
   ranked.sort((left, right) => {
     if (left.blendedUsdPerToken !== right.blendedUsdPerToken) {
       return left.blendedUsdPerToken - right.blendedUsdPerToken
+    }
+    // The tier's own order breaks a price tie: two free endpoints both blend
+    // to zero, and the configured list — not a measured uptime that churns
+    // under the deployment — states which one the tier prefers.
+    const leftOrder = orderOf.get(left.model)
+    const rightOrder = orderOf.get(right.model)
+    if (leftOrder !== rightOrder) {
+      if (leftOrder === undefined) return 1
+      if (rightOrder === undefined) return -1
+      return leftOrder - rightOrder
     }
     const leftUptime = isDirect(left.endpoint) ? undefined : left.endpoint.uptimeLast30m
     const rightUptime = isDirect(right.endpoint) ? undefined : right.endpoint.uptimeLast30m
@@ -590,6 +614,7 @@ export function policyFor(
     trustedUnknownProviders: new Set(settings.trustedUnknownProviders),
     free: tier.free,
     allowFree: options.allowFree,
+    ...(tier.unmeteredModels?.length ?? 0) === 0 ? {} : { unmeteredModels: new Set(tier.unmeteredModels) },
     minUptime: settings.minUptime,
     requireNormalStatus: settings.requireNormalStatus,
     excludedTags: options.excludedTags,

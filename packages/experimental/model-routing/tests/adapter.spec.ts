@@ -866,6 +866,21 @@ describe('TiersAdapter free endpoints', () => {
     expect(blockOf(h.sent[0]!)).toEqual({ only: ['stealth'], allow_fallbacks: false })
   })
 
+  it('serves a solo session the free favorite it named even when the daily budget is nearly spent', async () => {
+    // A fixed request bypasses the account-wide daily budget gate the same
+    // way it bypasses freeForSoloSessions/freeForSubagents: the user named
+    // this one model on purpose, so a shared-account floor meant to protect
+    // an unattended `auto`/`tier` decision must not empty it. Before this fix
+    // the request failed with MODEL_ROUTING_NO_ENDPOINT ("free=1") whenever
+    // the account's `free_model_daily_requests` remainder dropped below
+    // `freeMinRemaining`, even though the caller never asked the route to
+    // decide anything — it named the model directly.
+    const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }] })
+    h.freeRemaining = 5
+    await run(h.adapter, { model: 'stealth/space-bunny-alpha' })
+    expect(h.sent[0]?.options.model).toBe('stealth/space-bunny-alpha')
+  })
+
   it('never spends a subagent on a free endpoint', async () => {
     const h = await harness({ tiers: [{ ...FLASH, free: 'prefer' }], settings: { freeForSubagents: false } })
     h.origin = 'subagent'

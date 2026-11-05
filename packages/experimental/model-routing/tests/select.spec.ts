@@ -39,6 +39,7 @@ const PRO: TierSettings = {
   minQuantization: 'fp8',
   unknownQuantization: 'reject',
   free: 'off',
+  unmeteredModels: [],
   extraSources: [],
 }
 
@@ -144,6 +145,25 @@ describe('rankEndpoints over the recorded replies', () => {
         'deepseek/deepseek-v4-flash deepinfra/fp8=2.6999999999999997e-8',
       ],
       rejections: { status: 1, tools: 1, context: 1, quantization: 13 },
+    })
+  })
+
+  it('ranks an unmetered model even when the tier and the caller refuse free', async () => {
+    // An unmetered id (no `:free` variant; not drawn from the shared daily
+    // pool) bypasses the free-specific gates entirely: `free: 'off'` and
+    // `allowFree: false` — the subagent default — must not drop it. The tier
+    // names the id in `unmeteredModels`; every other free endpoint of the
+    // tier still refuses with `free`.
+    const tier = { ...FLASH6, free: 'off' as const, unmeteredModels: ['nvidia/nemotron-3-super-120b-a12b:free'] }
+    expect(await rank(tier, settingsOf(), { allowFree: false })).toEqual({
+      length: 41,
+      top: [
+        'nvidia/nemotron-3-super-120b-a12b:free nvidia=0',
+        'deepseek/deepseek-v4-flash streamlake/fp8=8.399999999999999e-9',
+        'deepseek/deepseek-v4-flash deepinfra/fp8=2.6999999999999997e-8',
+        'deepseek/deepseek-v4-flash gmicloud/fp8=2.73e-8',
+      ],
+      rejections: { status: 1, tools: 1, context: 1, quantization: 13, free: 1 },
     })
   })
 
@@ -496,6 +516,42 @@ describe('direct sources beside OpenRouter endpoints', () => {
     // both candidates carry the same route id, so the configured order stands.
     expect(result.ranked.map(entry => `${(entry.endpoint as DirectSource).route}:${(entry.endpoint as DirectSource).id}`))
       .toEqual(['zzz-route:mimo-v2.6-pro', 'claude-proxy:mimo-v2.6-pro'])
+  })
+
+  it('breaks a price tie by the tier model order, not by uptime', () => {
+    // Two free endpoints both blend to zero; the higher-uptime one is listed
+    // second, so the tier order — the deployment's statement of preference —
+    // decides, not the churned measurement.
+    const crouton: OpenRouterEndpoint = {
+      slug: 'stealth', promptPrice: 0, completionPrice: 0, uptimeLast30m: 96, quantization: 'fp8',
+      supportedParameters: ['tools'], contextLength: 1_048_576,
+    }
+    const nemotron: OpenRouterEndpoint = {
+      slug: 'nvidia', promptPrice: 0, completionPrice: 0, uptimeLast30m: 100, quantization: 'fp8',
+      supportedParameters: ['tools'], contextLength: 1_048_576,
+    }
+    const tier = { ...FLASH, free: 'prefer' as const, models: ['stealth/crouton-alpha', 'nvidia/nemotron-3-ultra-550b-a55b:free'] }
+    const result = rankEndpoints(
+      new Map([['stealth/crouton-alpha', [crouton]], ['nvidia/nemotron-3-ultra-550b-a55b:free', [nemotron]]]),
+      tier.models,
+      policyFor(tier, settingsOf(), { allowFree: true, excludedTags: new Set() }),
+      MIX,
+    )
+    expect(result.ranked.map(entry => entry.model)).toEqual([
+      'stealth/crouton-alpha',
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+    ])
+    // Reversing the tier order reverses the tie-break.
+    const reversed = rankEndpoints(
+      new Map([['stealth/crouton-alpha', [crouton]], ['nvidia/nemotron-3-ultra-550b-a55b:free', [nemotron]]]),
+      [...tier.models].reverse(),
+      policyFor(tier, settingsOf(), { allowFree: true, excludedTags: new Set() }),
+      MIX,
+    )
+    expect(reversed.ranked.map(entry => entry.model)).toEqual([
+      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'stealth/crouton-alpha',
+    ])
   })
 
   it('sorts an unmeasured direct source behind an equally priced endpoint', () => {
