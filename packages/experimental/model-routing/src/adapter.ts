@@ -1715,10 +1715,35 @@ export class TiersAdapter extends LlmAdapter {
     // because a spent cap is an answer rather than a blip — leaves the tier's
     // other free models ranked, so the re-decision rotates to the next one
     // instead of stopping every free endpoint until tomorrow.
+    //
+    // An unmetered model is exempt: `unmeteredModels` declares an id whose
+    // zero-priced endpoint OpenRouter does not draw from the shared daily pool
+    // (no `:free` variant), so a 429 there is a transient shared-pool limit,
+    // not a spent per-model cap. Calling it a daily cap would bench the model
+    // until midnight on the first blip, when the remedy for a shared-pool
+    // limit is a short retry on the same model. It keeps the ordinary streak
+    // bench (`excludeAfterFailures` / `excludeAfterFailureMs`) instead.
     if (endpoint !== undefined && endpoint.promptPrice === 0 && endpoint.completionPrice === 0
-      && code === 'RATE_LIMIT') {
+      && code === 'RATE_LIMIT' && !this.isUnmetered(settings, pin)) {
       this.freeModelsBlockedUntil.set(endpoint.slug, nextUtcMidnight(this.deps.now()))
     }
+  }
+
+  /**
+   * Whether the pin's model is declared unmetered in its tier.
+   *
+   * An unmetered id is not drawn from the shared daily `free_model_daily_requests`
+   * pool, so the free-cap bench (`freeModelsBlockedUntil`, until the next UTC
+   * midnight) must not be applied to it: a `RATE_LIMIT` there is a transient
+   * upstream shared-pool limit, retried on the same model until the ordinary
+   * streak bench (`excludeAfterFailures` / `excludeAfterFailureMs`) moves on.
+   * @param settings - the settings the pin was decided under.
+   * @param pin - the pin that failed.
+   * @returns whether the pin's tier declares its model unmetered.
+   */
+  private isUnmetered(settings: RoutingSettings, pin: Pin): boolean {
+    const tier = settings.tiers.find(candidate => candidate.name === pin.tier)
+    return tier?.unmeteredModels.includes(pin.model) === true
   }
 
   /**

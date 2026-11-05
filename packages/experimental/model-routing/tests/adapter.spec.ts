@@ -924,6 +924,23 @@ describe('TiersAdapter free limits', () => {
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it('retries an unmetered free model on RATE_LIMIT instead of rotating', async () => {
+    const h = await harness({
+      tiers: [{ ...FREE, unmeteredModels: ['nvidia/nemotron-3-super-120b-a12b:free'] }],
+      settings: { excludeAfterFailures: 10 },
+      responses: [failureChunks('RATE_LIMIT'), normalChunks()],
+    })
+    const chunks = await run(h.adapter, { model: 'free' })
+    expect(h.sent).toHaveLength(2)
+    // An unmetered id is not drawn from the shared daily pool, so a transient
+    // shared-pool 429 is not a spent per-model cap: the same model is retried
+    // instead of the tier rotating to its next free endpoint.
+    expect(h.sent[0]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+    expect(h.sent[1]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', excludedTags: [] })
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('keeps a model that spent its cap out of another Session\'s ranking', async () => {
     const h = await harness({
       tiers: [FREE],
