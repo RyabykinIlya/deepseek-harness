@@ -776,9 +776,11 @@ export class TiersAdapter extends LlmAdapter {
     // A model with no usable direct source keeps its OpenRouter endpoints, since
     // the alternative would be dropping the model rather than choosing a source.
     const subscriptionOnly = openRouterFallback ? undefined : new Set(extraSources.keys())
+    const isFixedTarget = target.kind === 'fixed'
     const policy = (imageInput: 'require' | 'omit') => policyFor(tier, settings, {
       allowFree,
-      excludedTags: excluded.tags,
+      // When user explicitly selects a model, bypass benching — they chose this model deliberately
+      ...isFixedTarget ? {} : { excludedTags: excluded.tags },
       imageInput,
       ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
       ...requirement,

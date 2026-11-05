@@ -141,8 +141,8 @@ export interface SelectionPolicy {
   unmeteredModels?: ReadonlySet<string>
   minUptime: number
   requireNormalStatus: boolean
-  /** Endpoint tags excluded after recent failures. */
-  excludedTags: ReadonlySet<string>
+  /** Endpoint tags excluded after recent failures. Optional when user explicitly selected a model. */
+  excludedTags?: ReadonlySet<string>
   /**
    * Direct candidates excluded after a failure, by `route:id`.
    *
@@ -431,7 +431,7 @@ export function subscriptionServesRequest(
 export function rejectionOf(endpoint: Candidate, policy: SelectionPolicy, model?: string): EndpointRejection | undefined {
   const direct = isDirect(endpoint)
   const tag = direct ? endpoint.id : endpoint.slug
-  if (policy.excludedTags.has(tag)) return 'excluded'
+  if (policy.excludedTags?.has(tag)) return 'excluded'
   if (direct && policy.excludedSources?.has(`${endpoint.route}:${endpoint.id}`) === true) return 'excluded'
   if (!direct) {
     if (policy.requireNormalStatus && endpoint.status !== undefined && endpoint.status !== 0) return 'status'
@@ -597,7 +597,7 @@ export function policyFor(
   settings: RoutingSettings,
   options: {
     allowFree: boolean
-    excludedTags: ReadonlySet<string>
+    excludedTags?: ReadonlySet<string>
     imageInput?: ImageInputPolicy
     ignoreUptime?: boolean
     requiredInput?: RequiredInput
@@ -617,7 +617,7 @@ export function policyFor(
     ...(tier.unmeteredModels?.length ?? 0) === 0 ? {} : { unmeteredModels: new Set(tier.unmeteredModels) },
     minUptime: settings.minUptime,
     requireNormalStatus: settings.requireNormalStatus,
-    excludedTags: options.excludedTags,
+    ...options.excludedTags === undefined ? {} : { excludedTags: options.excludedTags },
     imageInput: options.imageInput ?? tier.imageInput,
     // §19 №5 / §3.3: the uptime floor is soft, so an unpassable one is dropped
     // rather than turned into a failure, and the relaxation is reported.
