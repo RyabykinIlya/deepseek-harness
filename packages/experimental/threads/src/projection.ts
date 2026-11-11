@@ -175,6 +175,11 @@ function applyThreadEvent(state: ThreadsProjectionState, event: ThreadSessionEve
  * @returns the next state, or the same reference when the event is not the unit's.
  */
 export function applyThreadsEvent(state: ThreadsProjectionState, event: SessionEvent): ThreadsProjectionState {
+  // The inherited `session/end-seed` marker closes a fork's copied prefix. Every
+  // Thread event before it was appended to the fork ancestor's log, so the rows
+  // folded from the prefix name the ancestor's Threads, not this Session's; the
+  // fold drops them and continues empty over this Session's own events.
+  if (event.type === 'session/end-seed' && event.data.inherited === true) return emptyThreadsState()
   if (!isThreadEvent(event)) return state
   return applyThreadEvent(state, event)
 }
@@ -197,12 +202,12 @@ export function threadsProjectionView(state: ThreadsProjectionState): ThreadStat
  */
 export const threadsProjectionDefinition = {
   key: 'threads',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: threadsProjectionStateSchema,
   // The framework calls init with the Session metadata and the fork-inherited prefix
-  // length. Threads state starts empty regardless of both, but the unit must accept
-  // the contract's full signature so a forked Project does not inherit its ancestor's
-  // Thread rows through the fold.
+  // length. Threads state starts empty; inherited Thread events are later dropped
+  // by the fold at the inherited `session/end-seed` marker, so a forked Project
+  // keeps none of its ancestor's Thread rows.
   init: (_header: SessionHeader, _inheritedEventCount: SessionLogOffset) => emptyThreadsState(),
   apply: applyThreadsEvent,
   wire: { viewSchema: z.array(threadStatusRowSchema), view: threadsProjectionView },

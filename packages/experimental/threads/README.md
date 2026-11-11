@@ -189,7 +189,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 ### Fold totality
 
-A `thread/status` for a Thread this log never created, and a `thread/removed` for an unknown Thread, are both ignored and return the same reference. The fold never throws mid-replay, because a throw during `restore` would leave a cold read with no value at all.
+A `thread/status` for a Thread this log never created, and a `thread/removed` for an unknown Thread, are both ignored and return the same reference. The fold never throws mid-replay, because a throw during `restore` would leave a cold read with no value at all. A forked Project's log opens with the copied prefix of its ancestor; the fold drops every Thread row folded from that prefix at the inherited `session/end-seed` marker, and `threadsOf` (the Library reader) applies the same cut, so a fork owns none of its ancestor's Threads.
 
 ### Registration and capability absence
 
@@ -197,7 +197,7 @@ The unit is installed through `ctx.inject(['sessionProjections'], …)`, so regi
 
 ### Durability
 
-Host state is plain JSON (the persisted-cache precondition) and is checkpointed with the session. `stateVersion` is `2`; bump it whenever the serialized state fields or the fold semantics change, so persisted `(sessionId, key, ver, seq, val)` rows from an older unit are discarded and refolded instead of being forward-applied into garbage. Registering the same key at a *different* `stateVersion` throws, which is the cross-plugin single-version constraint; registering it again at the same version is a counted share.
+Host state is plain JSON (the persisted-cache precondition) and is checkpointed with the session. `stateVersion` is `3`; bump it whenever the serialized state fields or the fold semantics change, so persisted `(sessionId, key, ver, seq, val)` rows from an older unit are discarded and refolded instead of being forward-applied into garbage. Registering the same key at a *different* `stateVersion` throws, which is the cross-plugin single-version constraint; registering it again at the same version is a counted share.
 
 ## Model Experience
 

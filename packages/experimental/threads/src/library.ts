@@ -79,13 +79,19 @@ export function presentedOf(sessionId: SessionId, threadId: ThreadId | undefined
 
 /**
  * Reconstruct the Threads a Project ever created from its own log.
+ *
+ * A forked Project's log opens with the copied prefix of its ancestor, so Thread
+ * events before the inherited `session/end-seed` marker name the ancestor's
+ * Threads; the marker clears them, and only this Project's own events count.
  * @param events - the Project's committed log.
  * @returns Threads newest first, archived ones included.
  */
 export function threadsOf(events: readonly SessionEvent[]): LoggedThread[] {
   const threads = new Map<string, LoggedThread>()
   for (const event of events) {
-    if (event.type === 'thread/created') {
+    if (event.type === 'session/end-seed' && event.data.inherited === true) {
+      threads.clear()
+    } else if (event.type === 'thread/created') {
       const { threadId, label, branch } = event.data
       threads.set(threadId, { threadId: toThreadId(threadId), label, archived: false, ...branch === undefined ? {} : { branch } })
     } else if (event.type === 'thread/removed') {

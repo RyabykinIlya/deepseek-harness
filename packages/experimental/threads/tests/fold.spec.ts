@@ -80,8 +80,8 @@ describe('threads projection fold', () => {
     expect(threadsProjectionView(state)).toEqual([])
   })
 
-  it('declares state version 2 and round-trips through its strict schema', () => {
-    expect(threadsProjectionDefinition.stateVersion).toBe(2)
+  it('declares state version 3 and round-trips through its strict schema', () => {
+    expect(threadsProjectionDefinition.stateVersion).toBe(3)
     const state = fold(LOG)
     expect(threadsProjectionDefinition.stateSchema.parse(JSON.parse(JSON.stringify(state)))).toEqual(state)
     expect(() => threadsProjectionDefinition.stateSchema.parse({
