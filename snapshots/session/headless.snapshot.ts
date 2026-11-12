@@ -505,6 +505,15 @@ const WORKTREE_CHECKOUT_FILTER = "printf 'FILTERED CHECKOUT CONTENT\\n'"
 const WORKTREE_CHECKOUT_ATTRIBUTES = 'tracked.txt filter=dsh-snapshot-checkout\n'
 
 const workspaceSetups: Record<string, (cwd: string) => Promise<void>> = {
+  /** A plain git checkout with one commit: the Threads worktree provider resolves the repository from it. */
+  async 'git-seed'(cwd) {
+    snapshotGit(cwd, ['init', '--initial-branch=main', '--object-format=sha1'])
+    snapshotGit(cwd, ['config', 'user.email', 'snapshot@example.invalid'])
+    snapshotGit(cwd, ['config', 'user.name', 'Snapshot seed'])
+    await writeFile(join(cwd, 'tracked.txt'), 'SEED\n')
+    snapshotGit(cwd, ['add', 'tracked.txt'])
+    snapshotGit(cwd, ['commit', '-m', 'Snapshot seed'])
+  },
   async 'readonly-patch-directory'(cwd) {
     const directory = join(cwd, 'locked')
     await mkdir(directory)
