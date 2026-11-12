@@ -250,12 +250,13 @@ function startEdge(ctx: Context, id: SessionId = CHILD, provider = 'thread'): vo
  */
 function endEdge(
   ctx: Context,
-  overrides: Partial<SubagentRunEndInfo> & { id: SessionId },
+  overrides: Omit<Partial<SubagentRunEndInfo>, 'lastAssistantMessage' | 'parentSessionId'> & { id: SessionId },
   options: { withoutClosingMessage?: boolean } = {},
 ): void {
   const info: SubagentRunEndInfo = {
     runId: SubagentRunId(`run-${overrides.id}`),
     provider: 'thread',
+    parentSessionId: PROJECT,
     local: true,
     stopReason: 'completed',
     ...options.withoutClosingMessage === true ? {} : { lastAssistantMessage: [{ type: 'text', text: 'shipped it' }] },

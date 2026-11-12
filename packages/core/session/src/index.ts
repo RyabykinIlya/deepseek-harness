@@ -870,7 +870,8 @@ export class Session {
     const snapshot = snapshotAppend(type, data, opts[0], `session event "${type}"`)
     // Payload getters can detach the Session while the snapshots are read.
     const entry = this.publicationEntry()
-    const event = createAppendEvent(snapshot, SessionSeq(this.log.length), opts[0] !== undefined && 'ignorable' in opts[0] && opts[0].ignorable === true)
+    const appendOpts = opts[0]
+    const event = createAppendEvent(snapshot, SessionSeq(this.log.length), appendOpts !== undefined && 'ignorable' in appendOpts)
     this.commit(event, entry)
     return event
   }

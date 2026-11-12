@@ -17,7 +17,6 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SubagentRuntime from '../src/index.ts'
 import type { ContinuableCreateSpec } from '../src/index.ts'
-import { subagentManager } from './manager-internals.ts'
 import { loadStoredSession } from './persistence-helpers.ts'
 import { mountWorkingDirectoryFixture } from './working-directory-fixture.ts'
 import { TestSessionQuery } from './test-session-query.ts'
@@ -76,7 +75,8 @@ function start(ctx: Context, parent: Agent) {
   return ctx.subagents.startActivation({
     provider: 'custom',
     label: 'child task',
-    request: { prompt: [{ type: 'text', text: 'child task' }], parent },
+    prompt: [{ type: 'text', text: 'child task' }],
+    parent,
     signal,
     delivery: 'parent',
   })
@@ -131,7 +131,12 @@ describe('provider-supplied cwd', () => {
     const { ctx, parent, prepare } = await setup(() => ({ cwd: dir }))
     const { childId } = await start(ctx, parent)
     await settled(ctx, childId)
-    await subagentManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
+    await ctx.subagents.prompt({
+      requestId: `again-${childId}` as never,
+      childSessionId: childId,
+      delivery: 'queue',
+      content: [{ type: 'text', text: 'again' }],
+    }, signal)
     expect(ctx.agents.get(childId)?.session.header.cwd).toBe(dir)
     await settled(ctx, childId)
     expect(prepare).toHaveBeenCalledTimes(1)
@@ -166,7 +171,12 @@ describe('provider-supplied agentPreset', () => {
     const { ctx, parent, prepare } = await setup(() => ({ agentPreset: 'reviewing' }))
     const { childId } = await start(ctx, parent)
     await settled(ctx, childId)
-    await subagentManager(ctx).queuePrompt(parent, childId, [{ type: 'text', text: 'again' }], { kind: 'user' }, signal)
+    await ctx.subagents.prompt({
+      requestId: `again-${childId}` as never,
+      childSessionId: childId,
+      delivery: 'queue',
+      content: [{ type: 'text', text: 'again' }],
+    }, signal)
     const resumed = ctx.agents.get(childId)!
     expect(ctx.tools.schemas(resumed).map(schema => schema.name)).toEqual(['reviewing_tool'])
     await settled(ctx, childId)

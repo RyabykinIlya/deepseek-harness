@@ -614,7 +614,7 @@ export function policyFor(
     trustedUnknownProviders: new Set(settings.trustedUnknownProviders),
     free: tier.free,
     allowFree: options.allowFree,
-    ...(tier.unmeteredModels?.length ?? 0) === 0 ? {} : { unmeteredModels: new Set(tier.unmeteredModels) },
+    ...tier.unmeteredModels.length === 0 ? {} : { unmeteredModels: new Set(tier.unmeteredModels) },
     minUptime: settings.minUptime,
     requireNormalStatus: settings.requireNormalStatus,
     ...options.excludedTags === undefined ? {} : { excludedTags: options.excludedTags },

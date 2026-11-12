@@ -36,6 +36,7 @@ import ThreadsPreset, {
   PROJECT_PRESET_ROW_NAMES,
   PROJECT_THREAD_PRESET_ID,
   THREADS_CONTEXT_NAME,
+  THREAD_CONTROL_ROW_ID,
   THREAD_PROVIDER,
   THREAD_WORKER_CONTEXT_NAME,
   coordinatorContract,
@@ -426,6 +427,8 @@ describe('what each role is offered', () => {
       display: { id: 'p', name: 'P', description: 'd', order: 1 },
       provider: THREAD_PROVIDER,
       base: BASE_ROWS,
+      contract: { checkIn: 'milestones', spawn: 'auto', mergePolicy: 'auto' },
+      tools: { defaultLimit: 5, maxLimit: 10 },
     }).plugins.find(row => row.id === THREAD_CONTROL_ROW_ID)
     expect(controlRow?.config).toEqual({ interrupt: true })
     // `list_agents` rides the merged control row upstream (4df09d37d5 folded it

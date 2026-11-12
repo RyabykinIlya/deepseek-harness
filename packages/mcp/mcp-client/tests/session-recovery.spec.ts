@@ -7,7 +7,7 @@ import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { isExpiredSessionError, syncTools } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
-import type { McpGeneration } from '@deepseek-ai/dsh-mcp-client/src/generation.ts'
+import { McpGeneration } from '@deepseek-ai/dsh-mcp-client/src/generation.ts'
 import type { ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 
 const testToolSignal = new AbortController().signal
@@ -100,7 +100,8 @@ describe('syncTools session recovery', () => {
     })
 
     expect(recoverSession).toHaveBeenCalledTimes(1)
-    expect((fresh.client as { callTool: ReturnType<typeof vi.fn> }).callTool).toHaveBeenCalledTimes(1)
+    const freshCalls = vi.mocked(fresh.client).callTool.mock
+    expect(freshCalls.calls).toHaveLength(1)
     expect(result.content[0]).toEqual({ type: 'text', text: 'recovered' })
   })
 

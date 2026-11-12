@@ -272,8 +272,8 @@ describe('subagent prompt Remote', () => {
   })
 
   it('routes a provider error carrying a string code to subagent/provider-rejected', async () => {
-    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
-    const delivery = promptDelivery(subagents)
+    const { ctx, subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const delivery = promptDelivery(ctx)
     delivery.mockRejectedValue(new HarnessError('not a repository', 'NOT_A_GIT_REPO'))
     await expect(subagents.prompt(promptRequest(), signal)).rejects.toMatchObject({
       code: 'subagent/provider-rejected',
