@@ -3,6 +3,8 @@ scenario: threads-project-worktree
 profile: headless
 composition: threads-project-worktree
 recording: authored
+workspace:
+  setup: git-seed
 header:
   class: threads-project-worktree
   pin: true

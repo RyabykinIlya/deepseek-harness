@@ -1,0 +1,22 @@
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.11 /home/ilya/.dsh/worktrees/70a2234cb0be1069/f6ff7f17-985e-4352-a80d-22198ce42bef
+
+ ✓ |thread-safe| packages/llm/llm/tests/retry-policy.spec.ts (25 tests) 23ms
+ ✓ |thread-safe| packages/llm/llm-pi-ai/tests/openrouter-endpoints.spec.ts (22 tests) 141ms
+ ✓ |thread-safe| packages/llm/llm-pi-ai/tests/openrouter-catalog.spec.ts (14 tests) 190ms
+ ✓ |thread-safe| packages/llm/llm/tests/service.spec.ts (105 tests) 450ms
+ ✓ |thread-safe| packages/llm/llm-pi-ai/tests/convert.spec.ts (91 tests) 124ms
+ ✓ |thread-safe| packages/experimental/model-routing/tests/adapter.spec.ts (111 tests) 1305ms
+ ✓ |thread-safe| packages/llm/llm-fallback/tests/fallback.spec.ts (9 tests) 431ms
+ ✓ |process-bound| packages/llm/llm-pi-ai/tests/adapter.spec.ts (67 tests) 3064ms
+     ✓ resolves a catalog model dynamically and uses a private endpoint  414ms
+
+ Test Files  8 passed (8)
+      Tests  444 passed (444)
+   Start at  23:49:19
+   Duration  6.67s (transform 15.16s, setup 1.03s, import 19.38s, tests 5.73s, environment 1ms)
+
+EXIT=0

@@ -3,12 +3,12 @@
     - id: web-search-error-fixture
       name: './web-search-error-fixture.mjs'
 
-- id: web-search-deepseek
-  name: '@deepseek-ai/dsh-web-search-deepseek'
+- id: web-deepseek-api
+  name: '@deepseek-ai/dsh-web-deepseek-api'
   config:
-    apiKey: snapshot-key
+    searchApiKeyEnv: DSH_SNAPSHOT_SEARCH_KEY
     # The fixture maps this recorded authority to its OS-assigned listener.
-    baseURL: http://127.0.0.1:43118/anthropic/v1
+    searchBaseURL: http://127.0.0.1:43118/api/v1/tools
 
 # The scenario asserts on a DeepSeek search request, so it names the provider
 # instead of inheriting the shipped default. It silently depended on that

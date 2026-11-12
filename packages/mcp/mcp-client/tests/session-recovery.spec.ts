@@ -7,6 +7,7 @@ import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { executeModelToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { isExpiredSessionError, syncTools } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
+import { McpGeneration } from '@deepseek-ai/dsh-mcp-client/src/generation.ts'
 import type { ToolBridgeOptions } from '@deepseek-ai/dsh-mcp-client/src/tools.ts'
 
 const testToolSignal = new AbortController().signal
@@ -32,11 +33,18 @@ async function mount(): Promise<Context> {
 
 function opts(recoverSession?: ToolBridgeOptions['recoverSession']): ToolBridgeOptions {
   return {
-    registrationFailure: 'contain',
     serverName: 'srv',
     toolCallTimeoutMs: 5_000,
+    signal: testToolSignal,
     ...(recoverSession === undefined ? {} : { recoverSession }),
   }
+}
+
+/** A generation whose client answers `callTool` through `run`-owned cancellation. */
+function generationWith(callTool: (params: unknown, options: unknown) => Promise<unknown>): McpGeneration {
+  const client = clientWith(callTool)
+  const generation = new McpGeneration(client as never, 5_000, error => String(error))
+  return generation
 }
 
 function clientWith(callTool: (params: unknown, options: unknown) => Promise<unknown>) {
@@ -79,11 +87,11 @@ describe('isExpiredSessionError', () => {
 describe('syncTools session recovery', () => {
   it('retries on the recovering client after the server drops the session', async () => {
     const ctx = await mount()
-    const stale = clientWith(async () => { throw expiredSessionError() })
-    const fresh = clientWith(async () => ({ content: [{ type: 'text', text: 'recovered' }] }))
-    const recoverSession = vi.fn(async () => fresh as never)
+    const stale = generationWith(async () => { throw expiredSessionError() })
+    const fresh = generationWith(async () => ({ content: [{ type: 'text', text: 'recovered' }] }))
+    const recoverSession = vi.fn(async () => fresh)
 
-    await syncTools(stale as never, ctx, opts(recoverSession), new Map())
+    await syncTools(stale.client, ctx, opts(recoverSession), new Map())
     const result = await executeModelToolFixture(ctx, {
       signal: testToolSignal,
       callId: ToolCallId('c1'),
@@ -92,7 +100,8 @@ describe('syncTools session recovery', () => {
     })
 
     expect(recoverSession).toHaveBeenCalledTimes(1)
-    expect(fresh.callTool).toHaveBeenCalledTimes(1)
+    const freshCalls = vi.mocked(fresh.client).callTool.mock
+    expect(freshCalls.calls).toHaveLength(1)
     expect(result.content[0]).toEqual({ type: 'text', text: 'recovered' })
   })
 

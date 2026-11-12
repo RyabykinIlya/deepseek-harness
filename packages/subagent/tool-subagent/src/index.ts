@@ -27,7 +27,6 @@ import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import {
   AllowedModelRouteSchema,
   assertAllowedModelRoutes,
-  assertAllowedModelSelection,
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
   preflightChildLlmRoute,
@@ -559,8 +558,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const repositorySupported = subagentProvider.capabilities.repository ?? false
     const providerRouteDefaults = subagentProvider.agentRouteDefaults
     const selectionDescription = providerRouteDefaults !== undefined
-      ? ' Supply `provider` and `model` together. Omitted values use child defaults, falling back to this backend\'s route defaults. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
-      : ' Supply `provider` and `model` together. Omitted values use child defaults, falling back to compatible parent values. When the effective route changes, an omitted `reasoning_effort` uses the model\'s default.'
+      ? ' Omit `provider`, `model`, and `reasoning_effort` to use child defaults, falling back to this backend\'s route defaults.'
+      : ' Omit `provider`, `model`, and `reasoning_effort` to use child defaults, falling back to compatible parent values.'
     const definition = defineTool({
       name: toolName,
       description: wording.description + (backgroundEnabled
@@ -583,7 +582,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         description: {
           type: 'string',
           required: true,
-          description: 'A short (3-5 word) description of the delegated task, for display.',
+          description: 'A short (3-5 word) description of the delegated task, for display. '
+            + "Use the language of the user's current request.",
+        },
+        name: {
+          type: 'string',
+          description: 'Optional short name for the subagent, unique among the subagents you create: lower-case letters, '
+            + 'digits, and hyphens, starting with a letter, at most 32 characters; lead is reserved for the root agent. Omitted names default to agent-1, agent-2, and so on.',
         },
         prompt: {
           type: 'string',
@@ -600,15 +605,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ...modelSelectionEnabled ? {
           provider: {
             type: 'string' as const,
-            description: 'Child LLM provider id.',
+            description: 'Child LLM provider id; requires `model`.',
           },
           model: {
             type: 'string' as const,
-            description: 'Model id within that provider.',
+            description: 'Model id within that provider; requires `provider`.',
           },
           reasoning_effort: {
             type: 'string' as const,
-            description: 'Model-specific reasoning effort id.',
+            description: 'Reasoning effort id; requires `provider` and `model`. Omit to use the selected model\'s default, even when it matches the parent or configured route.',
           },
         } : {},
         ...backgroundEnabled ? {
@@ -701,28 +706,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           ? { ...providerRouteDefaults, ...config.agentOptions }
           : config.agentOptions
         const requestedChildAgentOptions = requestedAgentOptions(
-          parentOptions,
           configuredChildAgentOptions,
           modelRequest,
           modelSelectionEnabled,
-        )
-        assertAllowedModelSelection(
           modelSelectionPolicy,
           parentOptions,
-          requestedChildAgentOptions,
-          modelRequest,
         )
         if (requiresRoutePreflight) {
           const llm = ctx.get('llm')
           if (llm === undefined) {
             throw new Error('cannot resolve the selected child LLM route because the `llm` service is unavailable')
           }
+          const inheritParentReasoningEffort = providerRouteDefaults === undefined && !hasDelegationModelRequest(modelRequest)
           await preflightChildLlmRoute(
             llm,
             parentOptions,
             requestedChildAgentOptions,
             exec.signal,
-            providerRouteDefaults === undefined,
+            inheritParentReasoningEffort,
           )
           if (ctx.subagents.getProvider(config.provider) !== subagentProvider) {
             throw new Error(`subagent provider "${config.provider}" changed while resolving the child LLM route; retry the delegation`)
@@ -758,7 +759,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
             const started = await ctx.subagents.startActivation({
               provider: config.provider,
               label: args.description,
-              request,
+              ...args.name === undefined ? {} : { name: args.name },
+              ...request,
               signal: exec.signal,
               delivery: 'parent',
             })
@@ -799,7 +801,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
               const start = ctx.subagents.startActivation({
                 provider: config.provider,
                 label: args.description,
-                request,
+                ...args.name === undefined ? {} : { name: args.name },
+                ...request,
                 signal: controller.signal,
                 delivery: 'caller',
               }).then((activation) => {
@@ -826,7 +829,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const started = await ctx.subagents.startActivation({
           provider: config.provider,
           label: args.description,
-          request,
+          ...args.name === undefined ? {} : { name: args.name },
+          ...request,
           signal: exec.signal,
           delivery: 'caller',
         })
@@ -876,7 +880,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         .sort()
       if (visible[0] !== toolName) return ''
       const names = visible.map(name => `\`${name}\``).join(' or ')
-      return `Start independent delegations with ${names} together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn.`
+      return `Start independent delegations with ${names} together in one assistant message and continue useful work while they run. When only waiting for their results remains, end your turn instead of sleeping or polling; the next result starts a new turn. Collect the subagent results required to complete the task before giving the user a final answer.\n\nBash, formatters, code generators, and scripts can overwrite concurrent edits without conflict detection; coordinate their changes explicitly. The agent integrating the work must review the final diff and run relevant tests.`
     },
   })
   ctx.systemPrompt.context({

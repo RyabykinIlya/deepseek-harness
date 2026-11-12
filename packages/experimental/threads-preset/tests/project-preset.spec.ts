@@ -36,6 +36,7 @@ import ThreadsPreset, {
   PROJECT_PRESET_ROW_NAMES,
   PROJECT_THREAD_PRESET_ID,
   THREADS_CONTEXT_NAME,
+  THREAD_CONTROL_ROW_ID,
   THREAD_PROVIDER,
   THREAD_WORKER_CONTEXT_NAME,
   coordinatorContract,
@@ -419,6 +420,17 @@ describe('what each role is offered', () => {
     const names = await toolNames(ctx, project)
 
     expect(names).toEqual(expect.arrayContaining(['subagent', 'thread_status', 'thread_diff', 'library_list', 'send_message', 'interrupt_agent', 'todo_write']))
+    // The coordinator's control row must carry `interrupt: true` explicitly: the
+    // base/web presets disable `interrupt_agent`, and the coordinator overrides
+    // the inherited row rather than trusting the plugin default.
+    const controlRow = coordinatorPreset({
+      display: { id: 'p', name: 'P', description: 'd', order: 1 },
+      provider: THREAD_PROVIDER,
+      base: BASE_ROWS,
+      contract: { checkIn: 'milestones', spawn: 'auto', mergePolicy: 'auto' },
+      tools: { defaultLimit: 5, maxLimit: 10 },
+    }).plugins.find(row => row.id === THREAD_CONTROL_ROW_ID)
+    expect(controlRow?.config).toEqual({ interrupt: true })
     // `list_agents` rides the merged control row upstream (4df09d37d5 folded it
     // with `send_message`/`interrupt_agent`): inseparable without forking the
     // upstream module, and benign next to the bounded `thread_status` view.
@@ -520,7 +532,7 @@ describe('the contracts', () => {
       '',
       'A Thread starts with no history of this conversation. Write each task to be self-contained: the goal, the relevant paths, the constraints, and how to verify the result.',
       '',
-      'The `subagent` call is asynchronous: it returns a Thread id as soon as the Thread starts, not its work. A Thread reports back on its own when it finishes, with a closing message. Do not poll or wait in a loop; continue with other work, or end your turn. Tell the user at milestones: when the Threads have started, when each one finishes, and when everything is integrated.',
+      'The `subagent` call is asynchronous: it returns a Thread id (the agent name or Session id it reports) as soon as the Thread starts, not its work. A Thread reports back on its own when it finishes, with a closing message. Do not poll or wait in a loop; continue with other work, or end your turn. Tell the user at milestones: when the Threads have started, when each one finishes, and when everything is integrated.',
       '',
       '`thread_status` shows your Threads with their state, branch, commits ahead of the base, and uncommitted files. It is bounded and may omit Threads, so never read it as the full list; narrow it with the state filter instead.',
       '',

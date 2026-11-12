@@ -19,7 +19,3 @@ export type {
   FallbackConfig,
 } from './types.ts'
 
-export { FallbackChainId } from './brand.ts'
-
-// Re-export config
-export { resolveFallbackConfig } from './config.ts'

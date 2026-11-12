@@ -35,8 +35,6 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/subagent/subagent-dsh-sdk': { category: 'optional', reason: 'Requires an explicitly configured external DSH home.' },
   'packages/subagent/subagent-thread-worktree': { category: 'optional', reason: 'Worktree-isolated subagent backend selected by the experimental Threads profile.' },
   'packages/subagent/worktree-manager': { category: 'optional', reason: 'Git worktree service owned by the experimental Threads profile.' },
-  'packages/web/web-search-exa': { category: 'optional', reason: 'Alternative search provider requiring its own API credentials.' },
-  'packages/web/web-search-perplexity': { category: 'optional', reason: 'Alternative search provider requiring its own API credentials.' },
   'packages/web/web-search-brave': { category: 'optional', reason: 'Alternative search provider requiring its own API credentials; mounted by the web-search profile bundle.' },
   'packages/web/web-search-tavily': { category: 'optional', reason: 'Alternative search provider requiring its own API credentials; mounted by the web-search profile bundle.' },
   'packages/web/web-search-duckduckgo': { category: 'optional', reason: 'Keyless search provider selected by the web-search profile bundle so a deployment without a search credential still searches.' },

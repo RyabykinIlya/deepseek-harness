@@ -94,8 +94,10 @@ export function installThreadLifecycle(ctx: Context, options: ThreadLifecycleOpt
     if (info.provider !== options.providerName) return
     try {
       const child = registered(info.id)
-      const parentId = child?.session.header.parentSession
-      const parent = parentId === undefined ? undefined : registered(parentId)
+      // SubagentRunInfo.parentSessionId is the durable direct creator, independent
+      // of the live subagent tree root; the child itself still resolves through the
+      // registry for its label and cwd.
+      const parent = registered(info.parentSessionId)
       if (child === undefined || parent === undefined) {
         ctx.logger.warn(`threads: thread ${info.id} started without a resolvable Project agent; no thread/created recorded`)
         return

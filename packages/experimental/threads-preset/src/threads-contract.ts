@@ -150,7 +150,7 @@ export function coordinatorContract(config: Config = {}): string {
     + '\n'
     + 'A Thread starts with no history of this conversation. Write each task to be self-contained: the goal, the relevant paths, the constraints, and how to verify the result.\n'
     + '\n'
-    + 'The `subagent` call is asynchronous: it returns a Thread id as soon as the Thread starts, not its work. A Thread reports back on its own when it finishes, with a closing message. Do not poll or wait in a loop; continue with other work, or end your turn. '
+    + 'The `subagent` call is asynchronous: it returns a Thread id (the agent name or Session id it reports) as soon as the Thread starts, not its work. A Thread reports back on its own when it finishes, with a closing message. Do not poll or wait in a loop; continue with other work, or end your turn. '
     + `${CHECK_IN_SENTENCES[config.checkIn ?? 'milestones']}\n`
     + '\n'
     + '`thread_status` shows your Threads with their state, branch, commits ahead of the base, and uncommitted files. It is bounded and may omit Threads, so never read it as the full list; narrow it with the state filter instead.\n'

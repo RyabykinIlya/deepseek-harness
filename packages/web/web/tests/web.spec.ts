@@ -1,11 +1,7 @@
-import { describe, expect, it, onTestFinished } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import Loader, { type Entry } from '@deepseek-ai/cordis-plugin-loader'
-import type { Volatile } from '@deepseek-ai/cosmokit'
 import WebRuntime, {
   WebError,
-  WEB_FETCH_PROVIDER_IDS,
-  WEB_SEARCH_PROVIDER_IDS,
   type WebFetchProvider,
   type WebFetchResult,
   type WebSearchProvider,
@@ -44,40 +40,6 @@ async function mountWeb(config: { searchProvider?: string; fetchProvider?: strin
   return { ctx, web: ctx.web }
 }
 
-/**
- * The live reference the Host resolved `searchProvider` into for a running
- * fiber. Schemastery types a volatile field as its storage type, so the shape
- * has to be read back through the reference protocol rather than inferred.
- */
-function liveSelection(config: unknown): Volatile<string | undefined> {
-  return (config as { searchProvider: Volatile<string | undefined> }).searchProvider
-}
-
-/**
- * Mount the seam through a real Loader entry the way a profile patch does, and
- * register two usable search providers from a second, dependent entry. Returns
- * the seam's own Loader entry, because a settings write lands on exactly that
- * entry (`SettingsForms.write` -> `ConfigEditor.edit` -> `Include` ->
- * `Entry.update`).
- */
-async function mountLoadedWeb(config: Record<string, unknown>): Promise<{ ctx: Context; entry: Entry }> {
-  const ctx = new Context()
-  onTestFinished(() => ctx.fiber.dispose())
-  await ctx.plugin(Loader)
-  ctx.loader.builtins.web = WebRuntime
-  ctx.loader.builtins.providers = {
-    inject: ['web'],
-    apply(inner: Context) {
-      inner.web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
-      inner.web.registerSearchProvider(makeSearchProvider('perplexity', available, () => Promise.resolve(searchResult('perplexity'))))
-    },
-  }
-  const webId = await ctx.loader.create({ name: 'cordis:web', config })
-  await ctx.loader.create({ name: 'cordis:providers' })
-  await ctx.loader.await()
-  return { ctx, entry: ctx.loader.resolve(webId) }
-}
-
 describe('WebRuntime registration', () => {
   it('registers a search provider and unregisters it via the returned disposer', async () => {
     const { web } = await mountWeb()
@@ -110,6 +72,72 @@ describe('WebRuntime registration', () => {
     await expect(web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
     await fiber.dispose()
     await expect(web.search({ query: 'q' })).rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+  })
+})
+
+describe('WebRuntime provider listing', () => {
+  it('lists registered providers per capability in registration order, including unavailable ones', async () => {
+    const { web } = await mountWeb()
+    expect(web.listProviders()).toEqual({ search: [], fetch: [] })
+    web.registerSearchProvider({ ...makeSearchProvider('b', available, () => Promise.resolve(searchResult('b'))), title: 'B search' })
+    const disposeA = web.registerSearchProvider(makeSearchProvider('a', unavailable, () => Promise.resolve(searchResult('a'))))
+    const description = { en: 'Fetches from this machine.', zh: '本机获取' }
+    web.registerFetchProvider({ ...makeFetchProvider('http', available, fetchResult('http')), title: 'Direct fetch', description })
+    expect(web.listProviders()).toEqual({
+      search: [{ id: 'b', title: 'B search' }, { id: 'a' }],
+      fetch: [{ id: 'http', title: 'Direct fetch', description }],
+    })
+
+    disposeA()
+    expect(web.listProviders().search).toEqual([{ id: 'b', title: 'B search' }])
+  })
+
+  it('emits web/providers-changed once after each registration and each disposal', async () => {
+    const { ctx, web } = await mountWeb()
+    const observed: Array<readonly string[]> = []
+    ctx.on('web/providers-changed', () => {
+      observed.push(web.listProviders().fetch.map(provider => provider.id))
+    })
+    const dispose = web.registerFetchProvider(makeFetchProvider('http', available, fetchResult('http')))
+    expect(observed).toEqual([['http']])
+    dispose()
+    expect(observed).toEqual([['http'], []])
+  })
+
+  it('does not emit web/providers-changed for a rejected duplicate registration', async () => {
+    const { ctx, web } = await mountWeb()
+    web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))
+    let changes = 0
+    ctx.on('web/providers-changed', () => { changes += 1 })
+    expect(() => web.registerSearchProvider(makeSearchProvider('exa', available, () => Promise.resolve(searchResult('exa'))))).toThrow()
+    expect(changes).toBe(0)
+  })
+
+  it('contains a throwing or rejecting listener so later listeners still run and registration commits', async () => {
+    const { ctx, web } = await mountWeb()
+    let later = 0
+    ctx.on('web/providers-changed', () => { throw new Error('sync listener failure') })
+    // oxlint-disable-next-line typescript/no-misused-promises -- exercises rejected-listener containment
+    ctx.on('web/providers-changed', () => Promise.reject(new Error('async listener failure')))
+    ctx.on('web/providers-changed', () => { later += 1 })
+    web.registerFetchProvider(makeFetchProvider('http', available, fetchResult('http')))
+    await Promise.resolve()
+    expect(later).toBe(1)
+    expect(web.listProviders().fetch).toEqual([{ id: 'http' }])
+  })
+
+  it('removes a contributing fiber\'s providers from the list and announces it (HMR safety)', async () => {
+    const { ctx, web } = await mountWeb()
+    let changes = 0
+    ctx.on('web/providers-changed', () => { changes += 1 })
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      inner.web.registerSearchProvider({ ...makeSearchProvider('custom', available, () => Promise.resolve(searchResult('custom'))), title: 'Custom' })
+    }, { inject: ['web'] }))
+    expect(web.listProviders().search).toEqual([{ id: 'custom', title: 'Custom' }])
+    expect(changes).toBe(1)
+    await fiber.dispose()
+    expect(web.listProviders().search).toEqual([])
+    expect(changes).toBe(2)
   })
 })
 
@@ -344,21 +372,6 @@ describe('WebError', () => {
   })
 })
 
-describe('WebRuntime provider id vocabulary', () => {
-  it('publishes the shipped search and fetch ids a settings surface renders as choices', () => {
-    expect(WEB_SEARCH_PROVIDER_IDS).toEqual([
-      'brave',
-      'deepseek-official',
-      'duckduckgo',
-      'exa',
-      'perplexity',
-      'tavily',
-    ])
-    expect(WEB_FETCH_PROVIDER_IDS).toEqual(['http'])
-  })
-})
-
-
 describe('live provider selection', () => {
   it('applies a saved search and fetch selection to the next operation without remounting', async () => {
     const { liveConfig } = await import('../../../settings/settings/tests/live-config.ts')
@@ -377,46 +390,5 @@ describe('live provider selection', () => {
       await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'second' })
       await expect(ctx.web.fetch({ url: 'https://example.com' })).resolves.toMatchObject({ body: { content: 'second' } })
     } finally { await ctx.fiber.dispose() }
-  })
-})
-
-describe('WebRuntime live provider selection', () => {
-  it('dispatches to a newly configured provider without reconstructing the runtime', async () => {
-    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
-    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'exa' })
-
-    const fiberBefore = entry.fiber
-    const reference = liveSelection(entry.fiber!.config)
-    await entry.update({ config: { searchProvider: 'perplexity' } })
-    await ctx.loader.await()
-
-    // Committed in place: the plugin was never remounted, and the Host rewrote
-    // the very reference the runtime captured at construction.
-    expect(entry.fiber).toBe(fiberBefore)
-    expect(liveSelection(entry.fiber!.config)).toBe(reference)
-    expect(reference.get()).toBe('perplexity')
-    // The providers below were registered through the runtime itself, on a
-    // fiber-scoped effect; a remount would have dropped them along with it.
-    await expect(ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'perplexity' })
-  })
-
-  it('reports an unknown id at selection instead of refusing it in the schema', async () => {
-    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
-    await entry.update({ config: { searchProvider: 'someone-elses-provider' } })
-    await ctx.loader.await()
-
-    await expect(ctx.web.search({ query: 'q' })).rejects.toThrow(
-      expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' }),
-    )
-  })
-
-  it('returns to auto-selection when the configured id is cleared', async () => {
-    const { ctx, entry } = await mountLoadedWeb({ searchProvider: 'exa' })
-    await entry.update({ config: {} })
-    await ctx.loader.await()
-
-    await expect(ctx.web.search({ query: 'q' })).rejects.toThrow(
-      expect.objectContaining({ code: 'WEB_PROVIDER_AMBIGUOUS' }),
-    )
   })
 })

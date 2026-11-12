@@ -367,7 +367,7 @@ describe('spawn preset selection', () => {
     // The foreground one-shot delegation returns the child's own output text;
     // only background and continuable starts report `started subagent`.
     expect(text(retried)).toContain('reviewed')
-    await ctx.subagents.waitForChildren(handle.agent)
+    await ctx.subagents.waitForTreeWork(handle.agent)
     expect(ctx.tools.get('subagent', handle.agent)).toBe(definition)
   })
 })

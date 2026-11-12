@@ -4,10 +4,14 @@
 # `web-fetch-http` row it extends.
 - id: web
   config:
-    # Keyless by default: the DeepSeek search route needs a credential that a
+    # Keyless by default: the DeepSeek search routes need a credential that a
     # self-hosted deployment usually does not have, and the selector pins
     # whatever is named here — a configured id has no fallback. Point this at
-    # `deepseek-official`, `exa`, or `perplexity` once a key is configured.
+    # `brave` or `tavily` once that provider's key is configured, or at
+    # `deepseek-search-api` (the Search API, the shipped default of
+    # `@deepseek-ai/dsh-base`) or `deepseek-official` (legacy Messages search)
+    # with a DeepSeek credential. The ids `exa` and `perplexity` are gone:
+    # their packages were removed in dsh-v0.2.2-rc.2.
     searchProvider: duckduckgo
     fetchProvider: http
 

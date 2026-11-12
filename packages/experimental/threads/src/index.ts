@@ -34,16 +34,7 @@ import type {
 
 export type * from './types.ts'
 export { ThreadId } from './types.ts'
-export {
-  applyThreadsEvent,
-  emptyThreadsState,
-  isThreadEvent,
-  threadsProjectionDefinition,
-  threadsProjectionView,
-} from './projection.ts'
 export type { ThreadEventType, ThreadState, ThreadsProjectionState } from './projection.ts'
-export { threadNote } from './note.ts'
-export { threadStopReason } from './lifecycle.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -185,7 +176,7 @@ export class ThreadsService extends TypertRemoteService {
       throw new RemoteError('threads/worktree-dirty', `Thread ${threadId} has uncommitted changes`, { threadId })
     }
     if (owned && !force && !(await worktrees.status(record)).clean) dirty()
-    if (this.isRunning(threadId)) await this.stop(project, threadId)
+    if (this.isRunning(threadId)) await this.stop(threadId)
     if (owned) await this.removeWorktree(worktrees, record, force, dirty)
     project.session.append('thread/removed', { threadId }, { ignorable: true })
   }
@@ -315,10 +306,10 @@ export class ThreadsService extends TypertRemoteService {
     }
   }
 
-  private async stop(project: Agent, threadId: ThreadId): Promise<void> {
+  private async stop(threadId: ThreadId): Promise<void> {
     const subagents = this.ctx.get('subagents')
     if (subagents === undefined) throw new Error('threads: stopping a running thread requires the subagents service')
-    subagents.interrupt(SessionId(threadId), { kind: 'user', parentSessionId: project.id })
+    subagents.interrupt(SessionId(threadId), { kind: 'user' })
     const deadline = Date.now() + this.config.archiveStopTimeoutMs
     while (this.isRunning(threadId)) {
       if (Date.now() >= deadline) {
