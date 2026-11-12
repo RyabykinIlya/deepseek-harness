@@ -115,7 +115,7 @@ function transportError(
       { cause: error },
     )
   }
-  return LlmError.fromFailure({ message: `could not reach ${url}`, code: codes.unreachable, cause: error })
+  return LlmError.fromFailure({ message: `could not reach ${url}`, code: codes.unreachable }, { cause: error })
 }
 
 /**
@@ -173,6 +173,6 @@ export async function readOpenRouterJson(
   try {
     return JSON.parse(text_)
   } catch (error: unknown) {
-    throw LlmError.fromFailure({ message: `${url} did not answer with JSON`, code: codes.malformed, cause: error })
+    throw LlmError.fromFailure({ message: `${url} did not answer with JSON`, code: codes.malformed }, { cause: error })
   }
 }

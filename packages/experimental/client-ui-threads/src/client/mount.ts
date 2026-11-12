@@ -169,7 +169,7 @@ function registerThreads(ctx: ClientContext, config: ThreadsConfig): void {
     },
     // The Project's durable parent-address authority interrupts the Thread
     // even when no turn of the Project itself is live.
-    stopThread: async (owner, threadId) => toActionResult(
+    stopThread: async (_owner, threadId) => toActionResult(
       await ctx.remote.subagents.interruptByUser(threadSessionId(threadId)),
     ),
     archiveThread: async (owner, threadId, force) => toActionResult(

@@ -27,7 +27,6 @@ import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import {
   AllowedModelRouteSchema,
   assertAllowedModelRoutes,
-  assertAllowedModelSelection,
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
   preflightChildLlmRoute,
@@ -760,7 +759,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
             const started = await ctx.subagents.startActivation({
               provider: config.provider,
               label: args.description,
-              request,
+              ...request,
               signal: exec.signal,
               delivery: 'parent',
             })
@@ -801,7 +800,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
               const start = ctx.subagents.startActivation({
                 provider: config.provider,
                 label: args.description,
-                request,
+                ...request,
                 signal: controller.signal,
                 delivery: 'caller',
               }).then((activation) => {

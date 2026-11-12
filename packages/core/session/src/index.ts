@@ -524,8 +524,11 @@ function snapshotAppend(
   opts: SurfaceIntent | AppendOptions | undefined,
   subject: string,
 ) {
-  const surfaceOp = opts?.surfaceOp
-  const sourceEventSeqs = opts?.sourceEventSeqs
+  const surfaceIntent = opts !== undefined && 'surfaceOp' in opts || opts !== undefined && 'sourceEventSeqs' in opts
+    ? opts as SurfaceIntent
+    : undefined
+  const surfaceOp = surfaceIntent?.surfaceOp
+  const sourceEventSeqs = surfaceIntent?.sourceEventSeqs
   const dataSnapshot = snapshotJsonValue(data)
   if (dataSnapshot === undefined) throw new Error(`${subject} carries non-JSON-serializable data`)
   const surface = snapshotJsonValue({
@@ -867,7 +870,7 @@ export class Session {
     const snapshot = snapshotAppend(type, data, opts[0], `session event "${type}"`)
     // Payload getters can detach the Session while the snapshots are read.
     const entry = this.publicationEntry()
-    const event = createAppendEvent(snapshot, SessionSeq(this.log.length), opts[0]?.ignorable === true)
+    const event = createAppendEvent(snapshot, SessionSeq(this.log.length), opts[0] !== undefined && 'ignorable' in opts[0] && opts[0].ignorable === true)
     this.commit(event, entry)
     return event
   }

@@ -176,7 +176,7 @@ export class ThreadsService extends TypertRemoteService {
       throw new RemoteError('threads/worktree-dirty', `Thread ${threadId} has uncommitted changes`, { threadId })
     }
     if (owned && !force && !(await worktrees.status(record)).clean) dirty()
-    if (this.isRunning(threadId)) await this.stop(project, threadId)
+    if (this.isRunning(threadId)) await this.stop(threadId)
     if (owned) await this.removeWorktree(worktrees, record, force, dirty)
     project.session.append('thread/removed', { threadId }, { ignorable: true })
   }
@@ -306,7 +306,7 @@ export class ThreadsService extends TypertRemoteService {
     }
   }
 
-  private async stop(project: Agent, threadId: ThreadId): Promise<void> {
+  private async stop(threadId: ThreadId): Promise<void> {
     const subagents = this.ctx.get('subagents')
     if (subagents === undefined) throw new Error('threads: stopping a running thread requires the subagents service')
     subagents.interrupt(SessionId(threadId), { kind: 'user' })

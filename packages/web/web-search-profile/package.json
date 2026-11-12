@@ -26,8 +26,10 @@
   "files": [
     "icon.svg",
     "lib/index.js",
+    "lib/**/*.js.map",
     "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map"
   ],
   "license": "MIT",
   "dependencies": {

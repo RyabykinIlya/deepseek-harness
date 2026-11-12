@@ -234,7 +234,7 @@ export function applyChildComposition(
  */
 export async function applyContinuableChildComposition(
   childCtx: Context,
-  parent: Agent,
+  parent: Agent | undefined,
   composition: ChildComposition,
   agentPreset: string | undefined,
   mountSelected = false,
@@ -244,9 +244,10 @@ export async function applyContinuableChildComposition(
     if (agentPreset !== undefined) {
       throw new SubagentError('selecting a child agent preset requires the agent-presets service', 'PRESET_UNAVAILABLE')
     }
-  } else if (agentPreset !== undefined && (mountSelected || agentPreset !== presets.composedPreset(parent.ctx))) {
+  } else if (agentPreset !== undefined
+    && (mountSelected || parent === undefined || agentPreset !== presets.composedPreset(parent.ctx))) {
     await presets.mount(childCtx, agentPreset)
-  } else {
+  } else if (parent !== undefined) {
     presets.composeFrom(childCtx, parent.ctx)
   }
   applyChildOverrides(childCtx, composition)

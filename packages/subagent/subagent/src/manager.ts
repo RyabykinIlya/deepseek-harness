@@ -366,7 +366,7 @@ export class SubagentManager {
         cwd,
         parent,
         signal,
-        ...request.repository === undefined ? {} : { repository: request.repository },
+        ...spec.repository === undefined ? {} : { repository: spec.repository },
       })
       signal.throwIfAborted()
       this.assertAdmitting(parent)
@@ -377,7 +377,7 @@ export class SubagentManager {
       if (prepared.agentPreset !== undefined) await this.assertProviderPreset(spec.provider, prepared.agentPreset)
       // A provider override wins over the caller's selection; either way one id
       // names the child's composition, its header, and the recorded selection.
-      const selectedPreset = prepared.agentPreset ?? request.agentPreset
+      const selectedPreset = prepared.agentPreset ?? spec.agentPreset
 
       const inheritedEventCount = SessionLogOffset(prepared.seed?.length ?? 0)
       const seed = prepared.seed
@@ -870,7 +870,7 @@ export class SubagentManager {
         // remounting its creation header, which the parent may have moved past.
         const childPreset = inputs.composition.agentPreset
           ?? (create === undefined ? undefined : create.presetOverride)
-        await applyContinuableChildComposition(childCtx, parent, inputs.composition, childPreset, create !== undefined)
+        await applyContinuableChildComposition(childCtx, create?.parent, inputs.composition, childPreset, create !== undefined)
         if (inputs.outputSchema !== undefined) {
           structured = attachStructuredRuntime(childCtx, inputs.outputSchema, () =>
             child.inbox.nextStep.length === 0

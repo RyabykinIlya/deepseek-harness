@@ -275,14 +275,14 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
    * @returns a generation with an established session, or `undefined` when the
    *   supervisor is down, disposed, or did not recover within the timeout.
    */
-  async function recoverSession(record: Generation): Promise<Generation | undefined> {
+  async function recoverSession(record: Generation): Promise<McpGeneration | undefined> {
     // A generation that already lost ownership has a successor in flight or in
     // place; retrying against it is correct and needs no second reconnect.
-    if (!isCurrent(record)) return current
+    if (!isCurrent(record)) return current?.wire
     ctx.logger.warn(`${label}: server rejected the MCP session — reconnecting to establish a new one`)
     const next = waitForNextGeneration(SESSION_RECOVERY_TIMEOUT_MS)
     lost(record, 'server rejected the MCP session')
-    return await next
+    return (await next)?.wire
   }
 
   function lost(record: Generation, error: string): void {
