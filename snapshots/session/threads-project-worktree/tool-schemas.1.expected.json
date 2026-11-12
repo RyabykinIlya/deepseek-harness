@@ -177,18 +177,31 @@
     },
     {
       "name": "interrupt_agent",
-      "description": "Ask a subagent to stop its current work. This call returns without waiting for it to stop. You can continue a direct child's conversation later with send_message. Subagents it started will keep running.",
+      "description": "Ask a subagent to stop its current work. This call returns without waiting for it to stop. You can continue a local subagent's conversation later with send_message. External executions stop permanently and cannot receive follow-ups. Subagents it started will keep running.",
       "parameters": {
         "type": "object",
         "properties": {
-          "agent_id": {
+          "agent": {
             "type": "string",
-            "description": "The id of an agent created under you: your direct child or a deeper descendant."
+            "description": "The name of an agent created under you: your direct child or a deeper descendant."
           }
         },
         "required": [
-          "agent_id"
+          "agent"
         ]
+      }
+    },
+    {
+      "name": "wait_agent",
+      "description": "Wait for input at your next step, including agent messages, completion notifications, and user steering. Returns immediately if new input is pending. `timedOut: false` means new input is pending. Pending input is delivered to the model after code execution finishes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timeout_ms": {
+            "type": "integer",
+            "description": "Wait duration in milliseconds, from 10000 through 3600000. Defaults to 30000."
+          }
+        }
       }
     },
     {
@@ -267,19 +280,10 @@
     },
     {
       "name": "list_agents",
-      "description": "List subagents you started, with their ids, labels, and status. running means it is working; inactive means it is not currently working. You will be notified when a subagent finishes; there is no need to keep checking its status. Use send_message to continue the conversation.",
+      "description": "List your entire subagent tree: the root agent and all reachable continuable descendants, including yourself. Rows carry names, descriptions, and status. A descendant's name is its path from the root, such as reviewer/checker. You can message any other agent in the subagent tree. running means it is working; inactive means no turn is executing; it does not indicate task completion, success, or failure. corrupt, unsupported, or unavailable means this row's own descendants could not be read; the row itself is still a member you can message. While you remain active, you will be notified when a direct child finishes; there is no need to keep checking its status. Use send_message to continue the conversation.",
       "parameters": {
         "type": "object",
-        "properties": {
-          "scope": {
-            "type": "string",
-            "description": "children (default) lists direct children, which accept send_message in any status. descendants lists the whole tree below you with each entry's parent session id and depth; entries deeper than 1 accept only interrupt_agent.",
-            "enum": [
-              "children",
-              "descendants"
-            ]
-          }
-        }
+        "properties": {}
       }
     },
     {
@@ -370,21 +374,21 @@
     },
     {
       "name": "send_message",
-      "description": "Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation, not the agent's answer.",
+      "description": "Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. Returns delivery confirmation.",
       "parameters": {
         "type": "object",
         "properties": {
-          "agent_id": {
-            "type": "string",
-            "description": "The agent id of your direct continuable child, or your direct parent when you are a resident continuable child."
-          },
           "message": {
             "type": "string",
             "description": "The message to deliver to the agent."
+          },
+          "agent": {
+            "type": "string",
+            "description": "The name of another agent in your subagent tree, as shown by list_agents."
           }
         },
         "required": [
-          "agent_id",
+          "agent",
           "message"
         ]
       }
@@ -414,6 +418,10 @@
           "description": {
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional short name for the subagent, unique among the subagents you create: lower-case letters, digits, and hyphens, starting with a letter, at most 32 characters; lead is reserved for the root agent. Omitted names default to agent-1, agent-2, and so on."
           },
           "prompt": {
             "type": "string",
