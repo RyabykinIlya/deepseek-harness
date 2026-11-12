@@ -70,10 +70,10 @@ async function readBounded(
   limits: OpenRouterReadLimits,
   codes: OpenRouterReadCodes,
 ): Promise<string> {
-  const oversized = (): LlmError => new LlmError(
-    `llm-pi-ai: ${url} answered with more than ${String(limits.maxBytes)} bytes`,
-    codes.malformed,
-  )
+  const oversized = (): LlmError => LlmError.fromFailure({
+    message: `llm-pi-ai: ${url} answered with more than ${String(limits.maxBytes)} bytes`,
+    code: codes.malformed,
+  })
   const declared = Number(response.headers.get('content-length') ?? Number.NaN)
   if (Number.isFinite(declared) && declared > limits.maxBytes) {
     await response.body?.cancel()
@@ -115,7 +115,7 @@ function transportError(
       { cause: error },
     )
   }
-  return new LlmError(`could not reach ${url}`, codes.unreachable, { cause: error })
+  return LlmError.fromFailure({ message: `could not reach ${url}`, code: codes.unreachable, cause: error })
 }
 
 /**
@@ -154,12 +154,12 @@ export async function readOpenRouterJson(
   }
   if (!response.ok) {
     await response.body?.cancel()
-    throw new LlmError(
-      `${url} answered ${String(response.status)}${response.status === 401 || response.status === 403
+    throw LlmError.fromFailure({
+      message: `${url} answered ${String(response.status)}${response.status === 401 || response.status === 403
         ? '; OpenRouter refused the credential this listing used'
         : ''}`,
-      codes.http,
-    )
+      code: codes.http,
+    })
   }
   let text_: string
   try {
@@ -173,6 +173,6 @@ export async function readOpenRouterJson(
   try {
     return JSON.parse(text_)
   } catch (error: unknown) {
-    throw new LlmError(`${url} did not answer with JSON`, codes.malformed, { cause: error })
+    throw LlmError.fromFailure({ message: `${url} did not answer with JSON`, code: codes.malformed, cause: error })
   }
 }

@@ -119,7 +119,7 @@ function modalities(architecture: unknown): readonly string[] | undefined {
  */
 export function parseOpenRouterCatalog(body: unknown): readonly OpenRouterCatalogEntry[] {
   const malformed = (detail: string): LlmError =>
-    new LlmError(`llm-pi-ai: ${detail} in the OpenRouter model catalog`, MALFORMED_CATALOG_CODE)
+    LlmError.fromFailure({ message: `llm-pi-ai: ${detail} in the OpenRouter model catalog`, code: MALFORMED_CATALOG_CODE })
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     throw malformed('expected a JSON object')
   }

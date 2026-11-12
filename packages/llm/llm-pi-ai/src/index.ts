@@ -326,6 +326,9 @@ export function apply(ctx: Context, config: Config): void {
         + ` sending that message as provider-neutral content (${reason})`,
       )
     },
+    onThinkingOmitted: ({ provider, model, count }) => {
+      ctx.logger.debug(`llm-pi-ai: omitted stale thinking from ${count} assistant message(s) for route "${provider}/${model}"`)
+    },
   })
   // The per-call escape hatch an adapter of our own uses to pin one request to
   // one upstream provider. It is the same adapter instance, so a dispatch sees

@@ -68,6 +68,11 @@ describe('compositions over the shipped standard preset', () => {
     expect(ids).not.toContain('tool-subagent-fork')
     expect(ids).not.toContain('tool-subagent-list-agents')
     expect(ids.filter(id => id === 'tool-subagent-control')).toHaveLength(1)
+    // The inherited base control row (interrupt: false in the shipped presets)
+    // is replaced by the coordinator's own, which keeps interrupt_agent.
+    const controlRows = rows.filter(entry => entry.id === 'tool-subagent-control')
+    expect(controlRows).toHaveLength(1)
+    expect(controlRows[0]?.config).toEqual({ interrupt: true })
     expect(new Set(ids).size).toBe(ids.length)
   })
 

@@ -816,12 +816,12 @@ export class TiersAdapter extends LlmAdapter {
       && this.subscriptionsExhausted(key, extraSources)
       && subscriptionServesRequest(extraSources, resultPolicy)) {
       const retryAfterMs = this.earliestRetryMs(key, extraSources)
-      throw new LlmError(
-        `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
-        + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
-        MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
-        retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : undefined,
-      )
+      throw LlmError.fromFailure({
+        message: `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
+          + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
+        code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+        ...retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : {},
+      })
     }
     let decidedModel: string
     let endpoint: OpenRouterEndpoint | undefined
@@ -847,10 +847,10 @@ export class TiersAdapter extends LlmAdapter {
     } else if (result.unreadable.length === models.length && result.unreadable.length > 0) {
       const reasons = result.unreadable.map(entry => `${entry.model}: ${entry.reason}`).join('; ')
       if (settings.onEndpointsUnavailable === 'fail') {
-        throw new LlmError(
-          `model-routing: no endpoint list could be read for tier "${tier.name}": ${reasons}`,
-          MODEL_ROUTING_UNAVAILABLE_CODE,
-        )
+        throw LlmError.fromFailure({
+          message: `model-routing: no endpoint list could be read for tier "${tier.name}": ${reasons}`,
+          code: MODEL_ROUTING_UNAVAILABLE_CODE,
+        })
       }
       const first = models[0]
       if (first === undefined) {
@@ -874,15 +874,15 @@ export class TiersAdapter extends LlmAdapter {
         const benched = result.rejections.excluded > 0
           ? ' The requested model is benched after recent failures and returns to the ranking when the bench lapses.'
           : ''
-        throw new LlmError(
-          `model-routing: no endpoint of tier "${tier.name}" passes the filters for model "${target.model}": ${counts}.${benched}`,
-          MODEL_ROUTING_NO_ENDPOINT_CODE,
-        )
+        throw LlmError.fromFailure({
+          message: `model-routing: no endpoint of tier "${tier.name}" passes the filters for model "${target.model}": ${counts}.${benched}`,
+          code: MODEL_ROUTING_NO_ENDPOINT_CODE,
+        })
       }
-      throw new LlmError(
-        `model-routing: no endpoint of tier "${tier.name}" passes the filters: ${counts}`,
-        MODEL_ROUTING_NO_ENDPOINT_CODE,
-      )
+      throw LlmError.fromFailure({
+        message: `model-routing: no endpoint of tier "${tier.name}" passes the filters: ${counts}`,
+        code: MODEL_ROUTING_NO_ENDPOINT_CODE,
+      })
     }
     const candidates = candidatesOf(result, mix)
     // A tier that accepted a text-only candidate for an image request has to say
@@ -1046,13 +1046,13 @@ export class TiersAdapter extends LlmAdapter {
       }
       this.warnUndispatchableConfigured(model)
       if (target.kind === 'fixed') {
-        throw new LlmError(
-          `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${model}" yet:`
-          + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
-          + ` for "${model}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
-          + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
-          MODEL_ROUTING_UNKNOWN_MODEL_CODE,
-        )
+        throw LlmError.fromFailure({
+          message: `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${model}" yet:`
+            + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
+            + ` for "${model}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
+            + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
+          code: MODEL_ROUTING_UNKNOWN_MODEL_CODE,
+        })
       }
     }
     return ranked
@@ -1124,13 +1124,13 @@ export class TiersAdapter extends LlmAdapter {
         // The fallback id IS the undispatchable id: a fixed request resolved to
         // itself, so keeping it would rank an id the route cannot serve. The
         // same failure as the pinned policy, so the same remedy applies.
-        throw new LlmError(
-          `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${resolution.resolved}" yet:`
-          + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
-          + ` for "${resolution.resolved}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
-          + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
-          MODEL_ROUTING_UNKNOWN_MODEL_CODE,
-        )
+        throw LlmError.fromFailure({
+          message: `model-routing: the inner route "${this.route.innerRoute}" cannot dispatch "${resolution.resolved}" yet:`
+            + ' @deepseek-ai/dsh-llm-pi-ai\'s catalog has not learned that id. Add a modelOverrides entry'
+            + ` for "${resolution.resolved}" under the "${this.route.innerRoute}" provider with api "openai-completions"`
+            + ' (the route\'s protocol) to serve it now, or pick another model until the dependency bumps',
+          code: MODEL_ROUTING_UNKNOWN_MODEL_CODE,
+        })
       }
       this.warnUndispatchableConfigured(resolution.resolved)
       ranked.push(configuredId)

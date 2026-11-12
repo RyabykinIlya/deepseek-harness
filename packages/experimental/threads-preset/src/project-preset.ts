@@ -263,8 +263,16 @@ export function coordinatorPreset(options: CoordinatorOptions): PresetDefinition
   }
   // The base `subagent` row is replaced where it stands, so the Thread
   // delegation keeps the base group's isolation; the other delegation rows go.
+  // The base control row is replaced, not inherited: base/web presets disable
+  // `interrupt_agent` for ordinary sessions, while the coordinator must keep it.
+  const controlRow: PresetRow = {
+    id: THREAD_CONTROL_ROW_ID,
+    name: row(PROJECT_PRESET_ROW_NAMES[THREAD_CONTROL_ROW_ID], '../../../subagent/tool-subagent-control/src/index.ts'),
+    config: { interrupt: true },
+  }
   const kept = rewriteRows(options.base, (entry) => {
     if (entry.id === THREAD_DELEGATION_ROW_ID) return [delegation]
+    if (entry.id === THREAD_CONTROL_ROW_ID) return [controlRow]
     return COORDINATOR_REPLACED_ROW_IDS.includes(entry.id ?? '') ? [] : [entry]
   })
   const hasDelegation = containsRow(kept, THREAD_DELEGATION_ROW_ID)
@@ -297,6 +305,7 @@ export function coordinatorPreset(options: CoordinatorOptions): PresetDefinition
         : [{
           id: THREAD_CONTROL_ROW_ID,
           name: row(PROJECT_PRESET_ROW_NAMES[THREAD_CONTROL_ROW_ID], '../../../subagent/tool-subagent-control/src/index.ts'),
+          config: { interrupt: true },
         }],
     ],
   }

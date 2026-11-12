@@ -8,7 +8,7 @@ import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, NS } from '../src/client/index.ts'
-import type { WebSearchCardFace, WebSearchSelectionFace } from '../src/client/index.ts'
+import type { WebSearchCardFace } from '../src/client/index.ts'
 import { apply as hostApply } from '../src/index.ts'
 
 /** One Host view of a served namespace. */
@@ -29,12 +29,14 @@ async function bench(served?: string[]) {
   const describeSettings = vi.fn(() => Promise.resolve(served === undefined
     ? { ok: false, error: new RemoteError('gateway/internal', 'no provider', {}) }
     : { ok: true, value: { writable: true, hasDocument: true, namespaces: served.map(ns => view(ns)) } }))
+  const listProviders = vi.fn(() => Promise.resolve({ ok: true, value: { search: [], fetch: [] } }))
   const remote = new TestRemote(ctx, {
     credentials: { describe: describeCredentials, set: vi.fn() },
     settings: { describe: describeSettings },
+    web: { listProviders },
   })
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, remote }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, describeCredentials, describeSettings, listProviders, remote }
 }
 
 /** The Plugins page's item slot, as its owner declares it. */
@@ -51,44 +53,26 @@ describe('ui-settings-web-search apply', () => {
   })
 
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'configForms'])
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.credentials', 'remote.web', 'configForms'])
   })
 
-  it('registers the page while the Host serves the namespace, titled in the active locale', async () => {
-    const { ctx, slots } = await bench(['web-search-deepseek'])
+  it('registers the page while the Host serves the web namespace, titled in the active locale', async () => {
+    const { ctx, slots } = await bench(['web'])
     declareRoot(slots)
 
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
     const entry = slots.entries('plugins.item')[0]!
-    // One entry per provider, keyed by the id the Host records in
-    // `web.searchProvider`, and named for the person rather than the id.
-    expect(entry.options).toMatchObject({ id: 'web-search-deepseek-official', order: 40 })
-    expect(resolveSlotLabel(entry.options.label)).toBe('DeepSeek')
+    expect(entry.options).toMatchObject({ id: 'web-search', order: 20 })
+    expect(resolveSlotLabel(entry.options.label)).toBe('网页搜索与获取')
     expect(entry.locale).toBe(NS)
     const face = (entry.inject as () => Pick<WebSearchCardFace, 'hooks'>)()
     expect(Object.keys(face.hooks)).toEqual(['webSearchCard'])
   })
 
-  it('registers one block per served provider, each under its own id', async () => {
-    const { ctx, slots } = await bench(['web-search-brave', 'web-search-tavily'])
-    declareRoot(slots)
-
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(2) })
-    const byId = new Map(slots.entries('plugins.item').map(entry => [
-      (entry.options as { id: string }).id, resolveSlotLabel(entry.options.label),
-    ]))
-    // A provider the Host does not serve contributes nothing.
-    expect(byId.has('web-search-deepseek-official')).toBe(false)
-    expect(byId.get('web-search-brave')).toBe('Brave Search')
-    expect(byId.get('web-search-tavily')).toBe('Tavily')
-  })
-
-  it('registers nothing while the namespace is not served', async () => {
-    const { ctx, slots, describeSettings } = await bench(['shell'])
+  it('registers nothing while the web namespace is not served', async () => {
+    const { ctx, slots, describeSettings } = await bench(['shell', 'web-deepseek-api'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(describeSettings).toHaveBeenCalled() })
@@ -96,57 +80,16 @@ describe('ui-settings-web-search apply', () => {
     expect(slots.entries('plugins.item')).toHaveLength(0)
   })
 
-  it('registers the selector once, on its own, while the Host serves the web seam', async () => {
-    const { ctx, slots } = await bench(['web'])
-    declareRoot(slots)
-
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
-    const entry = slots.entries('plugins.item')[0]!
-    // Its own entry, and sorted above the provider blocks: `web.searchProvider`
-    // is one global value, so one card shows it rather than each block repeating
-    // the same single choice.
-    expect(entry.options).toMatchObject({ id: 'web-search-provider', order: 10 })
-    expect(resolveSlotLabel(entry.options.label)).toBe('搜索提供方')
-    const face = (entry.inject as () => Pick<WebSearchSelectionFace, 'hooks'>)()
-    expect(Object.keys(face.hooks)).toEqual(['webSearchSelection'])
-  })
-
-  it('registers the selector alongside the blocks, without repeating it per provider', async () => {
-    const { ctx, slots } = await bench(['web', 'web-search-brave', 'web-search-tavily'])
-    declareRoot(slots)
-
-    await ctx.plugin({ inject: [...inject], apply }).await()
-
-    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(3) })
-    const ids = slots.entries('plugins.item').map(entry => (entry.options as { id: string }).id)
-    expect(ids.filter(id => id === 'web-search-provider')).toHaveLength(1)
-    expect(ids.sort()).toEqual(['web-search-brave', 'web-search-provider', 'web-search-tavily'])
-  })
-
-  it('keeps the selector registered when no provider block is served', async () => {
-    // `web` is served but no provider is: the selector still appears, because it
-    // edits the seam's namespace and not any provider's.
-    const { ctx, slots } = await bench(['web'])
-    declareRoot(slots)
-    const fiber = ctx.plugin({ inject: [...inject], apply })
-    await fiber.await()
-    await vi.waitFor(() => { expect(slots.entries('plugins.item')).toHaveLength(1) })
-
-    await fiber.dispose()
-
-    expect(slots.entries('plugins.item')).toHaveLength(0)
-  })
-
-  it('re-reads the credential when the Host reports the watched reference changed, and ignores another', async () => {
+  it('re-reads the credentials when the Host reports a watched reference changed, and ignores another', async () => {
     const { ctx, slots, describeCredentials, remote } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalled() })
     describeCredentials.mockClear()
 
-    remote.emit('credentials/reference-updated', ['SOME_OTHER_KEY'])
+    for (const ref of ['UNWATCHED_KEY', 'DEEPSEEK_SEARCH_API_KEY', 'DEEPSEEK_FETCH_API_KEY']) {
+      remote.emit('credentials/reference-updated', [ref])
+    }
     await Promise.resolve()
     expect(describeCredentials).not.toHaveBeenCalled()
 
@@ -156,8 +99,27 @@ describe('ui-settings-web-search apply', () => {
     await vi.waitFor(() => { expect(describeCredentials).toHaveBeenCalledTimes(1) })
   })
 
+  it('re-reads the providers when the Host reports a registration change or the connection resets', async () => {
+    const { ctx, slots, listProviders, remote } = await bench()
+    declareRoot(slots)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    await vi.waitFor(() => { expect(listProviders).toHaveBeenCalledTimes(1) })
+
+    remote.emit('web/providers-changed', [])
+    await vi.waitFor(() => { expect(listProviders).toHaveBeenCalledTimes(2) })
+    ctx.emit('connection/reset')
+    await vi.waitFor(() => { expect(listProviders).toHaveBeenCalledTimes(3) })
+
+    await fiber.dispose()
+    remote.emit('web/providers-changed', [])
+    ctx.emit('connection/reset')
+    await Promise.resolve()
+    expect(listProviders).toHaveBeenCalledTimes(3)
+  })
+
   it('collapses the page on teardown', async () => {
-    const { ctx, slots } = await bench(['web-search-deepseek'])
+    const { ctx, slots } = await bench(['web'])
     declareRoot(slots)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()

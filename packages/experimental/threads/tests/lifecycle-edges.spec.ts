@@ -235,7 +235,7 @@ async function bench(options: {
 
 /** Publish one `subagent/start` edge for the Thread provider. */
 function startEdge(ctx: Context, id: SessionId = CHILD, provider = 'thread'): void {
-  const info: SubagentRunInfo = { runId: SubagentRunId(`run-${id}`), provider, id, local: true }
+  const info: SubagentRunInfo = { runId: SubagentRunId(`run-${id}`), provider, parentSessionId: PROJECT, id, local: true }
   ctx.events.emit(RECEIVER, 'subagent/start', info)
 }
 

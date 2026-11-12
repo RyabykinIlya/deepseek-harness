@@ -179,8 +179,8 @@ async function fullBench(
       },
     },
     subagents: {
-      interruptByParent: (...args: unknown[]) => {
-        face.actionCalls.push({ method: 'interruptByParent', args })
+      interruptByUser: (...args: unknown[]) => {
+        face.actionCalls.push({ method: 'interruptByUser', args })
         return (remotes.interrupt ?? (() => Promise.resolve({ ok: true })))()
       },
     },
@@ -366,7 +366,7 @@ describe('Thread row Remote actions', () => {
     const { ctx, face } = await fullBench(PROJECT)
     await expect(actionsOf(ctx).stopThread(sid('project'), tid('thread-1'))).resolves.toEqual({ ok: true })
     expect(face.actionCalls).toEqual([
-      { method: 'interruptByParent', args: ['thread-1', 'project', 'continuable'] },
+      { method: 'interruptByUser', args: ['thread-1'] },
     ])
   })
 
@@ -476,7 +476,7 @@ describe('sidebar Thread row action', () => {
     await actions.stopThread(sid('project'), tid('thread-1'))
     await actions.archiveThread(sid('project'), tid('thread-1'), false)
     expect(face.actionCalls).toEqual([
-      { method: 'interruptByParent', args: ['thread-1', 'project', 'continuable'] },
+      { method: 'interruptByUser', args: ['thread-1'] },
       { method: 'archive', args: ['project', 'thread-1', { force: false }] },
     ])
   })
@@ -561,7 +561,7 @@ describe('Thread header', () => {
     const actions = threadActionsInjected(entry.inject)
     await actions.stopThread(sid('project'), tid('thread-1'))
     expect(face.actionCalls).toEqual([
-      { method: 'interruptByParent', args: ['thread-1', 'project', 'continuable'] },
+      { method: 'interruptByUser', args: ['thread-1'] },
     ])
   })
 })

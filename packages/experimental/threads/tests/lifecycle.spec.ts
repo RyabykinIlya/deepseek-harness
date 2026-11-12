@@ -141,9 +141,7 @@ function startThread(h: Harness, provider = 'thread', label = 'port auth') {
 function promptThread(h: Harness, childId: SessionId, text: string) {
   return h.ctx.subagents.prompt({
     requestId: `request-${text}` as never,
-    parentSessionId: h.project.id,
     childSessionId: childId,
-    mode: 'continuable',
     delivery: 'queue',
     content: [{ type: 'text', text }],
   }, SIGNAL)

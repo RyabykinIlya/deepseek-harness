@@ -158,11 +158,11 @@ function splitModelId(model: string): OpenRouterModelId {
   const parts = model.split('/')
   const [author, slug, ...rest] = parts
   if (rest.length > 0 || author === undefined || slug === undefined || author.length === 0 || slug.length === 0) {
-    throw new LlmError(
-      'llm-pi-ai: OpenRouter publishes endpoints per an author/slug model id, but this one is'
-      + ` ${JSON.stringify(model)}`,
-      INVALID_MODEL_ID_CODE,
-    )
+    throw LlmError.fromFailure({
+      message: 'llm-pi-ai: OpenRouter publishes endpoints per an author/slug model id, but this one is'
+        + ` ${JSON.stringify(model)}`,
+      code: INVALID_MODEL_ID_CODE,
+    })
   }
   return { author, slug }
 }
@@ -309,7 +309,7 @@ function readEndpoint(raw: unknown): OpenRouterEndpoint | undefined {
  */
 export function parseOpenRouterEndpoints(body: unknown, model: string): readonly OpenRouterEndpoint[] {
   const malformed = (detail: string): LlmError =>
-    new LlmError(`llm-pi-ai: ${detail} in the endpoint listing for "${model}"`, MALFORMED_ENDPOINTS_CODE)
+    LlmError.fromFailure({ message: `llm-pi-ai: ${detail} in the endpoint listing for "${model}"`, code: MALFORMED_ENDPOINTS_CODE })
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     throw malformed('expected a JSON object')
   }

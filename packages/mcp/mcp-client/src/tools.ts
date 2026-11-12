@@ -14,7 +14,7 @@
 
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { SdkHttpError, specTypeSchemas, type Client, type ImageContent } from '@modelcontextprotocol/client'
+import { specTypeSchemas, type Client, type ImageContent } from '@modelcontextprotocol/client'
 import type { Context } from '@deepseek-ai/cordis'
 import { isImageAdmissionError } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
@@ -23,42 +23,31 @@ import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepse
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { describeError, McpLocalError } from './diagnostic.ts'
+import type { McpGeneration } from './generation.ts'
+import { SdkHttpError } from '@modelcontextprotocol/client'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
-  /** Whether a registry conflict is contained or rejects this synchronization. */
-  registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /** Generation cancellation combined with each tool execution's signal. */
+  signal: AbortSignal
   /**
-   * Recovery hook for a streamable-HTTP session the server no longer knows.
-   *
-   * The SDK keeps sending its stored `mcp-session-id` after the server drops
-   * that session (a restart, or an evicting proxy), so every later call fails
-   * `404 Session not found`. Reconnect only fires on transport closure, which
-   * this failure does not produce. The supervisor passes this hook so one
-   * expired session costs one retry instead of the rest of the session.
-   *
-   * @param failed - The client whose call was rejected.
-   * @returns A client with an established session, or `undefined` when none
-   *   became available before the recovery timeout. Omission disables retry.
+   * Remove secret values from tool-call failures before they reach callers.
+   * @param text - transport or protocol failure text, or MCP `isError` result text.
+   * @returns the text with secret values replaced.
    */
-  recoverSession?: (failed: Client) => Promise<Client | undefined>
+  redact?: (text: string) => string
+  /**
+   * Recover a server session the server forgot. Omission disables the retry.
+   * @returns the replacement generation, or `undefined` when none arrived.
+   */
+  recoverSession?: () => Promise<McpGeneration | undefined>
 }
 
-/**
- * Whether an error is the server rejecting a session id it no longer tracks.
- *
- * Narrow on purpose: the SDK's typed HTTP error, status `404`, and the
- * session-expiry message. A `404` for any other reason is a routing fault that
- * a reconnect cannot fix, so it must surface unchanged.
- *
- * @param error - Value thrown by an MCP client call.
- * @returns True when re-initializing the session is the correct response.
- */
-export function isExpiredSessionError(error: unknown): boolean {
-  return error instanceof SdkHttpError && error.status === 404 && /session not found/i.test(error.message)
-}
+/** Registration failed after the prior generation was removed and partial registrations were rolled back. */
+export class McpToolRegistrationError extends McpLocalError {}
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
 export type ToolDisposers = Map<string, () => void>
@@ -126,15 +115,18 @@ export function publicToolName(serverName: string, rawName: string): string {
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
  *    server's `mcp__<serverName>__` namespace — the partial generation is
- *    rolled back (zero tools from this server) and logged. Initial strict
- *    synchronization may propagate the conflict so its parent transaction
- *    rejects; ordinary clients and later re-syncs return an empty map.
+ *    rolled back (zero tools from this server), logged, and rejected so the
+ *    supervisor closes the failed connection generation.
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
- * @param opts - Bridge options: server namespace and per-call timeout.
+ * @param opts - server namespace, call timeout, generation signal, and optional error formatter.
  * @param previous - Disposer map from the prior sync generation; disposed
  *   during the swap phase (only after the fetch phase succeeded).
+ * @param eligible - Judged again at the commit point, after the listing
+ *   settled: a sync whose generation was abandoned meanwhile (startup budget
+ *   elapsed, connection closed) publishes nothing and leaves `previous`
+ *   untouched.
  * @returns A map of registered public tool names to their unregister
  *   disposers — the exact set of live registrations owned by this server.
  */
@@ -143,12 +135,13 @@ export async function syncTools(
   ctx: Context,
   opts: ToolBridgeOptions,
   previous: ToolDisposers,
+  eligible: () => boolean = () => true,
 ): Promise<ToolDisposers> {
   // Phase 1: fetch and build the next generation without touching the registry.
   const definitions = new Map<string, ToolDefinition>()
   const response = client.getServerCapabilities()?.tools === undefined
     ? { tools: [] }
-    : await client.listTools(undefined, { cacheMode: 'refresh' })
+    : await client.listTools(undefined, { cacheMode: 'refresh', signal: opts.signal })
   for (const tool of response.tools) {
     const publicName = publicToolName(opts.serverName, tool.name)
     if (definitions.has(publicName)) {
@@ -164,23 +157,36 @@ export async function syncTools(
       outputSchema: tool.outputSchema,
       taskRequired: tool.execution?.taskSupport === 'required',
       call: async (args, execution) => {
-        const options = { signal: execution.signal, timeout: opts.toolCallTimeoutMs, toolDefinition: tool }
-        const message = { name: tool.name, arguments: args }
         try {
-          return await client.callTool(message, options)
+          const result = await client.callTool(
+            { name: tool.name, arguments: args },
+            { signal: AbortSignal.any([execution.signal, opts.signal]),
+              timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
+          )
+          if (result.isError !== true || opts.redact === undefined) return result
+          return { isError: true, content: [{ type: 'text', text: opts.redact(extractText(result.content as JsonValue[], tool.name)) }] }
         } catch (error) {
-          if (opts.recoverSession === undefined || !isExpiredSessionError(error)) throw error
-          // One retry: the replacement client owns a freshly negotiated session,
-          // so a second 404 is a different fault and must reach the caller.
-          const recovered = await opts.recoverSession(client)
-          if (recovered === undefined) throw error
-          return await recovered.callTool(message, options)
+          if (opts.recoverSession !== undefined && isExpiredSessionError(error)) {
+            const next = await opts.recoverSession()
+            if (next !== undefined) {
+              return await next.run(signal => next.client.callTool(
+                { name: tool.name, arguments: args },
+                { signal: AbortSignal.any([execution.signal, signal]),
+                  timeout: opts.toolCallTimeoutMs, toolDefinition: tool },
+              ))
+            }
+          }
+          if (opts.redact === undefined) throw error
+          throw new Error(opts.redact(describeError(error)))
         }
       },
     }))
   }
 
-  // Phase 2: swap generations.
+  // Phase 2: swap generations — but only for a generation still entitled to
+  // publish. The listing above is the slow await an abandonment can overtake;
+  // state is published at its commit point or not at all.
+  if (!eligible()) return previous
   for (const dispose of previous.values()) dispose()
   const disposers: ToolDisposers = new Map()
   try {
@@ -193,8 +199,7 @@ export async function syncTools(
     // sees either the full generation or none of it — never a partial set.
     for (const dispose of disposers.values()) dispose()
     ctx.logger.error(`mcp-client(${opts.serverName}): tool registration failed, no tools registered: ${String(error)}`)
-    if (opts.registrationFailure === 'throw') throw error
-    return new Map()
+    throw new McpToolRegistrationError('MCP tool registration failed', { cause: error })
   }
   return disposers
 }
@@ -349,6 +354,17 @@ function createExecutor(
     }
     return value
   }
+}
+
+/**
+ * Recognize a streamable-HTTP session the server forgot: the call answered
+ * HTTP 404 naming the session while the transport itself stayed open, so no
+ * close event will fire and every later call on the same session fails the
+ * same way until a new session is established.
+ * @param error - the failure thrown by a tool call.
+ */
+export function isExpiredSessionError(error: unknown): error is SdkHttpError {
+  return error instanceof SdkHttpError && error.status === 404 && /session not found/i.test(error.message)
 }
 
 /** Whether an untrusted MCP content array contains a declared image block. */

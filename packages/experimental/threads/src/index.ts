@@ -318,7 +318,7 @@ export class ThreadsService extends TypertRemoteService {
   private async stop(project: Agent, threadId: ThreadId): Promise<void> {
     const subagents = this.ctx.get('subagents')
     if (subagents === undefined) throw new Error('threads: stopping a running thread requires the subagents service')
-    subagents.interrupt(SessionId(threadId), { kind: 'user', parentSessionId: project.id })
+    subagents.interrupt(SessionId(threadId), { kind: 'user' })
     const deadline = Date.now() + this.config.archiveStopTimeoutMs
     while (this.isRunning(threadId)) {
       if (Date.now() >= deadline) {
