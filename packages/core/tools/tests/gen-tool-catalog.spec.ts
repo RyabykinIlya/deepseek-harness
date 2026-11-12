@@ -30,7 +30,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'apply_patch', 'ask_user_question', 'bash', 'bash', 'cordis_inspect_list',
       'cordis_inspect_query',
       'create_goal', 'create_worktree', 'edit', 'exit_plan_mode', 'get_goal', 'glob', 'grep',
-      'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'library_list', 'list_agents', 'list_mcp_resource_templates', 'list_mcp_resources', 'list_subagent_models', 'load_workspace_dependencies', 'lsp', 'memory_read', 'memory_write', 'office_convert', 'office_recalculate', 'office_render', 'plugin_manager', 'plugin_market', 'present', 'propose_action', 'pwsh', 'ralph',
+      'interrupt_agent', 'job_kill', 'job_list', 'job_output', 'library_list', 'list_agents', 'list_mcp_resource_templates', 'list_mcp_resources', 'list_subagent_models', 'load_workspace_dependencies', 'lsp', 'memory_read', 'memory_write', 'office_convert', 'office_recalculate', 'office_render', 'plugin_manager', 'plugin_market', 'present', 'propose_action', 'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'read_mcp_resource', 'run_code', 'schedule_create', 'schedule_edit',
       'schedule_list', 'schedule_view', 'send_message', 'session_event_read', 'session_event_search',
       'session_event_trace', 'session_search', 'session_trace', 'skill',
