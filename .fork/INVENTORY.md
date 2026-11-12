@@ -12,7 +12,30 @@
 
 ## Мерж dsh-v0.2.2-rc.1 (2026-11-04)
 
-Перемерено 2026-11-04 в worktree после мержа `dsh-v0.2.2-rc.1` (`66491b05e3f0`; дельта от `dsh-v0.2.2-alpha.2` — 466 коммитов, 2315 файлов). Пин форка — `dsh-v0.2.2-rc.1`, ожидающего апстрима нет.
+Перемерено 2026-11-13 в клоне Thread'а после мержа `dsh-v0.2.2-rc.2` (`ddac96760b`; дельта от `dsh-v0.2.2-rc.1` — 1568 коммитов, 4645 файлов). Пин форка — `dsh-v0.2.2-rc.2`; апстрим уже уехал дальше тега (166 коммитов на 2026-11-12), в это окно они не брались.
+
+| Замер (против `dsh-v0.2.2-rc.2`) | Значение | Команда |
+|---|---|---|
+| Локальные коммиты поверх rc.2 | 201 (включая мерж-коммит) | `git log --oneline dsh-v0.2.2-rc.2..HEAD \| wc -l` |
+| Дифф против rc.2 | 687 файлов, +225747 / −924 | `git diff --shortstat dsh-v0.2.2-rc.2...HEAD` |
+| **Поверхность: изменённые апстримные файлы** | **178** (история: 170 против rc.1, 162 на 2026-10-11) | `git diff --name-status dsh-v0.2.2-rc.2 HEAD \| awk '$1=="M"' \| wc -l` |
+| Из них категория A (генерируемое + zh/i18n-пары) | 44 | grep по списку генераторов |
+| Из них категория B (точки регистрации) | 16 (`tsconfig.*` 3, `scripts/*` 12, `lefthook.yml` 1) | `grep -E '^(tsconfig\.\|scripts/\|lefthook)'` |
+| Из них категория C (правки апстримных пакетов) | 118 | остаток списка |
+| Новые форк-онли пакеты | 18 | цикл `git cat-file -e rc.2:<d>/package.json` |
+| Добавленных файлов | 509 | `awk '$1=="A"'` |
+
+Что изменило поверхность с 170 до 178 в окне rc.1 → rc.2:
+
+- **−7 за счёт отчуждения (решение A2):** `client/ui-settings-web-search` ушёл из поверхности полностью (было 7 файлов). Карточка выбора провайдера и её поддержка удалены — rc.2 строит меню из `web/listProviders()`, включая плагинные провайдеры. `packages/web/web` тоже вернулся к апстримным байтам (`WEB_SEARCH_PROVIDER_IDS` не кормил даже свою выпадашку). Ввод ключей Brave/Tavily пока остаётся без UI: собственный пакет карточек (`plugins.row.config`) — следующий шаг, см. [plans/rc2-web-search.md](plans/rc2-web-search.md) §4.
+- **+12 от новых гейтов и швов rc.2:** `scripts/plugin-entry-existing-exports.ts` (8 долг-строк форка, решение A5), `scripts/no-unknown-casts.baseline.json`, `scripts/plugin-record-callers`-соседи, плюс map-записи `files` в 18 форк-пакетах (их требует typert rc.2 — это не поверхность, пакеты форк-онли) и `snapshots/session/headless.snapshot.ts` (новый `git-seed` workspaceSetup для двух Threads-сценариев).
+- **+3 в `core/session`, `llm/llm`, `mcp/mcp-client`:** швы форка пересобраны на rc.2-структуры (`AppendOptions` пятью вставками, `KEY_QUOTA`/`CLIENT_GATE` в реестр `LLM_FAILURE_CODES`, `recoverSession` на `McpGeneration`).
+
+Разбор категории C по пакетам (замер 2026-11-13): `llm-pi-ai` 17, `ui-chat` 15, `subagent` 14, `ui-workspace` 14, `tool-subagent` 11, `llm` 7, `workflow-ptc` 5, `repeat-tool-reminder` 5, `core/session` 3, `llm-retry` 3, `session-snapshot` 3, остальные — по 1–2. `ui-settings-web-search` из списка ушёл.
+
+**Мерж стоил 59 конфликтных файлов** (предсказание `git merge-tree` — 58 файлов / 236 ханков; шаг 1 снял генерируемое): 15 генерируемых и `.zh`-пар, 3 `tsconfig.*`, 2 `scripts/*`, `core/session` 1, `llm` 2 (+`error.ts` автослив), `mcp-client` 2, `subagent` 2, `tool-subagent` 4 + 3 теста, `ui-settings-web-search` 7 (сняты отчуждением), `ui-chat` 2, `ui-workspace` 2, `repeat-tool-reminder` 3, READMEs 10, снапшоты 2, прочее 3.
+
+Прежняя запись (пин rc.1, замер 2026-11-04) оставлена ниже как история.
 
 | Замер | Значение | Команда |
 |---|---|---|
