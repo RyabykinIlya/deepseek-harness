@@ -234,8 +234,8 @@ async function bench(options: {
 }
 
 /** Publish one `subagent/start` edge for the Thread provider. */
-function startEdge(ctx: Context, id: SessionId = CHILD, provider = 'thread'): void {
-  const info: SubagentRunInfo = { runId: SubagentRunId(`run-${id}`), provider, parentSessionId: PROJECT, id, local: true }
+function startEdge(ctx: Context, id: SessionId = CHILD, provider = 'thread', parentSessionId: SessionId = PROJECT): void {
+  const info: SubagentRunInfo = { runId: SubagentRunId(`run-${id}`), provider, parentSessionId, id, local: true }
   ctx.events.emit(RECEIVER, 'subagent/start', info)
 }
 
@@ -308,7 +308,9 @@ describe('installThreadLifecycle start edge', () => {
 
   it('warns and skips a start whose Project agent does not resolve', async () => {
     const b = await bench({ orphanChild: true })
-    startEdge(b.ctx)
+    // The bridge resolves the creator from SubagentRunInfo.parentSessionId, so an
+    // unresolvable Project is a creator id no live Agent answers for.
+    startEdge(b.ctx, CHILD, 'thread', SessionId('absent-project'))
     await vi.waitFor(() => { expect(b.warnings()).toHaveLength(1) })
     expect(b.warnings()[0]).toContain(`threads: thread ${CHILD} started without a resolvable Project agent`)
     expect(b.threadEvents()).toEqual([])

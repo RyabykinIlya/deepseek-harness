@@ -393,7 +393,12 @@ export function apply(ctx: Context, config: Config): void {
     const downstream = await next()
     if (downstream.kind === 'block') {
       if (observation.reminder === undefined) return downstream
-      return { kind: 'block', feedback: downstream.feedback, additionalContexts: prependContext(observation.reminder, downstream.additionalContexts) }
+      return {
+        kind: 'block',
+        feedback: downstream.feedback,
+        ...downstream.info === undefined ? {} : { info: downstream.info },
+        additionalContexts: prependContext(observation.reminder, downstream.additionalContexts),
+      }
     }
     if (observation.block !== undefined) {
       const additionalContexts = observation.reminder === undefined

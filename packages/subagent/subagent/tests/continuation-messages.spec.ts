@@ -118,7 +118,7 @@ describe('continuable return guidance', () => {
       {
         type: 'text',
         text: 'Your parent agent id is "parent-1". Before you finish, send your result to that agent with '
-          + 'send_message({ agent_id: "parent-1", message: "<self-contained result>" }). The parent shares '
+          + 'send_message({ agent: "parent-1", message: "<self-contained result>" }). The parent shares '
           + 'your workspace but does not automatically receive your transcript, tool output, or reasoning. Send '
           + 'earlier messages as well when a finding changes what the parent should do next; sending a message '
           + 'does not end your turn.',
@@ -132,7 +132,7 @@ describe('continuable return guidance', () => {
       {
         type: 'text',
         text: 'Your parent agent id is "parent-1". Before you finish, send your result to that agent with '
-          + 'send_message({ agent_id: "parent-1", message: "<self-contained result>" }). You work in your own '
+          + 'send_message({ agent: "parent-1", message: "<self-contained result>" }). You work in your own '
           + 'separate checkout at "/work/tree". The parent does not see files you change there until it '
           + 'inspects that checkout, and it does not automatically receive your transcript, tool output, or '
           + 'reasoning. State in the message what changed, where, and how you verified it. Send earlier '

@@ -89,7 +89,7 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock', enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt'])
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'name', 'prompt'])
     // The schema promises no collection because no job is ever created.
     expect(schema.description).not.toContain('job_output')
   })
@@ -785,7 +785,7 @@ describe('dsh-tool-subagent local activation', () => {
     await mountWorkingDirectoryFixture(ctx)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
-    await ctx.plugin(tool, { provider: 'spawn', backgroundMode: 'continuable' })
+    await ctx.plugin(tool, { provider: 'spawn', backgroundMode: 'continuable', modelSelection })
     ctx.llm.registerAdapter(['mock'], new MockAdapter([
       textResponse('continuable answer'),
     ], modelSelection ? {
@@ -870,11 +870,14 @@ describe('dsh-tool-subagent local activation', () => {
     const { ctx, parent } = await continuableSetup()
     const named = await callSubagent(ctx, { description: 'review', prompt: 'review it', name: 'reviewer' }, { agent: parent })
     expect(named.isError, text(named)).toBe(false)
-    expect(text(named)).toBe('started subagent reviewer')
+    // Fork invariant (Threads D1): the continuable receipt reports the child
+    // Session id, not the name — upstream's `started subagent reviewer` shape
+    // does not hold here.
+    const namedText = text(named)
+    expect(namedText).toMatch(/^started subagent \S+$/)
     const childId = ctx.sessionProjections.snapshot(parent.session).values.subagentCatalog?.find(entry => entry.mode === 'continuable' && entry.name === 'reviewer')?.id
     expect(childId).toBeDefined()
-    expect(ctx.tools.get('subagent')?.output.presentationMeta?.({}, { kind: 'activation', name: 'reviewer' }))
-      .toEqual({ kind: 'activation', name: 'reviewer' })
+    expect(namedText).toContain(String(childId))
     const duplicate = await callSubagent(ctx, { description: 'review again', prompt: 'review it', name: 'reviewer' }, { agent: parent })
     expect(duplicate.isError).toBe(true)
     expect(text(duplicate)).toContain('agent name "reviewer" is already used by another subagent you created')

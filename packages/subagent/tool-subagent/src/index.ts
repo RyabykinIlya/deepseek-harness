@@ -759,6 +759,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
             const started = await ctx.subagents.startActivation({
               provider: config.provider,
               label: args.description,
+              ...args.name === undefined ? {} : { name: args.name },
               ...request,
               signal: exec.signal,
               delivery: 'parent',
@@ -800,6 +801,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
               const start = ctx.subagents.startActivation({
                 provider: config.provider,
                 label: args.description,
+                ...args.name === undefined ? {} : { name: args.name },
                 ...request,
                 signal: controller.signal,
                 delivery: 'caller',

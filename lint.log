@@ -1,8 +1,0 @@
-$ tsx scripts/compile-referenced-projects.ts host-contracts && npm run lint:contracts-ready
-generate-typert: wrote 42 Typert artifact(s) for 42 package(s) in 13.5s
-
-> @deepseek-ai/dsh-root@0.2.2-rc.2 lint:contracts-ready
-> tsx scripts/run-oxlint.ts .
-
-Found 0 warnings and 0 errors.
-Finished in 169.7s on 7216 files with 90 rules using 12 threads.

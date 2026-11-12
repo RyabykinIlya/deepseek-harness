@@ -46,6 +46,7 @@ describe('tool-subagent allowedModels', () => {
       'cwd',
       'description',
       'model',
+      'name',
       'prompt',
       'provider',
       'reasoning_effort',
@@ -114,7 +115,7 @@ describe('tool-subagent allowedModels', () => {
     const ctx = await setup({ provider: 'mock', allowedModels: [] })
     const schema = ctx.tools.schemas().find(entry => entry.name === 'subagent')!
     const props = (schema.parameters as { properties?: Record<string, unknown> }).properties ?? {}
-    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'prompt', 'run_in_background'])
+    expect(Object.keys(props).sort()).toEqual(['cwd', 'description', 'name', 'prompt', 'run_in_background'])
     expect(ctx.tools.get('list_subagent_models')).toBeUndefined()
   })
 })

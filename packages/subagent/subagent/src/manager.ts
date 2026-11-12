@@ -25,7 +25,7 @@ import {
 } from './child-agent.ts'
 import type { ChildComposition, DelegatedPolicyOverrides } from './child-agent.ts'
 import {
-  createAgentMessage, createSettlementMessage, withContinuableReturnGuidance,
+  createAgentMessage, createSettlementMessage, withContinuableReturnGuidance, withResultDeliveryGuidance,
 } from './continuation-messages.ts'
 import { installSubagentArchiveAdmission } from './archive-admission.ts'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor.ts'
@@ -427,7 +427,13 @@ export class SubagentManager {
         const childHeader = child.session.header
         return await this.submitMaterialized(
           activation,
-          spec.delivery !== 'caller'
+          // The fork's return guidance belongs to a child the provider relocated
+          // into its own checkout (a Thread): it must be told to report through
+          // send_message because the parent cannot see its files. A child that
+          // shares the parent's workspace keeps upstream's automatic-delivery
+          // wording.
+          spec.delivery !== 'caller' && childHeader.cwd !== parent.session.header.cwd
+          && this.ctx.get('tools')?.get('send_message', child) !== undefined
             ? withContinuableReturnGuidance(
               parent.id,
               spec.prompt,
@@ -435,7 +441,7 @@ export class SubagentManager {
               // being promised the parent's shared workspace it does not have.
               childHeader.cwd !== parent.session.header.cwd ? childHeader.cwd : undefined,
             )
-            : spec.prompt,
+            : spec.delivery !== 'caller' ? withResultDeliveryGuidance(spec.prompt) : spec.prompt,
           { source: { kind: 'user' }, signal, delivery: 'queue', authorize: () => { this.assertAdmitting(parent) } },
           ancestry.root,
           () => {
