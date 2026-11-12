@@ -307,6 +307,17 @@ export interface ModelRoutingControl {
    * @param enabled - true when an exhausted subscription may fall through to OpenRouter.
    */
   setOpenRouterFallback(session: Session, enabled: boolean): void
+  /**
+   * The nearest fallback choice in one Session's lineage: the Session's own,
+   * else the nearest live ancestor's, else none.
+   *
+   * This is the value the route acts under — the same resolution
+   * {@link setOpenRouterFallback}'s events feed — so a caller that reports or
+   * previews the switch reads one truth rather than re-deriving it.
+   * @param session - the Session whose lineage to read.
+   * @returns the recorded choice, or undefined when neither the Session nor any live ancestor chose.
+   */
+  inheritedOpenRouterFallback(session: Session): boolean | undefined
 }
 
 declare module '@deepseek-ai/cordis' {

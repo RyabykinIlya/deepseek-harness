@@ -27,6 +27,7 @@ import type {} from '@deepseek-ai/dsh-llm-retry'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { fetchOpenRouterEndpoints, fetchOpenRouterModelCatalog } from '@deepseek-ai/dsh-llm-pi-ai'
 import { TiersAdapter } from './adapter.ts'
+import { liveAncestors } from './lineage.ts'
 import { routingDirectOf, routingEndpointOf } from './endpoint.ts'
 import { Config, directSourceModels, readSettings, validateSettings } from './config.ts'
 import type { RoutingSettings, TierSettingsSnapshot } from './config.ts'
@@ -99,7 +100,7 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
       settings,
       dispatch: () => ctx.get('piAiDispatch'),
       session: id => ctx.get('sessions')?.get(id),
-      routingState: session => this.modelRoutingHandle?.stateOf(session),
+      routingState: session => this.resolvedRoutingState(session),
       usage: (session) => {
         const totals = this.tokenUsageHandle === undefined ? undefined : this.tokenUsageHandle.stateOf(session).totals
         return totals === undefined
@@ -192,13 +193,53 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
    * @param enabled - true when an exhausted subscription may fall through to OpenRouter.
    */
   setOpenRouterFallback(session: Session, enabled: boolean): void {
+    // Read before the append: whether this call moves the value a lineage acts
+    // under is what decides which descendants' waits to end.
+    const previous = this.modelRoutingHandle?.stateOf(session).openRouterFallback ?? null
     session.append('model-routing/openrouter-fallback', { enabled }, { ignorable: true })
+    // The choice is the lineage's, not only this Session's: a Thread or subagent
+    // that never chose reads the nearest ancestor's recorded value at each of
+    // its own decisions, so recording it must also end any descendant's pending
+    // subscription-cooldown wait. Without this, a Thread parked on a spent
+    // subscription would keep waiting out its cooldown under the choice the
+    // person just overruled.
+    this.wakeDescendants(session, enabled, previous)
     // A turn already waiting on a subscription cooldown scheduled that wait under
     // the previous choice, and nothing else would end it before the cooldown does:
     // the person who just overruled the choice would watch a spent subscription
     // hold the Session for the rest of the cooldown. Ending the wait resumes the
     // next attempt at once, and that attempt reads this value.
     this.ctx.get('llmRetryControl')?.wake(session.id)
+  }
+
+  /**
+   * End the fallback cooldown waits of every descendant the recorded choice
+   * actually moved: a Thread or subagent whose own switch was unset, and whose
+   * nearest chosen ancestor is the Session just toggled, now acts under the
+   * new value, and a pending wait scheduled under the old one would hold it
+   * for the rest of the cooldown regardless.
+   * @param session - the Session whose choice was just recorded.
+   * @param enabled - the value recorded for this Session and its unchosen descendants.
+   * @param previous - the value this Session had recorded before the append, `null` when none.
+   */
+  private wakeDescendants(session: Session, enabled: boolean, previous: boolean | null): void {
+    // Recording the value already in force moves nothing below this Session.
+    if (previous === enabled) return
+    const retry = this.ctx.get('llmRetryControl')
+    const modelRoutingHandle = this.modelRoutingHandle
+    const sessions = this.ctx.get('sessions')
+    if (retry === undefined || modelRoutingHandle === undefined || sessions === undefined) return
+    for (const other of sessions.list()) {
+      if (other.id === session.id) continue
+      // A descendant that chose for itself shadows every ancestor's value.
+      if (modelRoutingHandle.stateOf(other).openRouterFallback !== null) continue
+      // The nearest ancestor that ever chose decides what this descendant acts
+      // under, so the toggled Session moves it only where it is that ancestor.
+      const nearest = liveAncestors(other, id => sessions.get(id))
+        .find(ancestor => modelRoutingHandle.stateOf(ancestor).openRouterFallback !== null)
+      if (nearest?.id !== session.id) continue
+      retry.wake(other.id)
+    }
   }
 
   /**
@@ -220,6 +261,51 @@ export class ModelRoutingService extends TypertRemoteService implements ModelRou
     this.setOpenRouterFallback(session, request.enabled)
   }
 
+  /**
+   * The `modelRouting` projection state of one Session, with the fallback
+   * switch resolved through the live-ancestor chain the service owns.
+   *
+   * Everything except the switch is read from the Session's own folded log —
+   * the decision, the idleness facts, and a Project's tier overrides are all
+   * per-Session facts — so this wraps rather than replaces the projection
+   * handle, and falls back to the raw state while the projections service has
+   * not registered the handle yet.
+   * @param session - the Session whose routing state to read.
+   * @returns the state with `openRouterFallback` resolved from the lineage.
+   */
+  private resolvedRoutingState(session: Session): ModelRoutingState | undefined {
+    const handle = this.modelRoutingHandle
+    if (handle === undefined) return undefined
+    const state = handle.stateOf(session)
+    return state.openRouterFallback === null
+      ? {
+        ...state,
+        openRouterFallback: this.inheritedOpenRouterFallback(session) ?? null,
+      }
+      : state
+  }
+
+  /**
+   * The nearest fallback choice in one Session's lineage: its own, else the
+   * nearest live ancestor's, else none.
+   *
+   * The service reads this so its own switch writes can report what a
+   * descendant now inherits, and the adapter reads the same value through
+   * {@link TiersAdapterDeps.routingState} when deciding: one Session's choice
+   * reaches every Thread and subagent spawned under it, exactly as a preset
+   * route or a tier override already does.
+   * @param session - the Session whose lineage to read.
+   * @returns the recorded choice, or undefined when neither it nor any live ancestor chose.
+   */
+  inheritedOpenRouterFallback(session: Session): boolean | undefined {
+    const handle = this.modelRoutingHandle
+    if (handle === undefined) return undefined
+    for (const candidate of [session, ...liveAncestors(session, id => this.ctx.get('sessions')?.get(id))]) {
+      const own = handle.stateOf(candidate).openRouterFallback
+      if (own !== null) return own
+    }
+    return undefined
+  }
   /**
    * Price what one tier's models would cost this turn.
    *

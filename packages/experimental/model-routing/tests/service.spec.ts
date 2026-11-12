@@ -222,6 +222,76 @@ describe('Remote setOpenRouterFallback', () => {
   })
 })
 
+describe('the fallback choice of a lineage', () => {
+  it('is inherited by a Thread that never chose, from the nearest ancestor', async () => {
+    const { ctx, service: routing } = await service()
+    const project = ctx.sessions.create(SessionId('project'))
+    const thread = ctx.sessions.create(SessionId('t1'), {
+      meta: { parentSession: project.id, origin: 'subagent' },
+    })
+    const worker = ctx.sessions.create(SessionId('w1'), {
+      meta: { parentSession: thread.id, origin: 'subagent' },
+    })
+    // Unchosen everywhere: no lineage value, and the deployment default applies.
+    expect(routing.inheritedOpenRouterFallback(thread)).toBeUndefined()
+    routing.setOpenRouterFallback(project, true)
+    expect(routing.inheritedOpenRouterFallback(thread)).toBe(true)
+    expect(routing.inheritedOpenRouterFallback(worker)).toBe(true)
+    // A nearer choice shadows the Project's.
+    routing.setOpenRouterFallback(thread, false)
+    expect(routing.inheritedOpenRouterFallback(thread)).toBe(false)
+    expect(routing.inheritedOpenRouterFallback(worker)).toBe(false)
+    // The worker's own shadowing choice, once it makes one.
+    routing.setOpenRouterFallback(worker, true)
+    expect(routing.inheritedOpenRouterFallback(worker)).toBe(true)
+  })
+
+  it('ends the cooldown waits of descendants the recorded choice moved', async () => {
+    const { ctx, service: routing } = await service()
+    const project = ctx.sessions.create(SessionId('project'))
+    const thread = ctx.sessions.create(SessionId('t1'), {
+      meta: { parentSession: project.id, origin: 'subagent' },
+    })
+    const unrelated = ctx.sessions.create(SessionId('solo'))
+    const woken: string[] = []
+    ctx.provide('llmRetryControl', {
+      wake: (id: SessionId) => { woken.push(id) },
+    })
+    // The deployment default is false, so enabling the Project moves every
+    // unchosen descendant that was parked on a spent subscription; the
+    // Project's own pending wait is ended by the ordinary per-Session wake.
+    routing.setOpenRouterFallback(project, true)
+    expect(woken).toEqual([thread.id, project.id])
+    // Recording the value the descendants already act under wakes nobody but
+    // the Session that flipped the switch.
+    woken.length = 0
+    routing.setOpenRouterFallback(project, true)
+    expect(woken).toEqual([project.id])
+    // The unrelated Session is never woken, and the Project's own wait is
+    // handled by the ordinary per-Session wake.
+    expect(woken).not.toContain(unrelated.id)
+  })
+
+  it('leaves a descendant alone once its own choice shadows the ancestor', async () => {
+    const { ctx, service: routing } = await service()
+    const project = ctx.sessions.create(SessionId('project'))
+    const thread = ctx.sessions.create(SessionId('t1'), {
+      meta: { parentSession: project.id, origin: 'subagent' },
+    })
+    routing.setOpenRouterFallback(thread, false)
+    const woken: string[] = []
+    ctx.provide('llmRetryControl', {
+      wake: (id: SessionId) => { woken.push(id) },
+    })
+    routing.setOpenRouterFallback(project, true)
+    // The Thread recorded its own choice, so the Project's flip moves nothing
+    // below it; only the Project's own wait is woken.
+    expect(woken).toEqual([project.id])
+    // The Thread keeps its own choice regardless of the Project's.
+    expect(routing.inheritedOpenRouterFallback(thread)).toBe(false)
+  })
+})
+
 describe('the diagnostics history', () => {
   it('appends one line per decision to the configured file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'model-routing-history-'))

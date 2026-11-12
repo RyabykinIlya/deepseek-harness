@@ -2108,6 +2108,25 @@ describe('TiersAdapter direct sources', () => {
     expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy'])
   })
 
+  it('acts under the nearest ancestor choice a Thread never made itself', async () => {
+    // A Thread or subagent has no chip of its own, and its spending follows the
+    // conversation that delegated to it: the fallback state it reads is the
+    // lineage-resolved one the Host service hands the adapter, so the parent's
+    // enabled choice overrides the deployment default the tier was configured
+    // with, and a spent subscription falls through to OpenRouter instead of
+    // failing the delegated turn with a cooldown wait.
+    const h = await scenario({
+      sources: [{ ...CLAUDE, modelMap: { 'xiaomi/mimo-v2.6-pro': 'mimo-v2.6-pro@{"usdPerToken":1e-8}' } }],
+      settings: { fallbackToOpenRouter: false },
+      state: priorDecision({ openRouterFallback: true, decision: null, decidedAt: null }),
+      responses: [failureChunks('QUOTA'), normalChunks()],
+    })
+    const chunks = await run(h.adapter)
+    expect(h.sent.map(entry => entry.options.provider)).toEqual(['claude-proxy', 'openrouter'])
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(h.events.at(-1)).toMatchObject({ boundary: 'failure', openRouterFallback: true })
+  })
+
   it('falls back to the next source when the route rejects this client, keeping the request intact', async () => {
     // A client-identity gate rejects the deployment's client, not the request:
     // the same request is servable by the next candidate, so the re-decision

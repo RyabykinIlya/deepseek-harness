@@ -85,6 +85,7 @@ export type { KeyInfoDeps } from './key-info.ts'
 export { resolveApiKeyRef, resolveKey } from './credentials.ts'
 export { routingDirectOf, routingEndpointOf, routingSourceOf } from './endpoint.ts'
 export { ModelRoutingService } from './service.ts'
+export { liveAncestors } from './lineage.ts'
 
 // The profile row id (`model-routing`) names the settings namespace these
 // `.volatile()` fields form; the Cordis service key is `modelRouting`.

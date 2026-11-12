@@ -69,6 +69,9 @@ async function provideRouting(
     setOpenRouterFallback() {
       throw new Error('tier.spec never records a fallback choice')
     },
+    inheritedOpenRouterFallback() {
+      throw new Error('tier.spec never reads a fallback choice')
+    },
     setThreadTier(project, threadId, tier) {
       if (fail !== undefined) fail(threadId, tier)
       calls.push({ project: project.id, threadId, tier })

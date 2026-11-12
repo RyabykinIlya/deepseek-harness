@@ -30,4 +30,8 @@ export class CatalogModelRouting implements ModelRoutingControl {
   setOpenRouterFallback(): void {
     throw new Error('gen-tool-catalog: routing choices are unreachable during schema harvest')
   }
+
+  inheritedOpenRouterFallback(): boolean | undefined {
+    throw new Error('gen-tool-catalog: routing choices are unreachable during schema harvest')
+  }
 }
