@@ -34,16 +34,7 @@ import type {
 
 export type * from './types.ts'
 export { ThreadId } from './types.ts'
-export {
-  applyThreadsEvent,
-  emptyThreadsState,
-  isThreadEvent,
-  threadsProjectionDefinition,
-  threadsProjectionView,
-} from './projection.ts'
 export type { ThreadEventType, ThreadState, ThreadsProjectionState } from './projection.ts'
-export { threadNote } from './note.ts'
-export { threadStopReason } from './lifecycle.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

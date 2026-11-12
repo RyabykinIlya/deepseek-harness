@@ -66,9 +66,28 @@ export const EXISTING_PLUGIN_ENTRY_EXPORTS = {
   '@deepseek-ai/dsh-experimental-cua-macos': ['GUIDANCE'],
   '@deepseek-ai/dsh-experimental-forge': ['changeRequestKey'],
   '@deepseek-ai/dsh-experimental-inspector': ['resolveInspectorOptions', 'startInspector'],
+  '@deepseek-ai/dsh-experimental-model-routing': [
+    'Config', 'DEFAULT_TRUSTED_UNKNOWN_PROVIDERS', 'DecisionResponseSchema', 'DiagnosticsFile', 'EFFORT_ORDER',
+    'EndpointsCache', 'FamilyCache', 'KeyInfo', 'MODEL_ROUTING_NO_ENDPOINT_CODE', 'MODEL_ROUTING_UNAVAILABLE_CODE',
+    'QUANTIZATIONS', 'QUANTIZATION_RANK', 'TiersAdapter', 'applyModelRoutingEvent', 'askJudge', 'baseSlugOf',
+    'blendedPrice', 'boundaryOf', 'candidateOf', 'candidatesOf', 'cheapestRejectedOf', 'defaultMix',
+    'diagnosticsLine', 'emptyModelRoutingState', 'judgeQuestions', 'judgeState', 'mapEffort', 'mixFromUsage',
+    'modelRoutingProjectionDefinition', 'modelRoutingView', 'policyFor', 'quantizationRank',
+    'quantizationsAtOrAbove', 'rankEndpoints', 'rankWithRelaxation', 'readRoutedReplay', 'readSettings',
+    'rejectionOf', 'resolveApiKeyRef', 'resolveKey', 'resolveModelFamily', 'routingDirectOf', 'routingEndpointOf',
+    'routingSourceOf', 'tierFromVerdict', 'unwrapHistory', 'validateSettings', 'wrapReplay',
+  ],
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': [
     'checkDoneValue', 'detachResidual', 'encodeJsonPlain', 'hasNonLosslessNumber', 'hasUnsafeIntegerToken',
     'hostFrameParseCeiling', 'logTruncationMarker', 'readProcessStart', 'resolvePythonBin', 'validateChildFrame',
+  ],
+  '@deepseek-ai/dsh-experimental-threads': ['ThreadId'],
+  '@deepseek-ai/dsh-experimental-threads-preset': [
+    'COORDINATOR_REPLACED_ROW_IDS', 'PROJECT_PRESET_ID', 'PROJECT_PRESET_ROW_NAMES', 'PROJECT_THREAD_PRESET_ID',
+    'THREADS_CONTEXT_NAME', 'THREADS_CONTEXT_ORDER', 'THREADS_CONTRACT_CONTEXT', 'THREAD_WORKER_CONTEXT_NAME',
+    'THREAD_WORKER_CONTRACT_CONTEXT', 'THREAD_CONTRACT_ROW_ID', 'THREAD_CONTROL_ROW_ID', 'THREAD_DELEGATION_ROW_ID',
+    'THREAD_PROVIDER', 'THREAD_STATUS_ROW_ID', 'Config', 'coordinatorContract', 'coordinatorPreset', 'readBaseRows',
+    'threadAgentOptions', 'threadAgentOptionsOf', 'workerContract', 'workerPreset',
   ],
   '@deepseek-ai/dsh-experimental-worktree': [
     'CREATED_RECORD', 'createdWorktreeSchema', 'generatedWorktreeName', 'worktreeProjection',
@@ -202,6 +221,7 @@ export const EXISTING_PLUGIN_ENTRY_EXPORTS = {
     'parentAgentOptionsForDelegation', 'resolveChildAgentOptions', 'resolveChildDepth', 'settleRunResult',
     'snapshotSubagentDescriptor', 'subprocessRunHandle',
   ],
+  '@deepseek-ai/dsh-subagent-thread-worktree': ['ThreadWorktreeProvider'],
   '@deepseek-ai/dsh-system-prompt': [
     'PERSONA_PREFIX_SECTION', 'PERSONA_SUFFIX_SECTION', 'TOOL_ORDER_REST', 'joinContextSections',
     'renderContextSections', 'renderContextSnapshot', 'renderPrompt',
@@ -255,14 +275,34 @@ export const EXISTING_PLUGIN_ENTRY_EXPORTS = {
     'DeepSeekSearchApiProvider', 'mapSearchResponse',
   ],
   '@deepseek-ai/dsh-web-fetch-http': ['DEFAULT_USER_AGENT', 'HttpFetchProvider', 'LOCAL_FETCH_PROVIDER_ID'],
+  '@deepseek-ai/dsh-web-search-brave': [
+    'BRAVE_DEFAULT_BASE_URL', 'BRAVE_DEFAULT_MAX_RESULTS', 'BRAVE_DEFAULT_TIMEOUT_MS', 'BRAVE_MAX_COUNT',
+    'BRAVE_PROVIDER_ID', 'BraveSearchProvider', 'WEB_SEARCH_BRAVE_SETTINGS_NAMESPACE', 'apiErrorMessage',
+    'mapBraveResponse', 'mapBraveResult', 'searchEndpoint',
+  ],
   '@deepseek-ai/dsh-web-search-deepseek': [
     'DEEPSEEK_DEFAULT_API_VERSION', 'DEEPSEEK_DEFAULT_BASE_URL', 'DEEPSEEK_DEFAULT_MAX_TOKENS',
     'DEEPSEEK_DEFAULT_MAX_USES', 'DEEPSEEK_DEFAULT_MODEL', 'DEEPSEEK_PROVIDER_ID', 'DeepSeekSearchProvider',
     'WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE',
   ],
+  '@deepseek-ai/dsh-web-search-duckduckgo': [
+    'DUCKDUCKGO_DEFAULT_ENDPOINT', 'DUCKDUCKGO_DEFAULT_MAX_RESPONSE_BYTES', 'DUCKDUCKGO_DEFAULT_TIMEOUT_MS',
+    'DUCKDUCKGO_DEFAULT_USER_AGENT', 'DUCKDUCKGO_PROVIDER_ID', 'DuckDuckGoSearchProvider',
+  ],
+  '@deepseek-ai/dsh-web-search-tavily': [
+    'TAVILY_DEFAULT_ENDPOINT', 'TAVILY_DEFAULT_MAX_CONTENT_CHARS', 'TAVILY_DEFAULT_MAX_RESULTS',
+    'TAVILY_DEFAULT_TIMEOUT_MS', 'TAVILY_PROVIDER_ID', 'TAVILY_SETTINGS_NAMESPACE', 'TavilySearchProvider',
+    'WEB_SEARCH_TAVILY_SETTINGS_NAMESPACE', 'boundContent', 'mapTavilyResponse', 'mapTavilyResult',
+    'tavilyErrorDetail',
+  ],
   '@deepseek-ai/dsh-webhook': ['WebhookDeliveryId', 'WebhookRuleId', 'WebhookSourceId'],
   '@deepseek-ai/dsh-workflow-ptc': ['materializeFromRealm', 'validateMeta'],
   '@deepseek-ai/dsh-workspace': [
     'WorkspaceId', 'realpathNormalize', 'workspaceDomainSpec', 'workspaceDomainState', 'workspaceRecord',
+  ],
+  '@deepseek-ai/dsh-worktree-manager': [
+    'ACTIVE_WORKTREE_STATES', 'REGISTRY_FILE_NAME', 'REGISTRY_LOCK_NAME', 'TERMINAL_WORKTREE_STATES',
+    'WorktreeRegistry', 'isLegalTransition', 'isWorktreeBasePolicy', 'isWorktreeState', 'resolveRepoTopLevel',
+    'runGit', 'threadSlug',
   ],
 } as const satisfies Readonly<Record<string, readonly string[]>>

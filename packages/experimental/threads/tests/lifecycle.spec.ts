@@ -24,7 +24,8 @@ import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import { ThreadId, ThreadsService, threadNote } from '../src/index.ts'
+import { ThreadId, ThreadsService } from '../src/index.ts'
+import { threadNote } from '../src/note.ts'
 import { TestSessionQuery } from '../../../subagent/subagent/tests/test-session-query.ts'
 
 const SIGNAL = new AbortController().signal

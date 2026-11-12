@@ -28,7 +28,6 @@ import type {
 
 export type * from './types.ts'
 export { ProjectMemoryError } from './errors.ts'
-export { projectMemoryDomain } from './storage.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
