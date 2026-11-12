@@ -2,7 +2,7 @@ import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
-import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -60,6 +60,33 @@ const guardSource = (tool: string, count: number) => ({
   form: 'notice',
   summary: `${tool} × ${count}`,
 })
+
+/** StreamChunks for a tool call preceded by a reasoning block (for degradation tests). */
+function reasonedToolCallResponse(rawCallId: string, name: string, args: object, reasoning: string): StreamChunk[] {
+  const callId = ToolCallId(rawCallId)
+  const argumentsJson = JSON.stringify(args)
+  return [
+    { type: 'block-start', index: 0, blockType: 'reasoning' },
+    { type: 'reasoning-delta', index: 0, text: reasoning },
+    { type: 'block-end', index: 0, block: { type: 'reasoning', text: reasoning } },
+    { type: 'block-start', index: 1, blockType: 'tool-call' },
+    { type: 'tool-call-delta', index: 1, id: callId, name, argumentsDelta: argumentsJson.slice(0, 5) },
+    { type: 'tool-call-delta', index: 1, id: callId, argumentsDelta: argumentsJson.slice(5) },
+    { type: 'block-end', index: 1, block: { type: 'tool-call', id: callId, name, arguments: argumentsJson } },
+    { type: 'usage', usage: { inputTokens: 10, outputTokens: 5 } },
+    { type: 'finish', reason: { kind: 'tool-calls' } },
+  ]
+}
+
+/** Every tool result in the agent's log, flattened for block assertions. */
+function toolResults(agent: Agent): { isError: boolean; text: string }[] {
+  return agent.session.snapshotEvents()
+    .filter((e): e is SessionEvent<'tool/result'> => e.type === 'tool/result')
+    .map(e => ({
+      isError: e.data.message.isError === true,
+      text: e.data.message.content.map(block => block.type === 'text' ? block.text : '').join('|'),
+    }))
+}
 
 describe('threshold escalation', () => {
   it('reminds gently at the first default threshold (3) and in detail at the second (5)', async () => {
@@ -373,6 +400,151 @@ describe('fold onto the downstream decision', () => {
   })
 })
 
+describe('fuzzy chain', () => {
+  const base = 'cd repo && git status -sb; echo X; git diff --stat'
+  const variant = `${base}; grep foo bar`
+
+  it('alternating near-identical arguments count as one chain at 0.9', async () => {
+    const ctx = await harness({ thresholds: [3], fuzzySimilarity: 0.9 })
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', { command: base }),
+      toolCallResponse('c2', 'probe', { command: variant }),
+      toolCallResponse('c3', 'probe', { command: base }), // 3rd fuzzy-consecutive
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const found = reminders(agent)
+    expect(found).toHaveLength(1)
+    expect(found[0]!.text).toContain('repeating the exact same tool call')
+    expect(found[0]!.source).toEqual(guardSource('probe', 3))
+  })
+
+  it('exact-only (default fuzzySimilarity 1) does not merge the alternation', async () => {
+    const ctx = await harness({ thresholds: [3] })
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', { command: base }),
+      toolCallResponse('c2', 'probe', { command: variant }),
+      toolCallResponse('c3', 'probe', { command: base }), // 2nd exact, chain was reset
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(reminders(agent)).toHaveLength(0)
+  })
+
+  it('a genuinely different command resets the fuzzy chain', async () => {
+    const ctx = await harness({ thresholds: [3], fuzzySimilarity: 0.9 })
+    const adapter = new MockAdapter([
+      toolCallResponse('c1', 'probe', { command: base }),
+      toolCallResponse('c2', 'probe', { command: variant }),
+      toolCallResponse('c3', 'probe', { command: 'pwd' }), // overlap 0 → reset
+      toolCallResponse('c4', 'probe', { command: 'pwd' }),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(reminders(agent)).toHaveLength(0)
+  })
+})
+
+describe('hard block', () => {
+  it('blocks the call at blockThreshold and keeps blocking the chain', async () => {
+    const ctx = await harness({ thresholds: [3], blockThreshold: 4 })
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 5 }, (_, i) => toolCallResponse(`c${i}`, 'probe', { q: 1 })),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const results = toolResults(agent)
+    expect(results.filter(r => !r.isError)).toHaveLength(3)
+    expect(results[3]!.isError).toBe(true)
+    expect(results[3]!.text).toContain('Repeated tool call blocked')
+    expect(results[4]!.isError).toBe(true)
+  })
+
+  it('blockThreshold 0 (default) never blocks', async () => {
+    const ctx = await harness()
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 5 }, (_, i) => toolCallResponse(`c${i}`, 'probe', { q: 1 })),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(toolResults(agent).every(r => !r.isError)).toBe(true)
+    expect(reminders(agent)).toHaveLength(2)
+  })
+})
+
+describe('degradation (empty reasoning)', () => {
+  it('empty reasoning after reasoning lowers the block to emptyReasoningThreshold', async () => {
+    const ctx = await harness({ thresholds: [3], emptyReasoningThreshold: 3 })
+    const adapter = new MockAdapter([
+      reasonedToolCallResponse('c1', 'probe', { q: 1 }, 'plan'),
+      toolCallResponse('c2', 'probe', { q: 1 }), // empty → streak 1
+      toolCallResponse('c3', 'probe', { q: 1 }), // empty → streak 2
+      toolCallResponse('c4', 'probe', { q: 1 }), // empty → streak 3, count 4 ≥ 3 → block
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    const results = toolResults(agent)
+    expect(results[3]!.isError).toBe(true)
+    expect(results[3]!.text).toContain('empty_reasoning_steps')
+  })
+
+  it('a model that never reasons is never degraded (no block without blockThreshold)', async () => {
+    const ctx = await harness({ thresholds: [3], emptyReasoningThreshold: 3 })
+    const adapter = new MockAdapter([
+      ...Array.from({ length: 5 }, (_, i) => toolCallResponse(`c${i}`, 'probe', { q: 1 })),
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(toolResults(agent).every(r => !r.isError)).toBe(true)
+  })
+
+  it('a reasoning step resets the empty-reasoning streak', async () => {
+    const ctx = await harness({ thresholds: [3], emptyReasoningThreshold: 3 })
+    const adapter = new MockAdapter([
+      reasonedToolCallResponse('c1', 'probe', { q: 1 }, 'plan'),
+      toolCallResponse('c2', 'probe', { q: 1 }), // streak 1
+      toolCallResponse('c3', 'probe', { q: 1 }), // streak 2
+      reasonedToolCallResponse('c4', 'probe', { q: 1 }, 'replan'), // streak 0
+      toolCallResponse('c5', 'probe', { q: 1 }), // streak 1 — still no block
+      textResponse('done'),
+    ])
+    ctx.llm.registerAdapter(['mock'], adapter)
+    const agent = await ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'go' }], source: { kind: 'user' } }))
+    await waitForIdle(ctx, agent)
+
+    expect(toolResults(agent).every(r => !r.isError)).toBe(true)
+  })
+})
+
 describe('config validation fails loud', () => {
   async function spine(): Promise<Context> {
     const ctx = new Context()
@@ -406,5 +578,19 @@ describe('config validation fails loud', () => {
     await expect(ctx.plugin(RepeatToolGuard, { argumentsPreviewChars: 0 })).rejects.toThrow(/argumentsPreviewChars/)
     const ctx2 = await spine()
     await expect(ctx2.plugin(RepeatToolGuard, { argumentsPreviewChars: 12.5 })).rejects.toThrow(/argumentsPreviewChars/)
+  })
+
+  it('rejects an out-of-range fuzzySimilarity', async () => {
+    const ctx = await spine()
+    await expect(ctx.plugin(RepeatToolGuard, { fuzzySimilarity: 0 })).rejects.toThrow(/fuzzySimilarity/)
+    const ctx2 = await spine()
+    await expect(ctx2.plugin(RepeatToolGuard, { fuzzySimilarity: 1.5 })).rejects.toThrow(/fuzzySimilarity/)
+  })
+
+  it('rejects blockThreshold and emptyReasoningThreshold of 1', async () => {
+    const ctx = await spine()
+    await expect(ctx.plugin(RepeatToolGuard, { blockThreshold: 1 })).rejects.toThrow(/blockThreshold/)
+    const ctx2 = await spine()
+    await expect(ctx2.plugin(RepeatToolGuard, { emptyReasoningThreshold: 1 })).rejects.toThrow(/emptyReasoningThreshold/)
   })
 })

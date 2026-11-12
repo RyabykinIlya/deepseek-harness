@@ -83,7 +83,7 @@ describe('the profile fragment the README documents', () => {
       tiers: [
         {
           name: 'pro',
-          models: ['deepseek/deepseek-v4-pro', 'z-ai/glm-5.3'],
+          models: ['deepseek/deepseek-v4-pro', 'z-ai/glm-5.3', 'meta/muse-ember'],
           contextWindow: 1_000_000,
           maxTokens: 32_768,
           minQuantization: 'fp8',
@@ -92,7 +92,7 @@ describe('the profile fragment the README documents', () => {
         },
         {
           name: 'flash',
-          models: ['deepseek/deepseek-v4-flash', 'z-ai/glm-5.3-flash', 'stealth/space-bunny-alpha'],
+          models: ['deepseek/deepseek-v4-flash', 'z-ai/glm-5.3-flash', 'meta/muse-ember'],
           contextWindow: 1_000_000,
           maxTokens: 32_768,
           minQuantization: 'fp8',

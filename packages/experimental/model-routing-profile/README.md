@@ -38,8 +38,8 @@ The tiers live in the `model-routing` settings namespace, which is written as `c
   name: '@deepseek-ai/dsh-experimental-model-routing'
   config:
     tiers:
-      - { name: pro, label: Pro, models: [deepseek/deepseek-v4-pro, z-ai/glm-5.3], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: reject, free: 'off' }
-      - { name: flash, label: Flash, models: [deepseek/deepseek-v4-flash, z-ai/glm-5.3-flash, stealth/space-bunny-alpha], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: trusted, free: prefer }
+      - { name: pro, label: Pro, models: [deepseek/deepseek-v4-pro, z-ai/glm-5.3, meta/muse-ember], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: reject, free: 'off' }
+      - { name: flash, label: Flash, models: [deepseek/deepseek-v4-flash, z-ai/glm-5.3-flash, meta/muse-ember], contextWindow: 1000000, maxTokens: 32768, input: [text], minQuantization: fp8, unknownQuantization: trusted, free: prefer }
     # Providers this deployment trusts without a published quantization.
     trustedUnknownProviders: [stealth]
     judgeModel: typesafe/jev-1.13

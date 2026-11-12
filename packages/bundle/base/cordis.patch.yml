@@ -444,11 +444,15 @@
     - id: tool-goal
       name: '@deepseek-ai/dsh-tool-goal'
 
-    # Consecutive-repeat reminders on the tool chain.
+    # Repeat-call reminders on the (fuzzy) tool chain, with a hard block at 30
+    # and degradation-aware early block at 10 empty-reasoning steps.
     - id: repeat-tool-reminder
       name: '@deepseek-ai/dsh-repeat-tool-reminder'
       config:
         thresholds: [3, 5, 8]
+        fuzzySimilarity: 0.9
+        blockThreshold: 30
+        emptyReasoningThreshold: 10
         argumentsPreviewChars: 500
 
     # The shared base enables the stable model-facing web_search and web_fetch

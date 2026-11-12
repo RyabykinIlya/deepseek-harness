@@ -522,35 +522,35 @@ describe('direct sources beside OpenRouter endpoints', () => {
     // Two free endpoints both blend to zero; the higher-uptime one is listed
     // second, so the tier order — the deployment's statement of preference —
     // decides, not the churned measurement.
-    const crouton: OpenRouterEndpoint = {
-      slug: 'stealth', promptPrice: 0, completionPrice: 0, uptimeLast30m: 96, quantization: 'fp8',
+    const freeModelA: OpenRouterEndpoint = {
+      slug: 'test', promptPrice: 0, completionPrice: 0, uptimeLast30m: 96, quantization: 'fp8',
       supportedParameters: ['tools'], contextLength: 1_048_576,
     }
-    const nemotron: OpenRouterEndpoint = {
-      slug: 'nvidia', promptPrice: 0, completionPrice: 0, uptimeLast30m: 100, quantization: 'fp8',
+    const freeModelB: OpenRouterEndpoint = {
+      slug: 'test', promptPrice: 0, completionPrice: 0, uptimeLast30m: 100, quantization: 'fp8',
       supportedParameters: ['tools'], contextLength: 1_048_576,
     }
-    const tier = { ...FLASH, free: 'prefer' as const, models: ['stealth/crouton-alpha', 'nvidia/nemotron-3-ultra-550b-a55b:free'] }
+    const tier = { ...FLASH, free: 'prefer' as const, models: ['test/free-model-a', 'test/free-model-b'] }
     const result = rankEndpoints(
-      new Map([['stealth/crouton-alpha', [crouton]], ['nvidia/nemotron-3-ultra-550b-a55b:free', [nemotron]]]),
+      new Map([['test/free-model-a', [freeModelA]], ['test/free-model-b', [freeModelB]]]),
       tier.models,
       policyFor(tier, settingsOf(), { allowFree: true, excludedTags: new Set() }),
       MIX,
     )
     expect(result.ranked.map(entry => entry.model)).toEqual([
-      'stealth/crouton-alpha',
-      'nvidia/nemotron-3-ultra-550b-a55b:free',
+      'test/free-model-a',
+      'test/free-model-b',
     ])
     // Reversing the tier order reverses the tie-break.
     const reversed = rankEndpoints(
-      new Map([['stealth/crouton-alpha', [crouton]], ['nvidia/nemotron-3-ultra-550b-a55b:free', [nemotron]]]),
+      new Map([['test/free-model-a', [freeModelA]], ['test/free-model-b', [freeModelB]]]),
       [...tier.models].reverse(),
       policyFor(tier, settingsOf(), { allowFree: true, excludedTags: new Set() }),
       MIX,
     )
     expect(reversed.ranked.map(entry => entry.model)).toEqual([
-      'nvidia/nemotron-3-ultra-550b-a55b:free',
-      'stealth/crouton-alpha',
+      'test/free-model-b',
+      'test/free-model-a',
     ])
   })
 
