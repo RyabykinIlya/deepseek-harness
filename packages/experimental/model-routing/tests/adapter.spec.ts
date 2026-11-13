@@ -1117,6 +1117,46 @@ describe('TiersAdapter when nothing works', () => {
       },
     )
   })
+
+  it('keeps a named model on its own endpoints at the failure boundary', async () => {
+    // The turn after a failed one re-decides at `failure`. A tier request takes
+    // the whole tier there, but a request that named one model asked for that
+    // model and not for the tier it happens to sit in: widening the target
+    // would answer the chosen model's failure by running a different model,
+    // which is the one outcome naming a model rules out.
+    const h = await harness({
+      tiers: [{ ...FLASH, free: 'prefer' }],
+      settings: { freeForSoloSessions: true },
+      responses: [failureChunks('PROVIDER_ERROR'), []],
+    })
+    await run(h.adapter, { model: 'z-ai/glm-5.3-flash' })
+    await run(h.adapter, { model: 'z-ai/glm-5.3-flash' })
+    expect(h.events[1]).toMatchObject({ boundary: 'failure', model: 'z-ai/glm-5.3-flash' })
+    expect(h.sent[1]?.options.model).toBe('z-ai/glm-5.3-flash')
+  })
+
+  it('keeps refusing to reroute a named model after a failure boundary re-decided it', async () => {
+    // The re-decision writes the pin the next turn runs under, so a `failure`
+    // boundary that recorded `targetKind: 'tier'` would drop `mayReroute`'s
+    // fixed-target guard for the rest of the Session: the first failure would
+    // cost the choice permanently, one turn later than it appears to.
+    const h = await harness({
+      tiers: [{ ...FLASH, free: 'prefer' }],
+      settings: { freeForSoloSessions: true },
+      responses: [failureChunks('PROVIDER_ERROR'), failureChunks('PROVIDER_ERROR')],
+    })
+    await run(h.adapter, { model: 'z-ai/glm-5.3-flash' })
+    const second = await run(h.adapter, { model: 'z-ai/glm-5.3-flash' })
+    const failure = second.find(
+      (chunk): chunk is StreamChunk & { type: 'finish'; reason: { kind: 'error'; failure: { code: string } } } =>
+        chunk.type === 'finish' && chunk.reason.kind === 'error',
+    )
+    expect(failure?.reason.failure.code).toBe('PROVIDER_ERROR')
+    // Two turns, one dispatch each: the second failure surfaced instead of
+    // moving the request to another model of the tier.
+    expect(h.sent).toHaveLength(2)
+    expect(h.sent.every(entry => entry.options.model === 'z-ai/glm-5.3-flash')).toBe(true)
+  })
 })
 
 describe('TiersAdapter catalog', () => {

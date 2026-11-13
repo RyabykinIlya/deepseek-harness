@@ -654,18 +654,30 @@ export class TiersAdapter extends LlmAdapter {
       })
       : undefined
     if ((main && boundary !== undefined) || pin === undefined) {
-      // At `failure`, the pin's own tier is the target, never the raw request:
-      // a provider hiccup must stay inside the tier the session is already
-      // on. Re-resolving `auto` here would re-ask the judge on every single
-      // provider failure — the exact mid-dialog model change `cacheIdleMs`
-      // and the other boundaries exist to prevent — and could switch tier or
-      // model on nothing more than a transient 5xx. `dispatchWithReroute`'s
-      // own internal reroute already decides this way; this keeps the two
-      // consistent.
-      const decisionTarget: RequestedTarget = boundary === 'failure' && pin !== undefined
-        ? { kind: 'tier', tier: pin.tier }
-        : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
-          : target
+      // At `failure`, a tier or `auto` request keeps the pin's own tier as its
+      // target, never the raw request: a provider hiccup must stay inside the
+      // tier the session is already on. Re-resolving `auto` here would re-ask
+      // the judge on every single provider failure — the exact mid-dialog model
+      // change `cacheIdleMs` and the other boundaries exist to prevent — and
+      // could switch tier or model on nothing more than a transient 5xx.
+      // `dispatchWithReroute`'s own internal reroute already decides this way;
+      // this keeps the two consistent.
+      //
+      // A request that named one model by id is excluded from that
+      // substitution. The tier is not what such a request asked for, so
+      // widening its re-decision to the tier answers a failure of the chosen
+      // model by running a different one — the single outcome the caller ruled
+      // out by naming a model, and the same choice `mayReroute` already honors
+      // within a turn. Keeping the fixed target also keeps `targetKind` on the
+      // pin the re-decision writes: substituting the tier here records
+      // `targetKind: 'tier'`, which permanently drops the in-turn reroute guard
+      // for the rest of the Session.
+      const decisionTarget: RequestedTarget = target.kind === 'fixed'
+        ? target
+        : boundary === 'failure' && pin !== undefined
+          ? { kind: 'tier', tier: pin.tier }
+          : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
+            : target
       const decided = await this.decide({
         settings, target: decisionTarget, pin, session, options, signal, persist: main, key: scope, requiredInput,
         openRouterFallback,
