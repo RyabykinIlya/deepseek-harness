@@ -21,8 +21,15 @@ describe('boundaryOf', () => {
     expect(boundaryOf(BASE)).toBeUndefined()
   })
 
-  it('decides again after a failure, ahead of every other reason', () => {
+  it('decides again after a failure, ahead of every reason but an explicit selection change', () => {
     expect(boundaryOf({ ...BASE, failurePending: true, compactedSinceDecision: true })).toBe('failure')
+  })
+
+  it('honours an explicit selection change over a pending failure', () => {
+    // The session failed on `flash` and the user picked `pro` before retrying:
+    // answering inside the old tier would trap the session on the choice it
+    // just abandoned.
+    expect(boundaryOf({ ...BASE, failurePending: true, requested: 'pro' })).toBe('selection-change')
   })
 
   it('decides again when the requested model changed', () => {

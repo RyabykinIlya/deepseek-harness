@@ -436,6 +436,98 @@ describe('TiersAdapter pinning', () => {
     expect(h.events[1]?.endpoint?.tag).toBe('streamlake/fp8')
   })
 
+  it('keeps an explicitly selected model across a provider failure', async () => {
+    // A fixed pin must survive the failure boundary: the failed provider is
+    // benched and another provider of the SAME model serves, instead of the
+    // cheapest healthy model of the tier silently taking over.
+    const h = await harness({
+      responses: [
+        [
+          { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+          { type: 'block-start', index: 0, blockType: 'text' },
+          { type: 'text-delta', index: 0, text: 'partial' },
+          ...failureChunks('PI_AI_ERROR'),
+        ],
+        normalChunks(),
+      ],
+    })
+    const first = await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    expect(h.events).toHaveLength(1)
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(h.events).toHaveLength(2)
+    expect(h.events[1]).toMatchObject({
+      boundary: 'failure',
+      tier: 'pro',
+      model: 'deepseek/deepseek-v4-pro',
+      excludedTags: ['streamlake/fp8'],
+    })
+    expect(h.sent[1]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(blockOf(h.sent[1]!)).toEqual({ only: ['gmicloud/fp8'], allow_fallbacks: false })
+  })
+
+  it('fails instead of switching models when a fixed model has no healthy endpoint', async () => {
+    // The other half of the contract: with every provider of the chosen model
+    // benched, the turn surfaces NO_ENDPOINT rather than serving another model.
+    const h = await harness({
+      tiers: [{
+        name: 'pro', label: 'Pro', models: ['author/m'], contextWindow: 1_000_000, maxTokens: 100,
+        input: ['text'], minQuantization: 'fp4', unknownQuantization: 'accept', free: 'off',
+      }],
+      endpoints: {
+        'author/m': [{
+          slug: 'one', promptPrice: 1e-7, completionPrice: 3e-7, inputCacheReadPrice: 5e-8,
+          status: 0, uptimeLast30m: 99, supportedParameters: ['tools'], contextLength: 1_048_576,
+        }],
+      },
+      responses: [
+        [
+          { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+          { type: 'block-start', index: 0, blockType: 'text' },
+          { type: 'text-delta', index: 0, text: 'partial' },
+          ...failureChunks('PI_AI_ERROR'),
+        ],
+        normalChunks(),
+      ],
+    })
+    const first = await run(h.adapter, { model: 'author/m' })
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    await run(h.adapter, { model: 'author/m' }).then(
+      () => { throw new Error('expected the benched model to fail the turn') },
+      (error: unknown) => {
+        expect((error as LlmError).code).toBe('MODEL_ROUTING_NO_ENDPOINT')
+        expect((error as Error).message).toContain('benched after recent failures')
+      },
+    )
+    expect(h.events).toHaveLength(1)
+  })
+
+  it('leaves the pinned tier when the model changed after a failure', async () => {
+    // The reported case: a turn fails after content has already streamed, so
+    // no in-turn reroute is possible, and the user switches tier before
+    // retrying. The retry must decide in the newly requested tier instead of
+    // staying in the pinned one behind a `failure` boundary.
+    const h = await harness({
+      tiers: [PRO, FLASH, FREE],
+      responses: [
+        [
+          { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+          { type: 'block-start', index: 0, blockType: 'text' },
+          { type: 'text-delta', index: 0, text: 'partial' },
+          ...failureChunks('PI_AI_ERROR'),
+        ],
+        normalChunks(),
+      ],
+    })
+    const first = await run(h.adapter)
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    expect(h.events).toHaveLength(1)
+    await run(h.adapter, { model: 'free' })
+    expect(h.events).toHaveLength(2)
+    expect(h.events[1]).toMatchObject({ boundary: 'selection-change', tier: 'free' })
+    expect(h.sent[1]?.options.model).toBe('nvidia/nemotron-3-super-120b-a12b:free')
+  })
+
   it('serves a non-agent request without deciding or recording', async () => {
     const h = await harness()
     await run(h.adapter, { purpose: 'session-title' })

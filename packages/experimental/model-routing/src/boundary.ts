@@ -35,7 +35,10 @@ export interface BoundaryInput {
  * Classify one request against the pin the session currently holds.
  *
  * Order matters and is the whole point: an unpinned session decides regardless of
- * anything else, and a pending failure outranks every reason to stay put, because
+ * anything else, and an explicit selection change outranks even a pending
+ * failure — the user asked to leave the failing candidate, so answering inside
+ * the old tier would trap the session on the choice it just abandoned. A
+ * pending failure outranks every other reason to stay put, because
  * re-requesting the endpoint that just failed is the one outcome guaranteed to
  * fail again.
  * @param input - the pin, the request, and the session's activity facts.
@@ -43,8 +46,8 @@ export interface BoundaryInput {
  */
 export function boundaryOf(input: BoundaryInput): RoutingBoundary | undefined {
   if (input.pinned === undefined) return 'start'
-  if (input.failurePending) return 'failure'
   if (input.pinned.requested !== input.requested) return 'selection-change'
+  if (input.failurePending) return 'failure'
   if (input.compactedSinceDecision) return 'compaction'
   if (input.lastActivityAt !== undefined && input.now - input.lastActivityAt > input.cacheIdleMs) return 'idle'
   return undefined

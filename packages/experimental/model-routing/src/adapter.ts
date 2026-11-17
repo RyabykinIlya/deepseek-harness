@@ -662,30 +662,25 @@ export class TiersAdapter extends LlmAdapter {
       })
       : undefined
     if ((main && boundary !== undefined) || pin === undefined) {
-      // At `failure`, a tier or `auto` request keeps the pin's own tier as its
-      // target, never the raw request: a provider hiccup must stay inside the
-      // tier the session is already on. Re-resolving `auto` here would re-ask
-      // the judge on every single provider failure — the exact mid-dialog model
-      // change `cacheIdleMs` and the other boundaries exist to prevent — and
-      // could switch tier or model on nothing more than a transient 5xx.
-      // `dispatchWithReroute`'s own internal reroute already decides this way;
-      // this keeps the two consistent.
-      //
-      // A request that named one model by id is excluded from that
-      // substitution. The tier is not what such a request asked for, so
-      // widening its re-decision to the tier answers a failure of the chosen
-      // model by running a different one — the single outcome the caller ruled
-      // out by naming a model, and the same choice `mayReroute` already honors
-      // within a turn. Keeping the fixed target also keeps `targetKind` on the
-      // pin the re-decision writes: substituting the tier here records
-      // `targetKind: 'tier'`, which permanently drops the in-turn reroute guard
-      // for the rest of the Session.
-      const decisionTarget: RequestedTarget = target.kind === 'fixed'
-        ? target
-        : boundary === 'failure' && pin !== undefined
-          ? { kind: 'tier', tier: pin.tier }
-          : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
-            : target
+      // At `failure`, the pin's own tier is the target, never the raw request:
+      // a provider hiccup must stay inside the tier the session is already
+      // on. Re-resolving `auto` here would re-ask the judge on every single
+      // provider failure — the exact mid-dialog model change `cacheIdleMs`
+      // and the other boundaries exist to prevent — and could switch tier or
+      // model on nothing more than a transient 5xx. `dispatchWithReroute`'s
+      // own internal reroute already decides this way; this keeps the two
+      // consistent. The one thing a failure must not drop is an explicitly
+      // selected model: a fixed pin keeps its model, so a provider failure
+      // rotates providers of that same model instead of silently switching
+      // it. (A changed request never reaches this branch — `selection-change`
+      // outranks `failure` in `boundaryOf` — so `pin.requested` still names
+      // what this request asks for here.)
+      const decisionTarget: RequestedTarget = boundary === 'failure' && pin !== undefined
+        ? pin.targetKind === 'fixed'
+          ? { kind: 'fixed', tier: pin.tier, model: pin.model }
+          : { kind: 'tier', tier: pin.tier }
+        : tierForInput !== undefined ? { kind: 'tier', tier: tierForInput }
+          : target
       const decided = await this.decide({
         settings, target: decisionTarget, pin, session, options, signal, persist: main, key: scope, requiredInput,
         openRouterFallback,
@@ -770,8 +765,9 @@ export class TiersAdapter extends LlmAdapter {
       defaultMix(settings),
       settings.mixMinTokens,
     )
-    // Every boundary ranks the whole tier by price; no boundary holds the
-    // session's model against price. At `failure` the only carried state is the
+    // Every boundary ranks the whole tier by price, except a `failure`
+    // re-decision on an explicitly selected model, which ranks that model
+    // alone; no boundary holds the session's model against price otherwise. At `failure` the only carried state is the
     // exclusion list: the failed candidate is benched and the cheapest healthy
     // candidate serves the rest of the turn, whichever model it runs — a spent
     // subscription is replaced by another live subscription before any
@@ -807,8 +803,13 @@ export class TiersAdapter extends LlmAdapter {
     const isFixedTarget = target.kind === 'fixed'
     const policy = (imageInput: 'require' | 'omit') => policyFor(tier, settings, {
       allowFree,
-      // When user explicitly selects a model, bypass benching — they chose this model deliberately
-      ...isFixedTarget ? {} : { excludedTags: excluded.tags },
+      // A fresh explicit choice overrides the bench: the user picked this model
+      // deliberately, so a failure it collected while serving tier decisions
+      // must not block it. A `failure` re-decision on that same choice keeps
+      // the bench instead — the failed endpoint stays out while another
+      // provider of the same model serves, or the turn fails with
+      // NO_ENDPOINT rather than silently switching models.
+      ...isFixedTarget && boundary !== 'failure' ? {} : { excludedTags: excluded.tags },
       imageInput,
       ...excluded.sources.size === 0 ? {} : { excludedSources: excluded.sources },
       ...requirement,
