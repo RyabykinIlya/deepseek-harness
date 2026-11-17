@@ -46,7 +46,7 @@ import { judgeQuestions, judgeState, tierFromVerdict } from './judge.ts'
 import type { JudgeRequest } from './judge.ts'
 import type { KeyInfo } from './key-info.ts'
 import { quantizationsAtOrAbove } from './quantization.ts'
-import { unwrapHistory, wrapReplay } from './replay.ts'
+import { historyHasReplay, unwrapHistory, wrapReplay } from './replay.ts'
 import { directSourcesOf, defaultMix, isDirect, mixFromUsage, policyFor, rankWithRelaxation, subscriptionServesRequest } from './select.ts'
 import type { DirectSource, RequiredInput } from './select.ts'
 import type { UsageTotals } from './select.ts'
@@ -287,6 +287,17 @@ interface Decision {
 export class TiersAdapter extends LlmAdapter {
   private readonly pins = new Map<string, Pin>()
   private readonly failures = new Set<string>()
+  /**
+   * Sessions whose history carries another provider's encrypted reasoning.
+   *
+   * A poisoned history fails every attempt dispatched under an excluding pin,
+   * and the poison never washes out of the log — so once a scrubbed retry
+   * proves the diagnosis by succeeding, later turns scrub upfront instead of
+   * paying one doomed attempt each. Cleared when the history carries no replay
+   * state left to disagree (compaction), which re-arms the diagnosis rather
+   * than turning the scrub permanent.
+   */
+  private readonly poisonedHistory = new Set<string>()
   private readonly excluded = new Map<string, Map<string, number>>()
   /** Consecutive failures per Session and tag, cleared by that tag's next success. */
   private readonly failureStreaks = new Map<string, Map<string, number>>()
@@ -701,9 +712,17 @@ export class TiersAdapter extends LlmAdapter {
     // replay signatures; an unpinned OpenRouter pin names no provider, so the
     // router is free to return to a compatible one and the history stands.
     const currentIdentity = servingIdentity(pin)
-    const scrubReplay = currentIdentity !== undefined && currentIdentity !== previousIdentity
+    let scrubReplay = identityChanged(previousIdentity, currentIdentity)
+    if (this.poisonedHistory.has(scope)) {
+      // A proved poisoned history stays scrubbed until compaction drops the
+      // replay it disagrees on; without the memory every turn would pay one
+      // doomed attempt before the in-turn recovery below re-proves it.
+      if (!historyHasReplay(options.messages, this.route.routeName)) this.poisonedHistory.delete(scope)
+      else scrubReplay = true
+    }
     yield* this.dispatchWithReroute({
       settings, dispatch, options, pin, key: scope, signal, main, requiredInput, openRouterFallback, scrubReplay,
+      previousIdentity,
     })
   }
 
@@ -1486,12 +1505,18 @@ export class TiersAdapter extends LlmAdapter {
     requiredInput: RequiredInput | undefined
     /** Whether this turn's history must lose its replay signatures (see `servingIdentity`). */
     scrubReplay: boolean
+    /** The serving identity the history was produced under; reroutes re-check against it. */
+    previousIdentity: string | undefined
     /** Whether an exhausted subscription may be replaced by an OpenRouter candidate. */
     openRouterFallback: boolean
   }): AsyncIterable<StreamChunk> {
-    const { settings, dispatch, options, key, signal, main, requiredInput, openRouterFallback, scrubReplay } = input
+    const { settings, dispatch, options, key, signal, main, requiredInput, openRouterFallback, scrubReplay, previousIdentity } = input
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
+    // A scrubbed retry of the same pin is not a move: it spends no reroute
+    // budget and records no bench, while a repeated failure right after it
+    // takes the normal path instead of looping.
+    let scrub = scrubReplay
     // `maxReroutes` bounds how many times one request may move to a DIFFERENT
     // candidate, not how many attempts it makes. A re-decision that lands on the
     // candidate that just failed is that same route being tried again — what
@@ -1501,6 +1526,12 @@ export class TiersAdapter extends LlmAdapter {
     // later. A move away from a spent subscription is not charged either; see
     // `mayReroute`.
     let reroutes = 0
+    // Set when an encrypted-payload failure below retries the same pin
+    // scrubbed: a later success proves the history was poisoned, which is the
+    // only evidence that arms the remembered upfront scrub. A turn-level scrub
+    // on its own proves nothing — a fresh pin meets history it never produced —
+    // so it must not arm anything.
+    let scrubRecovered = false
     // The candidates this request already left because their quota was spent, so
     // a second departure from one is charged; `moveCost` states why.
     const spent = new Set<string>()
@@ -1512,7 +1543,7 @@ export class TiersAdapter extends LlmAdapter {
       )
       const requestedMax = options.maxTokens ?? tier.maxTokens
       const endpointCap = pin.endpoint?.maxCompletionTokens ?? Number.POSITIVE_INFINITY
-      const history = unwrapHistory(options.messages, this.route.routeName, scrubReplay)
+      const history = unwrapHistory(options.messages, this.route.routeName, scrub)
       const inner: GenerateOptions<string> = {
         ...options,
         provider: pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
@@ -1546,6 +1577,17 @@ export class TiersAdapter extends LlmAdapter {
           leadingUsage.push(next.value)
         }
       } catch (error: unknown) {
+        if (
+          !scrub && pin.source.kind === 'openrouter' && pin.endpoint !== undefined
+          && error instanceof LlmError && isEncryptedPayloadFailure(error.code, error.message)
+        ) {
+          // The history carries another provider's encrypted reasoning and this
+          // pin excludes it: resending the same bytes would fail identically,
+          // but the same pin serves the turn once the signatures are dropped.
+          scrub = true
+          scrubRecovered = true
+          continue
+        }
         const reroutable = error instanceof LlmError && this.mayReroute(settings, pin, error.code, reroutes)
         if (!reroutable) throw error
         const failed = tagOfPin(pin)
@@ -1553,11 +1595,26 @@ export class TiersAdapter extends LlmAdapter {
         this.excludeEndpoint(key, settings, pin, error.code)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: error.code } })
         reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
+        // A reroute moves to another provider while the history stays put: the
+        // new pin meets it on the same terms as a turn-level rotation.
+        scrub = scrub || identityChanged(previousIdentity, servingIdentity(pin))
         continue
       }
       if (committed.done === true) return
       const chunk = committed.value
       const failure = failureOf(chunk)
+      if (
+        failure !== undefined && !scrub
+        && pin.source.kind === 'openrouter' && pin.endpoint !== undefined
+        && isEncryptedPayloadFailure(failure, failureMessageOf(chunk))
+      ) {
+        // Same recovery as the thrown path above, for pi-ai's in-band failure
+        // reporting: clean the history, not the candidate.
+        await iterator.return?.(undefined)
+        scrub = true
+        scrubRecovered = true
+        continue
+      }
       const reroutable = failure !== undefined && this.mayReroute(settings, pin, failure, reroutes)
       if (reroutable) {
         await iterator.return?.(undefined)
@@ -1566,6 +1623,8 @@ export class TiersAdapter extends LlmAdapter {
         this.excludeEndpoint(key, settings, pin, failure)
         pin = await this.reroute({ settings, target: { kind: 'tier', tier: pin.tier }, pin, session: this.sessionOf(options), options, signal, persist: main, key, requiredInput, openRouterFallback, failure: { tag: failed, code: failure } })
         reroutes += this.moveCost(spent, failed, spentCode, tagOfPin(pin) !== failed)
+        // Same rotation terms as above: the history predates the new pin.
+        scrub = scrub || identityChanged(previousIdentity, servingIdentity(pin))
         continue
       }
       if (failure !== undefined) {
@@ -1574,6 +1633,9 @@ export class TiersAdapter extends LlmAdapter {
       } else if (chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)) {
         this.failures.delete(key)
         this.clearFailureStreak(key, pin)
+        // A scrubbed retry that succeeds proves the history was poisoned: later
+        // turns scrub upfront instead of paying one doomed attempt each.
+        if (scrubRecovered) this.poisonedHistory.add(key)
       }
       for (const usageChunk of leadingUsage) yield usageChunk
       yield chunk.type === 'finish' && SUCCESSFUL_FINISH.has(chunk.reason.kind)
@@ -1615,6 +1677,7 @@ export class TiersAdapter extends LlmAdapter {
             if (code === undefined) {
               this.failures.delete(key)
               this.clearFailureStreak(key, pin)
+              if (scrubRecovered) this.poisonedHistory.add(key)
             }
           } else {
             yield item
@@ -1956,17 +2019,29 @@ function tagOfPin(pin: Pin): string | undefined {
  * pi-ai validates replay by route and model, but an encrypted
  * `reasoning_details` payload only the producing provider can process is bound
  * tighter: once the `only` pin names another endpoint, OpenRouter rejects the
- * request outright. An unpinned OpenRouter pin names no provider — the router
- * may return to a compatible one — so there is nothing to invalidate.
+ * request outright. Only OpenRouter endpoint pins name a physical provider
+ * this way — a direct source dispatches natively, and an unpinned OpenRouter
+ * pin lets the router return to a compatible provider — so only they
+ * participate.
  * @param pin - the pin whose identity to read, if the session holds one.
- * @returns the identity history replay is safe under, or `undefined` when the
- *   pin names no physical provider.
+ * @returns the endpoint slug history replay is safe under, or `undefined`
+ *   when the pin names no physical OpenRouter provider.
  */
 function servingIdentity(pin: Pin | undefined): string | undefined {
-  if (pin === undefined) return undefined
-  const tag = tagOfPin(pin)
-  if (tag === undefined) return undefined
-  return pin.source.kind === 'openrouter' ? `openrouter:${tag}` : tag
+  if (pin === undefined || pin.source.kind !== 'openrouter') return undefined
+  return pin.endpoint?.slug
+}
+
+/**
+ * Whether history produced under one serving identity may not ride under another.
+ *
+ * An `undefined` next identity is an unpinned or direct dispatch: OpenRouter
+ * auto-routes to a compatible provider and native routes validate their own
+ * signatures, so there is nothing to invalidate. A changed OpenRouter endpoint
+ * always invalidates, including when the previous identity is unknown.
+ */
+function identityChanged(previous: string | undefined, current: string | undefined): boolean {
+  return current !== undefined && current !== previous
 }
 
 /**
@@ -1995,6 +2070,28 @@ function effortOf(value: string | undefined): { reasoningEffort?: ReasoningEffor
 function failureOf(chunk: StreamChunk): string | undefined {
   if (chunk.type !== 'finish' || chunk.reason.kind !== 'error') return undefined
   return chunk.reason.failure.code
+}
+
+/** The provider failure text of an error finish chunk, if it is one. */
+function failureMessageOf(chunk: StreamChunk): string | undefined {
+  if (chunk.type !== 'finish' || chunk.reason.kind !== 'error') return undefined
+  return chunk.reason.failure.message
+}
+
+/**
+ * Whether this failure is OpenRouter refusing another provider's encrypted
+ * reasoning under an excluding `only` pin.
+ *
+ * The pin names a concrete endpoint, but the history carries an encrypted
+ * `reasoning_details` payload only the producing provider can process, so the
+ * request is malformed for this pin no matter how healthy the endpoint is.
+ * Benching or rerouting cannot help: the remedy is resending the same pin
+ * without the signatures. Matched on the code OpenRouter 400s map to plus the
+ * distinctive phrase from their error body.
+ */
+function isEncryptedPayloadFailure(code: string, message: string | undefined): boolean {
+  return code === 'INVALID_REQUEST' && message !== undefined
+    && /can only be processed by the provider/i.test(message)
 }
 
 /** Re-exported for the service's Remote methods. */

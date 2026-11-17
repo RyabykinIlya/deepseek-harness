@@ -568,6 +568,55 @@ describe('TiersAdapter pinning', () => {
     ).toBe('pi-ai')
   })
 
+  it('recovers a poisoned history without leaving the pin', async () => {
+    // The stable-pin loop: the history carries another provider's encrypted
+    // reasoning, so every first attempt fails under the unchanged pin. The
+    // turn retries scrubbed instead of dying, and remembers the poison so the
+    // next turn scrubs upfront instead of paying one doomed attempt each.
+    const history = historyWithEncryptedReasoning()
+    const encryptedRefusal: StreamChunk[] = [
+      { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+      {
+        type: 'finish',
+        reason: {
+          kind: 'error',
+          failure: {
+            code: 'INVALID_REQUEST',
+            message: 'Your request contains encrypted reasoning or compaction content that can only be processed by the provider that created it (meta), but the request provider.only preference excludes that provider.',
+          },
+        },
+      },
+    ]
+    const h = await harness({ responses: [normalChunks(), encryptedRefusal, normalChunks(), normalChunks()] })
+    // Pin the provider with a clean turn first: the poison that follows meets
+    // a stable pin, which no turn-level rotation would scrub.
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro' })
+    expect(h.sent).toHaveLength(1)
+    const first = await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    // Same pin retried, not rerouted: the scrubbed attempt succeeds in-turn.
+    expect(h.sent).toHaveLength(3)
+    expect(h.sent[2]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(blockOf(h.sent[2]!)).toEqual(blockOf(h.sent[1]!))
+    const replayed = (h.sent[2]?.options.messages ?? []).filter(message => message.role === 'assistant')
+    expect((replayed[0] as { source: { replayState?: unknown } }).source.replayState).toBeUndefined()
+    // The poison is remembered: the next turn scrubs upfront and needs no failure.
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    expect(h.sent).toHaveLength(4)
+    const replayedAgain = (h.sent[3]?.options.messages ?? []).filter(message => message.role === 'assistant')
+    expect((replayedAgain[0] as { source: { replayState?: unknown } }).source.replayState).toBeUndefined()
+  })
+
+  it('reroutes rather than scrubs a failure that is not a payload mismatch', async () => {
+    // A plain INVALID_REQUEST names the request, not the history: the turn
+    // moves providers instead of cleaning house for the same one.
+    const history = historyWithEncryptedReasoning()
+    const h = await harness({ responses: [failureChunks('INVALID_REQUEST'), normalChunks()] })
+    await run(h.adapter, { model: 'flash', messages: history })
+    expect(h.sent).toHaveLength(2)
+    expect(blockOf(h.sent[1]!)).not.toEqual(blockOf(h.sent[0]!))
+  })
+
   it('leaves the pinned tier when the model changed after a failure', async () => {
     // The reported case: a turn fails after content has already streamed, so
     // no in-turn reroute is possible, and the user switches tier before

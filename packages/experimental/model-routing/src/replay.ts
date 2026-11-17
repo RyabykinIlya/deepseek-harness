@@ -71,6 +71,23 @@ export function readRoutedReplay(
 }
 
 /**
+ * Whether the history carries replay state this route produced.
+ *
+ * Used to tell a history that can still disagree with the current pin from one
+ * that lost its signatures to compaction: only the former can fail on another
+ * provider's encrypted payload, so only it is worth scrubbing or remembering.
+ * @param messages - the request history as the outer route sees it.
+ * @param routeName - the outer route key, `tiers`.
+ */
+export function historyHasReplay(messages: readonly RequestMessage[], routeName: string): boolean {
+  return messages.some(message =>
+    message.role === 'assistant'
+    && message.source.provider === routeName
+    && message.source.replayState !== undefined,
+  )
+}
+
+/**
  * Rewrite history so the inner route can validate its own replay state.
  *
  * A message the outer route recorded as `tiers/flash` becomes `openrouter/<concrete>`:
