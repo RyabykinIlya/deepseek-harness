@@ -87,7 +87,7 @@ OpenRouter 自己的 `~author/slug-latest` 别名不能替代这一点。它们�
 <a id="ranking"></a>
 ### 排序
 
-`rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。无论在失败边界还是其他任何地方，都没有规则可以凌驾于这个价格之上：失败的提供方将其候选停用，由 tier 中最便宜的健康候选完成本轮的剩余部分——无论它运行的是哪个模型，因此一个耗尽的订阅会先被另一个模型的存活订阅替代，然后才轮到任何按 token 计费的 endpoint。唯一的例外是显式选定的模型：固定 pin 上的 `failure` 重决策只对该模型自身排序，轮换同一模型的提供方；若没有健康的 endpoint，则以 `MODEL_ROUTING_NO_ENDPOINT` 失败，而不会静默切换模型。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
+`rankEndpoints` 按每 token 的**混合**价格对候选排序，公式为 `cached · cacheRead + fresh · prompt + output · completion`，因为一次 agent 轮绝大多数是缓存输入，而那些仅按 prompt 看起来最便宜的提供方，往往根本没有公布任何 cache-read 折扣。无论在失败边界还是其他任何地方，都没有规则可以凌驾于这个价格之上：失败的提供方将其候选停用，由 tier 中最便宜的健康候选完成本轮的剩余部分——无论它运行的是哪个模型，因此一个耗尽的订阅会先被另一个模型的存活订阅替代，然后才轮到任何按 token 计费的 endpoint。唯一的例外是显式选定的模型：固定 pin 上的 `failure` 重决策只对该模型自身排序，轮换同一模型的提供方；若没有健康的 endpoint，则以 `MODEL_ROUTING_NO_ENDPOINT` 失败，而不会静默切换模型。轮换到另一个物理提供方时会丢掉历史的 replay 签名：加密的 `reasoning_details` 载荷只有产生它的提供方能处理，一旦 pin 排除了该提供方，OpenRouter 会直接拒绝整个请求，因此这一轮在没有 thinking 连续性的情况下重放文本与工具调用，而不是直接失败。`rankWithRelaxation` 在正是那个在线率下限导致列表变空时，会在没有该下限的情况下重跑一次，并回报 `relaxedUptime`，让决策日志能说明这一点。
 
 会话标题、compaction 等辅助 purpose 调用只搭乘 Session 的 pin 而不拥有它：它们的派发失败只在各自的 purpose 作用域内停用候选，绝不会为会话自己的轮次停用；它们留下的待处理失败也不会把下一个真正的轮次推到 `failure` 边界。因此，在已钉住的 endpoint 上失败的标题请求，不会为它正在命名的那个轮次停用该 endpoint。
 

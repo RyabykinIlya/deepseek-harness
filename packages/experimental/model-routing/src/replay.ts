@@ -80,11 +80,22 @@ export function readRoutedReplay(
  * honest outcome for an envelope this build cannot read, and it costs the cache
  * exactly once rather than silently keeping metadata that no longer describes
  * anything. Messages the route did not produce are returned unchanged.
+ *
+ * When the serving identity changed since the history was produced — the same
+ * model pinned to another endpoint after a provider failure, for example — the
+ * inner envelope's signatures must go even when they still validate: an
+ * encrypted `reasoning_details` payload only the producing provider can process
+ * makes OpenRouter reject the whole request once the `only` pin excludes that
+ * provider. Dropping the envelope keeps the text and tool calls while the
+ * provider-neutral conversion drops the signatures, so the turn runs without
+ * thinking continuity instead of failing outright.
  * @param messages - the request history as the outer route sees it.
  * @param routeName - the outer route key, `tiers`.
+ * @param dropReplay - drop the inner replay state of every message even when it
+ *   validates, because the current pin names another physical provider.
  * @returns a new history; the input array and its objects are not mutated.
  */
-export function unwrapHistory(messages: readonly RequestMessage[], routeName: string): RequestMessage[] {
+export function unwrapHistory(messages: readonly RequestMessage[], routeName: string, dropReplay = false): RequestMessage[] {
   return messages.map((message) => {
     if (message.role !== 'assistant') return message
     const source = message.source
@@ -97,7 +108,9 @@ export function unwrapHistory(messages: readonly RequestMessage[], routeName: st
     const { inner, ...identity } = routed.response
     // The identity rewrite is unconditional: it is what lets the inner route
     // match its own model at all. The replay state is not — an envelope with no
-    // inner half carries nothing the inner route could validate.
+    // inner half carries nothing the inner route could validate, and a serving
+    // identity change since the history was produced invalidates even a
+    // well-formed one (see above).
     const { replayState: _dropped, ...withoutReplay } = source
     return {
       ...message,
@@ -105,7 +118,7 @@ export function unwrapHistory(messages: readonly RequestMessage[], routeName: st
         ...withoutReplay,
         provider: identity.route,
         model: identity.model,
-        ...inner === undefined
+        ...inner === undefined || dropReplay
           ? {}
           : { replayState: { response: inner, ...routed.blocks === undefined ? {} : { blocks: routed.blocks } } },
       },

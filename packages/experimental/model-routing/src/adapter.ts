@@ -650,6 +650,14 @@ export class TiersAdapter extends LlmAdapter {
       ? undefined
       : await this.tierForInput(settings, pin, requiredInput, signal)
     if (tierForInput !== undefined) pin = undefined
+    // The serving identity the history was produced under. Replay signatures
+    // are bound to the physical provider that produced them, so a decision
+    // that moves the turn to another one must drop them (see
+    // `servingIdentity`); comparing against the pin the session ran under —
+    // rather than the pin each attempt dispatches — is what covers both the
+    // turn-level decision below and every reroute inside it, since a rerouted
+    // attempt never reaches the caller and extends no history.
+    const previousIdentity = servingIdentity(pin)
     const boundary = main
       ? boundaryOf({
         pinned: pin,
@@ -689,7 +697,14 @@ export class TiersAdapter extends LlmAdapter {
       pin = decided.pin
       if (main) this.pins.set(key, pin)
     }
-    yield* this.dispatchWithReroute({ settings, dispatch, options, pin, key: scope, signal, main, requiredInput, openRouterFallback })
+    // A new specific serving identity invalidates the previous provider's
+    // replay signatures; an unpinned OpenRouter pin names no provider, so the
+    // router is free to return to a compatible one and the history stands.
+    const currentIdentity = servingIdentity(pin)
+    const scrubReplay = currentIdentity !== undefined && currentIdentity !== previousIdentity
+    yield* this.dispatchWithReroute({
+      settings, dispatch, options, pin, key: scope, signal, main, requiredInput, openRouterFallback, scrubReplay,
+    })
   }
 
   /**
@@ -1469,10 +1484,12 @@ export class TiersAdapter extends LlmAdapter {
     /** Whether this is the agent's own turn, the only request allowed to leave a pin behind. */
     main: boolean
     requiredInput: RequiredInput | undefined
+    /** Whether this turn's history must lose its replay signatures (see `servingIdentity`). */
+    scrubReplay: boolean
     /** Whether an exhausted subscription may be replaced by an OpenRouter candidate. */
     openRouterFallback: boolean
   }): AsyncIterable<StreamChunk> {
-    const { settings, dispatch, options, key, signal, main, requiredInput, openRouterFallback } = input
+    const { settings, dispatch, options, key, signal, main, requiredInput, openRouterFallback, scrubReplay } = input
     const tier = this.tierNamed(settings, input.pin.tier)
     let pin = input.pin
     // `maxReroutes` bounds how many times one request may move to a DIFFERENT
@@ -1495,7 +1512,7 @@ export class TiersAdapter extends LlmAdapter {
       )
       const requestedMax = options.maxTokens ?? tier.maxTokens
       const endpointCap = pin.endpoint?.maxCompletionTokens ?? Number.POSITIVE_INFINITY
-      const history = unwrapHistory(options.messages, this.route.routeName)
+      const history = unwrapHistory(options.messages, this.route.routeName, scrubReplay)
       const inner: GenerateOptions<string> = {
         ...options,
         provider: pin.source.kind === 'openrouter' ? this.route.innerRoute : pin.source.kind,
@@ -1931,6 +1948,25 @@ function tagOfPin(pin: Pin): string | undefined {
   return pin.source.kind === 'openrouter'
     ? pin.endpoint?.slug
     : `${pin.source.kind}:${pin.source.tag}`
+}
+
+/**
+ * The physical serving identity replay signatures are bound to.
+ *
+ * pi-ai validates replay by route and model, but an encrypted
+ * `reasoning_details` payload only the producing provider can process is bound
+ * tighter: once the `only` pin names another endpoint, OpenRouter rejects the
+ * request outright. An unpinned OpenRouter pin names no provider — the router
+ * may return to a compatible one — so there is nothing to invalidate.
+ * @param pin - the pin whose identity to read, if the session holds one.
+ * @returns the identity history replay is safe under, or `undefined` when the
+ *   pin names no physical provider.
+ */
+function servingIdentity(pin: Pin | undefined): string | undefined {
+  if (pin === undefined) return undefined
+  const tag = tagOfPin(pin)
+  if (tag === undefined) return undefined
+  return pin.source.kind === 'openrouter' ? `openrouter:${tag}` : tag
 }
 
 /**

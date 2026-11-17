@@ -93,4 +93,27 @@ describe('unwrapHistory', () => {
     expect(source.model).toBe('z-ai/glm-5.3')
     expect(source.replayState).toBeUndefined()
   })
+
+  it('drops a valid inner envelope when the serving identity changed', () => {
+    // A provider rotation must not resend another provider's encrypted
+    // reasoning_details under a pin that excludes it: the identity rewrite
+    // still applies, but the signatures go.
+    const history: readonly RequestMessage[] = Object.freeze([
+      assistant(wrapReplay(INNER, 'openrouter', 'deepseek/deepseek-v4-flash')),
+    ])
+    const [out] = unwrapHistory(history, 'tiers', true)
+    const source = (out as { source: { provider: string; model: string; replayState?: unknown } }).source
+    expect(source.provider).toBe('openrouter')
+    expect(source.model).toBe('deepseek/deepseek-v4-flash')
+    expect(source.replayState).toBeUndefined()
+  })
+
+  it('keeps a valid inner envelope by default', () => {
+    const history: readonly RequestMessage[] = Object.freeze([
+      assistant(wrapReplay(INNER, 'openrouter', 'deepseek/deepseek-v4-flash')),
+    ])
+    const [out] = unwrapHistory(history, 'tiers', false)
+    const source = (out as { source: { provider: string; model: string; replayState?: ReplayEnvelope } }).source
+    expect(source.replayState?.response).toEqual(INNER.response)
+  })
 })

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAssistantMessage, createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type {
   OpenRouterCatalogEntry,
   OpenRouterEndpoint,
@@ -22,6 +22,7 @@ import { KeyInfo } from '../src/key-info.ts'
 import type { UsageTotals } from '../src/select.ts'
 import type { JudgeVerdict, ModelRoutingState, RoutingDiagnosticsRecord } from '../src/types.ts'
 import { endpointsOf } from './fixtures.ts'
+import { wrapReplay } from '../src/replay.ts'
 
 const PRO = {
   name: 'pro',
@@ -500,6 +501,71 @@ describe('TiersAdapter pinning', () => {
       },
     )
     expect(h.events).toHaveLength(1)
+  })
+
+  /** History carrying another provider's encrypted reasoning, as a rotated turn meets it. */
+  function historyWithEncryptedReasoning(): RequestMessage[] {
+    return [
+      { role: 'user', content: [{ type: 'text', text: 'do it' }] },
+      createAssistantMessage({
+        content: [{ type: 'reasoning', text: 'thinking it over' }],
+        source: {
+          provider: 'tiers',
+          model: 'pro',
+          replayState: wrapReplay(
+            {
+              response: {
+                kind: 'pi-ai', version: 2, api: 'openai-completions',
+                provider: 'openrouter', model: 'deepseek/deepseek-v4-pro', stopReason: 'stop',
+              },
+              blocks: [{ type: 'reasoning', thinkingSignature: 'encrypted-bytes' }],
+            },
+            'openrouter',
+            'deepseek/deepseek-v4-pro',
+          ),
+        },
+      }),
+      { role: 'user', content: [{ type: 'text', text: 'go on' }] },
+    ]
+  }
+
+  it('drops replay signatures when a failure rotates the serving endpoint', async () => {
+    // An encrypted reasoning_details payload only the producing provider can
+    // process: resending it under a pin that excludes that provider makes
+    // OpenRouter reject the whole request, so the rotated turn replays the
+    // history without signatures instead of failing outright.
+    const history = historyWithEncryptedReasoning()
+    const h = await harness({
+      responses: [
+        [
+          { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
+          { type: 'block-start', index: 0, blockType: 'text' },
+          { type: 'text-delta', index: 0, text: 'partial' },
+          ...failureChunks('PI_AI_ERROR'),
+        ],
+        normalChunks(),
+      ],
+    })
+    const first = await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'error' } })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    expect(h.sent[1]?.options.model).toBe('deepseek/deepseek-v4-pro')
+    expect(blockOf(h.sent[1]!)).toEqual({ only: ['gmicloud/fp8'], allow_fallbacks: false })
+    const replayed = (h.sent[1]?.options.messages ?? []).filter(message => message.role === 'assistant')
+    expect(replayed).toHaveLength(1)
+    expect((replayed[0] as { source: { replayState?: unknown } }).source.replayState).toBeUndefined()
+  })
+
+  it('keeps replay signatures while the serving endpoint does not change', async () => {
+    const history = historyWithEncryptedReasoning()
+    const h = await harness({ responses: [normalChunks(), normalChunks()] })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    await run(h.adapter, { model: 'deepseek/deepseek-v4-pro', messages: history })
+    const replayed = (h.sent[1]?.options.messages ?? []).filter(message => message.role === 'assistant')
+    expect(replayed).toHaveLength(1)
+    expect(
+      (replayed[0] as { source: { replayState?: { response?: { kind?: string } } } }).source.replayState?.response?.kind,
+    ).toBe('pi-ai')
   })
 
   it('leaves the pinned tier when the model changed after a failure', async () => {
