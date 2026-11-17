@@ -64,6 +64,8 @@ tier 是一组命名的可互换模型，外加每个服务于其中某个模型
 - **开启。** OpenRouter 仍是候选。重新决策会对整个 tier 排序，因此该轮继续运行在最便宜的健康候选上——若有其他模型的存活订阅排在前面则用它，否则用 OpenRouter endpoint。
 - **关闭。** 该模型只由订阅服务：对于 tier 的 `extraSources` 服务的每个模型，OpenRouter 候选都以 `subscription-only` 被拒。当所有能服务该请求的订阅都被停用，该轮以 `MODEL_ROUTING_SUBSCRIPTION_LIMIT` 失败，而不是转向排序更靠前、tier 只从 OpenRouter 服务的模型；剩余冷却时间同时出现在消息和 `providerRetryAfterMs` 中。这个字段让部署可以选择等待而不是失败：在 `retryPolicy.retryableCodes` 中列入该代码、并把 `backoff.maxDelayMs` 设为不小于 `quotaCooldownMs`，就会把该轮保持到最早恢复的订阅返回并重新决策，于是无人值守的会话自己继续。默认策略两者都不含，因此该失败直接上报，由下一条消息重试订阅。只由 OpenRouter 服务的模型在两种状态下都保留其 OpenRouter endpoint——否则这个开关会删掉模型，而不是为它们选择来源——因此当订阅被停用时，其输入未被 tier 任何订阅模型声明的请求仍由这些模型服务。
 
+tier 可以声明 `exhaustedFallbackTier`（默认不声明），让这种状态结束在另一个 tier 上，而不是结束在等待里。该回退只在能服务该请求的每个订阅都因额度耗尽而停用时生效——由失败连续计数换来的停用不是额度耗尽，那种情况仍按原样等完冷却——并且只作用于指定了 tier 的请求，不作用于指定单个模型的请求。此时该轮在指定的 tier 上做一次完整决策：用它自己的模型、过滤器与免费准入，而不是放宽耗尽 tier 的过滤器。正因如此，付费 tier 才能指定 `free` tier——没有任何 `:free` 模型能通过付费 tier 所声明的量化与上下文下限。耗尽 tier 自身的零成本候选根本不需要回退：它不花钱，排序会直接服务它而不是失败。当回退 tier 也服务不了时——它自己的免费模型已耗尽或低于 `freeMinRemaining`——失败仍是订阅限额那一个，并在旁边附上回退 tier 的原因，因此等待冷却的重试策略依然有冷却可等。只允许一跳：配置会拒绝一个自身也声明了回退的 tier。
+
 改变开关会提前结束已经挂起的重试等待，于是下一次尝试立刻按刚选择的值决策，而不必把冷却剩余的时长等完：服务请求 `ctx.llmRetryControl` 唤醒该 Session，由重试执行器继续它。没有 `dsh-llm-retry` 时不存在待结束的等待，该选择从下一次请求开始生效。
 
 <a id="snapshots"></a>

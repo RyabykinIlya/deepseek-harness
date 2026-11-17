@@ -167,6 +167,26 @@ export interface TierSettings {
    */
   unmeteredModels: string[]
   /**
+   * Tier that serves this tier's turns when every subscription that could serve
+   * the request is benched on a spent quota and the Session does not fall back
+   * to OpenRouter (default: none — the turn fails with
+   * `MODEL_ROUTING_SUBSCRIPTION_LIMIT`, as it did before this field existed).
+   *
+   * The fallback is a whole decision on that tier: its own models, filters and
+   * free admission, not a relaxation of this tier's. That is what lets a paid
+   * tier name the `free` one — no `:free` model passes the quantization and
+   * context floors a paid tier advertises, so a filter relaxation could only
+   * ever reach the models this tier already lists. It applies to a request that
+   * named a tier, never to one that named a single model, and only while the
+   * subscriptions are out on a quota: a bench earned by a failure streak is not
+   * a spent limit, and the turn waits that one out instead.
+   *
+   * One hop only, and the configuration refuses a chain: the fallback tier
+   * serves the request on its own, so a second fallback could only be reached
+   * by re-deciding a decision that already left the tier that asked for it.
+   */
+  exhaustedFallbackTier?: string
+  /**
    * Non-OpenRouter candidate sources, ranked alongside the tier's OpenRouter
    * endpoints (default `[]`). Each entry names the pi-ai route that dispatches
    * its models, the model ids that route serves — under their own names, or
@@ -438,6 +458,7 @@ const tierSettings: z<TierSettings> = z.object({
   unknownQuantization: z.union(['reject', 'trusted', 'accept'] as const).default('trusted'),
   free: z.union(['off', 'prefer', 'only'] as const).default('off'),
   unmeteredModels: z.array(z.string()).default([]),
+  exhaustedFallbackTier: z.string(),
   extraSources: z.array(extraSource).default([]),
 })
 
@@ -817,6 +838,19 @@ export function validateSettings(settings: RoutingSettings): void {
     tierRef('judgeProTier', settings.judgeProTier, false)
     tierRef('judgeFlashTier', settings.judgeFlashTier, false)
     for (const route of settings.presetRoutes) tierRef('presetRoutes[].model', route.model, true)
+    for (const tier of settings.tiers) {
+      const fallback = tier.exhaustedFallbackTier
+      if (fallback === undefined) continue
+      tierRef(`tier "${tier.name}" exhaustedFallbackTier`, fallback, false)
+      if (fallback === tier.name) invalid(`tier "${tier.name}" exhaustedFallbackTier names itself`)
+      // One hop: the fallback tier serves the request on its own, so a second
+      // fallback could only re-decide a decision that already left the tier that
+      // asked for the first one.
+      const target = settings.tiers.find(candidate => candidate.name === fallback)
+      if (target?.exhaustedFallbackTier !== undefined) {
+        invalid(`tier "${tier.name}" exhaustedFallbackTier "${fallback}" declares a fallback of its own`)
+      }
+    }
   }
   const thresholds = [
     settings.judgeStartProAt, settings.judgeToProAt, settings.judgeToFlashAt, settings.judgeMinConfidence,

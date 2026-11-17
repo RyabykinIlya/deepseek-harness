@@ -306,6 +306,13 @@ export class TiersAdapter extends LlmAdapter {
    * {@link freeAdmission}, which reads it before a free endpoint is ranked.
    */
   private readonly freeModelsBlockedUntil = new Map<string, number>()
+  /**
+   * Subscription candidates benched because their quota is spent, keyed exactly
+   * like {@link excluded} and for the same reason kept apart from it: a bench
+   * earned by a failure streak is not a spent limit, and only the spent limit
+   * moves a turn to its tier's `exhaustedFallbackTier`.
+   */
+  private readonly quotaBenched = new Map<string, Map<string, number>>()
 
   constructor(
     private readonly deps: TiersAdapterDeps,
@@ -325,6 +332,7 @@ export class TiersAdapter extends LlmAdapter {
   forget(sessionId: SessionId): void {
     this.pins.delete(sessionId)
     this.forgetScoped(this.excluded, sessionId)
+    this.forgetScoped(this.quotaBenched, sessionId)
     this.forgetScoped(this.failures, sessionId)
     this.forgetScoped(this.failureStreaks, sessionId)
   }
@@ -726,6 +734,14 @@ export class TiersAdapter extends LlmAdapter {
     openRouterFallback: boolean
     boundary?: RoutingBoundary
     /**
+     * The tier this decision falls back from, when one.
+     *
+     * Set only on the recursive call that answers a tier's exhausted
+     * subscriptions, so the fallback is one hop: the tier it lands on serves the
+     * request on its own instead of falling back again.
+     */
+    fallbackFrom?: string
+    /**
      * The dispatch failure this re-decision answers, when one. `reroute` is the
      * only caller that sets it: a `failure` boundary reached from a pending
      * failure of an earlier request has no dispatch of its own to report.
@@ -824,16 +840,54 @@ export class TiersAdapter extends LlmAdapter {
     // this code — and allows a delay that long — holds the turn until the
     // soonest subscription returns and decides again, while the default policy
     // lets the failure surface and leaves the retry to the next message.
+    //
+    // A zero-cost candidate is the one thing the choice was never about: it
+    // spends nothing, so the turn takes it rather than waiting. A tier that
+    // named an `exhaustedFallbackTier` goes further while its subscriptions are
+    // out on a spent quota: the decision is taken on that tier instead, whose
+    // own models and filters are the only ones a `:free` id passes — the paid
+    // tier's quantization and context floors reject every one of them.
     if (subscriptionOnly !== undefined
       && this.subscriptionsExhausted(key, extraSources)
-      && subscriptionServesRequest(extraSources, resultPolicy)) {
+      && subscriptionServesRequest(extraSources, resultPolicy)
+      && best?.free !== true) {
       const retryAfterMs = this.earliestRetryMs(key, extraSources)
-      throw LlmError.fromFailure({
-        message: `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
-          + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`,
+      const exhaustedMessage = `model-routing: tier "${tier.name}" is served only by exhausted subscriptions and this Session does`
+        + ` not fall back to OpenRouter; try again in ${String(retryAfterMs)}ms`
+      const limitError = (): LlmError => LlmError.fromFailure({
+        message: exhaustedMessage,
         code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
         ...retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : {},
       })
+      // A fixed request named one model and gets that model's answer, not a
+      // different tier's; and only a spent quota moves the turn, so a bench
+      // earned by a failure streak still waits out its cooldown as before.
+      const fallbackTier = input.fallbackFrom === undefined && target.kind !== 'fixed'
+        ? tier.exhaustedFallbackTier
+        : undefined
+      if (fallbackTier === undefined || !this.subscriptionsQuotaExhausted(key, extraSources)) throw limitError()
+      try {
+        return await this.decide({
+          ...input,
+          target: { kind: 'tier', tier: fallbackTier },
+          pin: undefined,
+          fallbackFrom: tier.name,
+        })
+      } catch (error: unknown) {
+        // The fallback tier serving nothing is still this turn's outcome, and the
+        // subscription cooldown is the part a retry policy can wait out: that is
+        // the failure it gets, with the fallback's own reason beside it.
+        if (error instanceof LlmError
+          && (error.code === MODEL_ROUTING_NO_ENDPOINT_CODE || error.code === MODEL_ROUTING_UNAVAILABLE_CODE)) {
+          throw LlmError.fromFailure({
+            message: `${exhaustedMessage} The exhausted fallback tier "${fallbackTier}" could not serve it either:`
+              + ` ${error.message}`,
+            code: MODEL_ROUTING_SUBSCRIPTION_LIMIT_CODE,
+            ...retryAfterMs > 0 ? { providerRetryAfterMs: retryAfterMs } : {},
+          })
+        }
+        throw error
+      }
     }
     let decidedModel: string
     let endpoint: OpenRouterEndpoint | undefined
@@ -1340,6 +1394,17 @@ export class TiersAdapter extends LlmAdapter {
       else sources.add(tag)
     }
     if (recorded?.size === 0) this.excluded.delete(key)
+    // The quota bench expires on the same clock as the bench it shadows: a lapsed
+    // spent quota is a subscription the ranking may use again, and keeping it in
+    // this table would hold the turn in the exhausted-fallback tier after the
+    // subscriptions it left behind had come back.
+    const quota = this.quotaBenched.get(key)
+    if (quota !== undefined) {
+      for (const [tag, until] of quota) {
+        if (until <= now) quota.delete(tag)
+      }
+      if (quota.size === 0) this.quotaBenched.delete(key)
+    }
     // A free model that spent its own daily cap is out for every Session, not
     // only the one that met the refusal: the cap belongs to the account.
     for (const [tag, until] of this.freeModelsBlockedUntil) {
@@ -1710,13 +1775,22 @@ export class TiersAdapter extends LlmAdapter {
         const expiry = this.deps.now() + (exhausted ? settings.quotaCooldownMs : settings.excludeAfterFailureMs)
         recorded.set(tag, expiry)
         if (exhausted) {
+          // The same bench, recorded as the spent quota it is: the ranking and
+          // the fallback read different tables, and only this one says why the
+          // candidates are out.
+          const quota = this.quotaBenched.get(key) ?? new Map<string, number>()
+          quota.set(tag, expiry)
           for (const tier of settings.tiers) {
             for (const candidates of this.directCandidates(tier).values()) {
               for (const candidate of candidates) {
-                if (candidate.route === pin.source.kind) recorded.set(`${candidate.route}:${candidate.id}`, expiry)
+                if (candidate.route !== pin.source.kind) continue
+                const candidateTag = `${candidate.route}:${candidate.id}`
+                recorded.set(candidateTag, expiry)
+                quota.set(candidateTag, expiry)
               }
             }
           }
+          this.quotaBenched.set(key, quota)
         }
         this.excluded.set(key, recorded)
       }
@@ -1771,6 +1845,32 @@ export class TiersAdapter extends LlmAdapter {
   private subscriptionsExhausted(key: string, extraSources: ReadonlyMap<string, readonly DirectSource[]>): boolean {
     const now = this.deps.now()
     const recorded = this.excluded.get(key)
+    let candidates = 0
+    for (const list of extraSources.values()) {
+      for (const candidate of list) {
+        candidates += 1
+        if ((recorded?.get(`${candidate.route}:${candidate.id}`) ?? 0) <= now) return false
+      }
+    }
+    return candidates > 0
+  }
+
+  /**
+   * Whether every subscription candidate these models have is out on a spent
+   * quota right now.
+   *
+   * Narrower than {@link subscriptionsExhausted}: a bench earned by a failure
+   * streak is a candidate the route is retrying around, while a spent quota is a
+   * limit that has not reset yet. Only the second is the tier's exhausted state,
+   * the one its `exhaustedFallbackTier` answers — moving a turn off a merely
+   * flaky subscription would spend the fallback on a blip.
+   * @param key - the Session's pin key.
+   * @param extraSources - the direct candidates per canonical model id.
+   * @returns true when at least one candidate exists and none is off a spent quota.
+   */
+  private subscriptionsQuotaExhausted(key: string, extraSources: ReadonlyMap<string, readonly DirectSource[]>): boolean {
+    const now = this.deps.now()
+    const recorded = this.quotaBenched.get(key)
     let candidates = 0
     for (const list of extraSources.values()) {
       for (const candidate of list) {
